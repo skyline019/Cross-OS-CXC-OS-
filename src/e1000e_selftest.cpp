@@ -368,6 +368,69 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
     return true;
 }
 
+// M25: after M13/M14 counters are frozen, build one frame via udp_send and
+// submit it on the live TX ring. Peer does not validate this frame.
+bool run_socket_tx_phase(volatile LegacyTxDescriptor* tx_ring, uint8_t* tx_buffer,
+                         uint64_t first_tick) {
+    constexpr uint16_t socket_tx_port = 0x4D25;
+    constexpr uint8_t socket_tx_payload[] = {0x4D, 0x32, 0x35};
+
+    info.socket_tx.stage = 1;
+    cpu::disable_interrupts();
+    __atomic_store_n(&udp_stress_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&udp_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&socket_tx_active, true, __ATOMIC_RELEASE);
+    cpu::enable_interrupts();
+
+    const int tx_slot = net::udp_bind(udp_rx_sockets, socket_tx_port);
+    if (tx_slot < 0) {
+        info.socket_tx.failure = 1;
+        return false;
+    }
+
+    const net::UdpWireEndpoints endpoints{info.packet.mac, peer_mac, nic_ipv4,
+                                          peer_ipv4};
+    const uint16_t frame_length = net::udp_send(
+        udp_rx_sockets, static_cast<size_t>(tx_slot), tx_buffer, 2048, endpoints,
+        net::peer_udp_port, 0x4D25, socket_tx_payload,
+        static_cast<uint16_t>(sizeof(socket_tx_payload)));
+    if (frame_length < net::udp_min_frame_bytes) {
+        info.socket_tx.failure = 2;
+        return false;
+    }
+
+    const uint32_t tx_index = mmio_read(reg_tdt0);
+    const uint32_t tx_head_before = mmio_read(reg_tdh0);
+    if (tx_index != tx_head_before || tx_index >= descriptor_count) {
+        info.socket_tx.failure = 3;
+        return false;
+    }
+
+    info.socket_tx.stage = 2;
+    if (!submit_tx_frame(tx_ring, tx_index, frame_length, first_tick,
+                         NetworkPhase::UdpSocketTx, 1)) {
+        info.socket_tx.failure = 4;
+        return false;
+    }
+
+    const uint32_t expected_head =
+        static_cast<uint32_t>((tx_index + 1) % descriptor_count);
+    info.socket_tx.tx_head = mmio_read(reg_tdh0);
+    info.socket_tx.tx_tail = mmio_read(reg_tdt0);
+    if (info.socket_tx.tx_head != expected_head ||
+        info.socket_tx.tx_tail != expected_head ||
+        network_tx_interrupts(NetworkPhase::UdpSocketTx) != 1 ||
+        network_vector_errors()) {
+        info.socket_tx.failure = 5;
+        return false;
+    }
+
+    info.socket_tx.frames = 1;
+    info.socket_tx.bytes = frame_length;
+    info.socket_tx.stage = 3;
+    return true;
+}
+
 bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
                    volatile LegacyTxDescriptor* tx_ring, uint8_t* tx_buffer,
                    uint64_t first_tick) {
@@ -424,9 +487,13 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     }
     info.udp.stage = 3;
 
-    // M13 serial evidence stays frozen in info.udp; M14 uses info.stress.
-    return run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
-                                first_tick);
+    // M13 serial evidence stays frozen in info.udp; M14 uses info.stress;
+    // M25 socket TX uses info.socket_tx after both are frozen.
+    if (!run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
+                              first_tick)) {
+        return false;
+    }
+    return run_socket_tx_phase(tx_ring, tx_buffer, first_tick);
 }
 
 }  // namespace
@@ -517,6 +584,7 @@ bool run_packet_phase() {
     }
 
     cpu::disable_interrupts();
+    __atomic_store_n(&socket_tx_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&udp_stress_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&udp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&protocol_active, false, __ATOMIC_RELEASE);

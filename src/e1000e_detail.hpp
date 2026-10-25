@@ -115,6 +115,7 @@ extern volatile bool packet_active;
 extern volatile bool protocol_active;
 extern volatile bool udp_active;
 extern volatile bool udp_stress_active;
+extern volatile bool socket_tx_active;
 extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;
@@ -125,6 +126,7 @@ enum class NetworkPhase {
     Protocol,
     Udp,
     UdpStress,
+    UdpSocketTx,
 };
 
 uint32_t mmio_read(uint32_t offset);

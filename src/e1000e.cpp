@@ -108,6 +108,8 @@ void interrupt_handler(void* opaque) {
         const bool udp_phase = __atomic_load_n(&detail::udp_active, __ATOMIC_ACQUIRE);
         const bool udp_stress_phase =
             __atomic_load_n(&detail::udp_stress_active, __ATOMIC_ACQUIRE);
+        const bool socket_tx_phase =
+            __atomic_load_n(&detail::socket_tx_active, __ATOMIC_ACQUIRE);
         if (result->expected_cause == detail::cause_rxq0) {
             if (udp_stress_phase) {
                 __atomic_add_fetch(&detail::info.stress.rx_interrupts, 1,
@@ -127,6 +129,9 @@ void interrupt_handler(void* opaque) {
                                    __ATOMIC_RELAXED);
             } else if (udp_phase) {
                 __atomic_add_fetch(&detail::info.udp.tx_interrupts, 1, __ATOMIC_RELAXED);
+            } else if (socket_tx_phase) {
+                __atomic_add_fetch(&detail::info.socket_tx.tx_interrupts, 1,
+                                   __ATOMIC_RELAXED);
             } else if (protocol_phase) {
                 __atomic_add_fetch(&detail::info.protocol.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
@@ -195,6 +200,7 @@ namespace detail {
 TestInfo info;
 
 volatile bool packet_active = false;
+volatile bool socket_tx_active = false;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
 volatile bool udp_stress_active = false;
@@ -445,6 +451,9 @@ uint64_t network_tx_interrupts(NetworkPhase phase) {
     if (phase == NetworkPhase::Udp) {
         return __atomic_load_n(&info.udp.tx_interrupts, __ATOMIC_ACQUIRE);
     }
+    if (phase == NetworkPhase::UdpSocketTx) {
+        return __atomic_load_n(&info.socket_tx.tx_interrupts, __ATOMIC_ACQUIRE);
+    }
     return phase == NetworkPhase::Protocol
                ? __atomic_load_n(&info.protocol.tx_interrupts, __ATOMIC_ACQUIRE)
                : __atomic_load_n(&info.packet.tx_interrupts, __ATOMIC_ACQUIRE);
@@ -521,6 +530,7 @@ bool run_msix_test() {
     __atomic_store_n(&detail::protocol_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::udp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::udp_stress_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&detail::socket_tx_active, false, __ATOMIC_RELEASE);
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
     detail::packet_free_before = 0;

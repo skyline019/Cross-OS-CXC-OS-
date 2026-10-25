@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 24 / v0.25.0：e1000e UDP socket RX demux**（M13–M23 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 25 / v0.26.0：e1000e UDP socket TX submit**（M13–M24 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -51,6 +51,7 @@ CXC_OS_SELF_TEST_PASS
 | UDP recv_wait (M22) | 每槽 `rx_gate` Event；`udp_recv_wait`；deliver 唤醒；worker 合同 |
 | UDP send (M23) | `udp_send` 填 Ethernet/UDP 帧；不提交驱动；host/runtime 往返 |
 | UDP demux (M24) | M13 每帧 `udp_deliver`+`recv`；串口 10/10；不改 Echo/peer |
+| UDP socket TX (M25) | stress 后 `udp_send`→e1000e TX；独立 `socket_tx` 计数；不改 Echo/peer |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -63,7 +64,7 @@ CXC_OS_SELF_TEST_PASS
 - [`docs/smp-scheduler.md`](docs/smp-scheduler.md)：M9 每 CPU run queue、共享锁和本地 timer；
 - [`docs/smp-startup.md`](docs/smp-startup.md)：trampoline、GS CPU block、SIPI/IPI 和停车循环；
 - [`docs/test-contract.md`](docs/test-contract.md)：中场正确/失败/掉电/事务/循环/高压/混沌测试契约与实测；
-- [`docs/udp-ring-wrap.md`](docs/udp-ring-wrap.md)：M13–M14 UDP/ring、M20–M24 socket 栈与 RX demux；
+- [`docs/udp-ring-wrap.md`](docs/udp-ring-wrap.md)：M13–M14 UDP/ring、M20–M25 socket 栈、RX demux 与 TX submit；
 - [`docs/arp-ipv4-icmp.md`](docs/arp-ipv4-icmp.md)：M12 ARP/IPv4/ICMP、checksum、跨向量 cause 与负对照；
 - [`docs/e1000e-packet-dma.md`](docs/e1000e-packet-dma.md)：M11 queue 0 rings、双向 DMA、peer 协议与清理；
 - [`docs/msix-e1000e.md`](docs/msix-e1000e.md)：M7 MSI-X table/PBA、IVAR、多向量和节流处理基线；
@@ -223,10 +224,10 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - IRQ 注册固定容量，不支持 shared IRQ 或中断线程化；
 - MSI/MSI-X 设备测试仍使用 BSP 物理目标，APIC ID 不超过 255；
 - e1000e 仅限 queue 0 legacy ring、七页 FIFO 回收和测试所需 MAC/link/RCTL/TCTL 初始化；没有完整 reset/PHY 管理、多队列、offload 或生产级异常恢复；
-- M20–M24：datagram/socket/recv_wait/send + M13 RX demux 入 socket；无 ephemeral 端口、无 e1000e TX 提交、stress 路径未 demux；协议仍为固定地址 ARP/ICMP/UDP Echo；
+- M20–M25：datagram/socket/recv_wait/send + M13 RX demux + stress 后 socket TX 提交；无 ephemeral 端口、stress 未 demux；协议仍为固定地址 ARP/ICMP/UDP Echo；
 - 包测试使用 EtherType `0x88B5`、ARP/ICMP/UDP 和 QEMU 本机 dgram peer，未实测物理网卡；
 - EDU DMA 不含 AHCI/block IO、IOMMU 或用户缓冲区 pinning；
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-下一阶段可接 e1000e TX `send` 提交或存储；仍必须保持实际中断、外部数据完整性和 M13–M24 回归证据。
+下一阶段可接通用 RX 路径、TX 背压或存储；仍必须保持实际中断、外部数据完整性和 M13–M25 回归证据。

@@ -153,4 +153,8 @@ Milestone 23 / v0.24.0 增加 `udp_send`：从绑定槽取 `local_port`，调用
 
 ## 12. M24 e1000e RX demux
 
-Milestone 24 / v0.25.0 在 M13 UDP selftest 中 bind `nic_udp_port`，每帧校验通过后 `udp_deliver` + 立即 `udp_recv`；`UdpResult.socket_delivered/received` 须为 10/10。Echo reply 与 peer 合同不变；M14 stress 不走 demux。仍无 TX 驱动提交或通用非测试 RX 路径。
+Milestone 24 / v0.25.0 在 M13 UDP selftest 中 bind `nic_udp_port`，每帧校验通过后 `udp_deliver` + 立即 `udp_recv`；`UdpResult.socket_delivered/received` 须为 10/10。Echo reply 与 peer 合同不变；M14 stress 不走 demux。
+
+## 13. M25 socket TX submit
+
+Milestone 25 / v0.26.0 在 M14 stress 冻结后：bind `0x4D25`，`udp_send` 写入 TX DMA 页，经既有 `submit_tx_frame` 提交；`UdpSocketTxResult` 独立计数 frames/IRQs/bytes/head/tail。不改写 M13 Echo 热路径与 peer 合同；仍无通用生产 TX 背压或非 selftest RX 路径。

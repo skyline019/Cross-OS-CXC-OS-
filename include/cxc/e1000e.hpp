@@ -103,6 +103,18 @@ struct UdpStressResult {
     uint32_t failure;
 };
 
+// M25: post-stress socket→e1000e TX submit. Independent of M13 Echo / M14
+// stress counters; does not require peer validation of the extra frame.
+struct UdpSocketTxResult {
+    uint64_t tx_interrupts;
+    uint64_t frames;
+    uint64_t bytes;
+    uint32_t tx_head;
+    uint32_t tx_tail;
+    uint32_t stage;
+    uint32_t failure;
+};
+
 struct TestInfo {
     uint64_t csr_physical;
     uint64_t msix_physical;
@@ -115,11 +127,12 @@ struct TestInfo {
     ProtocolResult protocol;
     UdpResult udp;
     UdpStressResult stress;
+    UdpSocketTxResult socket_tx;
 };
 
-// Runs ICS/IVAR/PBA, M11 raw, M12 ARP/ICMP, M13 ten UDP Echo + ring wrap, then
-// M14 256-datagram UDP ring stress. run_qemu.py checks every response.
-// Device DMA/interrupt state, IRQ slots and all packet pages are cleaned up.
+// Runs ICS/IVAR/PBA, M11 raw, M12 ARP/ICMP, M13 ten UDP Echo + ring wrap,
+// M14 256-datagram UDP ring stress, then M25 socket TX submit. run_qemu.py
+// checks M11–M14 responses. Device DMA/IRQ state and packet pages are cleaned.
 bool run_msix_test();
 const TestInfo& test_info();
 

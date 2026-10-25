@@ -90,7 +90,7 @@ Inline-Extent PMM 支持连续页和局部合并；堆经 direct map 提供对�
 
 ## 9. 后续
 
-1. e1000e TX `send` 提交与通用 RX 路径（M24 已在 M13 selftest demux）、完整 reset/PHY 管理和多队列；
+1. 通用 RX 路径与生产级 TX 背压（M25 已在 selftest 证明 socket→TX 提交；M24 已在 M13 demux）、完整 reset/PHY 管理和多队列；
 2. 调度/内存锁拆分、自动迁移和负载平衡；
 3. 通用 BAR 资源管理、设备模型和中断重映射；
 4. 条件等待、中断线程化和动态线程生命周期；

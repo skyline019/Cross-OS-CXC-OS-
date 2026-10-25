@@ -8,9 +8,10 @@
 
 namespace cxc::net {
 
-// Minimal UDP socket table (M21–M23). Fixed slots + per-socket RX queue of
+// Minimal UDP socket table (M21–M25). Fixed slots + per-socket RX queue of
 // owned payload copies. M22: sticky Event + udp_recv_wait. M23: udp_send
-// builds an Ethernet/UDP frame into a caller buffer (no driver TX submit).
+// builds an Ethernet/UDP frame into a caller buffer. M25 selftest submits that
+// frame via e1000e TX (net layer still has no driver dependency).
 // No ephemeral ports, no sockaddr / AF abstraction.
 
 constexpr size_t udp_socket_slots = 4;
@@ -59,7 +60,8 @@ bool udp_recv_wait(UdpSocketTable& table, size_t slot, UdpQueuedDatagram& out);
 uint16_t udp_rx_pending(const UdpSocketTable& table, size_t slot);
 
 // Build a padded Ethernet/UDP frame from a bound slot. src_port is the
-// socket's local_port. Returns frame length, or 0 on error. Does not transmit.
+// socket's local_port. Returns frame length, or 0 on error. Transmission is
+// the caller's responsibility (M25 selftest copies into the TX DMA page).
 uint16_t udp_send(UdpSocketTable& table, size_t slot, uint8_t* buffer,
                   uint16_t capacity, const UdpWireEndpoints& endpoints,
                   uint16_t dst_port, uint16_t identification,
