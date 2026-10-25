@@ -9,9 +9,10 @@
 | 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
 | 第四次 | M35–M44 | [`midpoint-assessment-4.md`](midpoint-assessment-4.md) |
 | 第五次 | M45–M54 | [`midpoint-assessment-5.md`](midpoint-assessment-5.md) |
-| 第六次（计划） | M55–M64 | `midpoint-assessment-6.md`（届时新建） |
+| 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
+| 第七次（计划） | M65–M74 | `midpoint-assessment-7.md`（届时新建） |
 
-当前基线：**M63 / v0.64.0**（mini-libc getpid）。下一正式中场目标：**M64**。
+当前基线：**M64 / v0.65.0**（第六次中场）。下一正式中场目标：**M74**。
 
 ## 中场窗口必做
 

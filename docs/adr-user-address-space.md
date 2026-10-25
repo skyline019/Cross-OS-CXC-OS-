@@ -126,7 +126,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M61** | mini-libc `uname`（syscall 63） | 串口 `USER_LIBC_UNAME_PASS` + `user libc uname: …` |
 | **M62** | mini-libc `set_tid_address`（218） | 串口 `USER_LIBC_TID_PASS` + `user libc tid: …` |
 | **M63** | mini-libc `getpid`/`getppid` | 串口 `USER_LIBC_PID_PASS` + `user libc pid: …` |
-| **M64** | 第六次中场（M55–M64） | [`midpoint-assessment-6.md`](midpoint-assessment-6.md)（届时新建） |
+| **M64** | 第六次中场（M55–M64） | [`midpoint-assessment-6.md`](midpoint-assessment-6.md)；v0.65.0 |
+| **M65+** | 极小静态 musl 子集 | 见第六次中场 §6 |
 
 ## 6. 参考
 

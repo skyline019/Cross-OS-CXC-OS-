@@ -1,8 +1,8 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 63 / v0.64.0（2026-10；mini-libc getpid；主靶 A2 / 次靶 B；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
+**基线**：Milestone 64 / v0.65.0（2026-10；第六次中场；主靶 A2 / 次靶 B；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint（正确/失败/掉电/事务/循环/高压/混沌）绿；host `ctest` + ASan/UBSan/TSan（Linux CI）。  
-**中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第五次中场已完成（M54）；下一正式中场目标 **M64**。
+**中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第六次中场已完成（M64）；下一正式中场目标 **M74**。
 
 本文回答两件事：（1）与生产级 OS 的真实差距；（2）若目标是「编译器/用户程序可跑」或「生产级内核」，后续应怎么排主线。
 
@@ -199,3 +199,4 @@ B 的工期以 **人年** 计；不能用薄切片里程碑编号假装到达。
 - 第三次中场（M25–M34）：[`midpoint-assessment-3.md`](midpoint-assessment-3.md) 已裁定正式切换主线到 A1。
 - 第四次中场（M35–M44）：[`midpoint-assessment-4.md`](midpoint-assessment-4.md) 确认 A1 最小闭环；下一刀外部 ELF / libc。
 - 第五次中场（M45–M54）：[`midpoint-assessment-5.md`](midpoint-assessment-5.md) 确认外部 ELF→libc 缺口→mini_libc；下一刀加深 mini-libc / CRT。
+- 第六次中场（M55–M64）：[`midpoint-assessment-6.md`](midpoint-assessment-6.md) 确认 CRT/heap/缺口号加深；下一刀极小静态 musl 子集。

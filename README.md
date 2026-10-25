@@ -5,13 +5,13 @@
 
 **Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, and a minimal UDP socket API. Acceptance requires kernel `CXC_OS_SELF_TEST_PASS` **and** external Python peer `peer_ok=1`.
 
-> Chinese deep-dive: [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Cadence: [`docs/midfield-cadence.md`](docs/midfield-cadence.md) · Midfield: [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)
+> Chinese deep-dive: [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Cadence: [`docs/midfield-cadence.md`](docs/midfield-cadence.md) · Midfield: [`docs/midpoint-assessment-6.md`](docs/midpoint-assessment-6.md)
 
 ## Status
 
 | Item | Value |
 |---|---|
-| Baseline | Milestone 63 / v0.64.0 |
+| Baseline | Milestone 64 / v0.65.0 |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
 | Evidence | QEMU + OVMF, EDU + e1000e, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
