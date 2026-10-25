@@ -100,13 +100,17 @@ jobs:
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
             --check --cpu "qemu64,+x2apic" --work-dir build/qemu-x2apic
 
-      - name: SMP UP, 8-way, and 16-way
+      - name: SMP UP, 8-way (xAPIC+x2APIC), and 16-way
         run: |
           # UP needs extra time: M18 held-lock sleeps force mutex waits.
           # 16-way needs event_waiter_capacity >= cpu_count+1 (fixed M25 CI).
+          # 8-way xAPIC exercises ICR Delivery Status + TLB shootdown IPI retry.
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
             --check --cpus 1 --cpu "qemu64,+x2apic" --timeout 120 \
             --work-dir build/qemu-up
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpus 8 --cpu "qemu64,-x2apic" --timeout 120 \
+            --work-dir build/qemu-smp-8-xapic
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
             --check --cpus 8 --cpu "qemu64,+x2apic" --timeout 120 \
             --work-dir build/qemu-smp-8
@@ -191,6 +195,9 @@ jobs:
             build/contract-full/CONTRACT_VALIDATION.txt
             build/contract-full/contract-report.json
             build/contract-full/SHA256SUMS
+            build/contract-full/logs/**
+            build/contract-full/qemu/**/serial.log
+            build/contract-full/qemu/**/network-peer.log
           if-no-files-found: error
 
   windows-uefi-build:

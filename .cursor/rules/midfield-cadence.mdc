@@ -16,8 +16,22 @@ alwaysApply: true
 
 1. **Write** `docs/midpoint-assessment-N.md`: progress, evidence, open TD, next single mainline.
 2. **Unify CI**: workflow must exercise the new baseline (serial markers, SMP matrix, timeouts, host ctest, full `contract_test.py`).
-3. **Fix issues**: any CI flake/panic/timeout discovered during the gate is fixed before starting the next decade; do not paper over by dropping asserts.
+3. **Fix issues (root cause only)**: any CI flake/panic/timeout discovered during the gate is fixed before starting the next decade. See **Problem handling** below.
 4. **Sync tests**: `tools/contract_test.py`, host `ctest`, and CI `grep`/matrix must assert new milestone evidence in the same change set as the feature (or immediately in the midfield PR). No “docs say Mxx but contract still asserts Myy”.
+
+## Problem handling (hard contract)
+
+When CI or contracts fail, **must fix the root cause** — not the symptom.
+
+Allowed: correct the kernel/driver/harness bug; add evidence (serial dump, counters) that proves the cause; keep or strengthen asserts.
+
+Forbidden without an explicit, documented root-cause fix in the same change:
+- Raising `--timeout` / spinning longer to “wait out” hangs
+- Deleting or skipping matrix rows, contract cases, or serial greps
+- Catching/swallowed panics, weakening PASS/`peer_ok` checks
+- Flake retries as the only mitigation
+
+If evidence is missing, first add capture (failed-case serial/peer in CI logs/artifacts), then fix the underlying bug.
 
 ## Continuous (every milestone, not only midfield)
 

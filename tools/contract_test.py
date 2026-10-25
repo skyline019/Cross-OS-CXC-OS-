@@ -515,6 +515,18 @@ class ContractRunner:
             detail,
         )
         self.results.append(result)
+        if not passed:
+            # Root-cause contract: surface serial/peer tails in CI logs.
+            serial_path = work / "serial.log"
+            peer_path = work / "network-peer.log"
+            if serial_path.is_file():
+                serial_text = serial_path.read_text(errors="replace")
+                tail = "\n".join(serial_text.splitlines()[-40:])
+                print(f"--- {name} serial.log tail ---\n{tail}\n--- end serial ---")
+            if peer_path.is_file():
+                peer_text = peer_path.read_text(errors="replace")
+                peer_tail = "\n".join(peer_text.splitlines()[-20:])
+                print(f"--- {name} network-peer.log tail ---\n{peer_tail}\n--- end peer ---")
         print(
             f"{'PASS' if passed else 'FAIL'} {name} ({seconds:.2f}s) "
             f"[{', '.join(tags)}] {detail}",

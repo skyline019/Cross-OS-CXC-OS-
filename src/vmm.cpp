@@ -80,23 +80,41 @@ bool complete_shootdown_range(uint64_t virtual_address, uint64_t pages) {
             break;
         }
     }
+    // Quiet ack wait + rare IPI resend. A pure 1e8 busy-wait under IF=0 can
+    // exceed the QEMU contract timeout when a TLB IPI is lost (CI
+    // capability-smp8-xapic). Hammering APIC MMIO every spin holds QEMU's BQL
+    // and starves AP handlers — so resend only between quiet rounds.
     bool acknowledged = sent;
     if (sent) {
         acknowledged = false;
-        for (uint32_t guard = 0; guard < 100000000; ++guard) {
-            bool complete = true;
+        constexpr uint32_t quiet_spins = 250000;
+        constexpr uint32_t resend_rounds = 8;
+        for (uint32_t round = 0; round < resend_rounds; ++round) {
+            for (uint32_t guard = 0; guard < quiet_spins; ++guard) {
+                bool complete = true;
+                for (uint32_t cpu_index = 1; cpu_index < cpu_count; ++cpu_index) {
+                    if (__atomic_load_n(&shootdown_ack[cpu_index],
+                                        __ATOMIC_ACQUIRE) != sequence) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete) {
+                    acknowledged = true;
+                    break;
+                }
+                cpu::relax();
+            }
+            if (acknowledged) {
+                break;
+            }
             for (uint32_t cpu_index = 1; cpu_index < cpu_count; ++cpu_index) {
                 if (__atomic_load_n(&shootdown_ack[cpu_index],
                                     __ATOMIC_ACQUIRE) != sequence) {
-                    complete = false;
-                    break;
+                    (void)smp::signal_processor(cpu_index,
+                                                cpu::tlb_shootdown_vector);
                 }
             }
-            if (complete) {
-                acknowledged = true;
-                break;
-            }
-            cpu::relax();
         }
     }
 

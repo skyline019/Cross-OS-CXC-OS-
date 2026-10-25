@@ -911,9 +911,18 @@ void run() {
                     scheduler::context_switches_for_cpu(
                         static_cast<uint32_t>(cpu_index)) >= 8,
                 "a CPU did not perform local preemption/sleep scheduling");
-        require(vmm::tlb_invalidations_for_cpu(
-                    static_cast<uint32_t>(cpu_index)) == expected_shootdowns,
-                "a CPU missed a runtime TLB invalidation");
+        if (vmm::tlb_invalidations_for_cpu(
+                static_cast<uint32_t>(cpu_index)) != expected_shootdowns) {
+            log::write("[debug] TLB invalidations cpu ");
+            log::decimal(cpu_index);
+            log::write(": ");
+            log::decimal(vmm::tlb_invalidations_for_cpu(
+                static_cast<uint32_t>(cpu_index)));
+            log::write(" expected ");
+            log::decimal(expected_shootdowns);
+            log::write('\n');
+            log::panic("a CPU missed a runtime TLB invalidation");
+        }
         if (cpu_index != 0) {
             require(smp::scheduler_control_ipi_count(
                         static_cast<uint32_t>(cpu_index)) == 2,
