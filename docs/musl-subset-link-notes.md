@@ -1,6 +1,6 @@
 # musl 子集链接实验笔记
 
-基线：Milestone 69 / v0.70.0  
+基线：Milestone 70 / v0.71.0  
 宿主探针：Ubuntu `musl` / `musl-dev` / `musl-tools` 1.2.4（WSL / Linux CI）。
 
 ## 1. 已验证（链接）
@@ -22,10 +22,11 @@
 - **M65–M67**：标注等价 `musl_subset`、LSTAR、用户栈种子。
 - **M68**：真 musl-gcc 静态 CRT（`USER_MUSL_CRT_PASS` / `LIBMCR.ELF`）。
 - **M69**：真 musl `malloc`/`free`（`USER_MUSL_MAL_PASS` / `LIBMMA.ELF`）。
+- **M70**：真 musl `printf`（`USER_MUSL_PRT_PASS` / `LIBMPR.ELF`）；brk 基址 `0x407000`。
 - **不宣称**：机上编译器（A2）、完整 POSIX、SYSRET 快路径。
 
 ## 4. 下一刀优先级
 
-1. 加深真 musl API（如 `printf`/`fopen`）并按 `ENOSYS` 清单补号；  
+1. 加深真 musl API（如 `fopen`）并按 `ENOSYS` 清单补号；  
 2. 可选：SYSCALL 返回改 SYSRET；  
 3. A2 机上工具链仍需独立合同。

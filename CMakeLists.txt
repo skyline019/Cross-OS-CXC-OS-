@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.70.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.71.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1022,6 +1022,36 @@ else()
     )
 endif()
 
+set(CXC_USER_MUSL_PRINTF_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_musl_printf.elf")
+set(CXC_USER_MUSL_PRINTF_PREBUILT
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_printf.elf")
+if(CXC_MUSL_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_MUSL_PRINTF_ELF}"
+        COMMAND "${CXC_MUSL_GCC}"
+            -static -fno-pie -no-pie -fno-stack-protector
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
+            -o "${CXC_USER_MUSL_PRINTF_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_printf_probe.c"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_printf_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
+        COMMENT "Building ESP LIBMPR.ELF via musl-gcc printf"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_MUSL_PRINTF_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_MUSL_PRINTF_PREBUILT}"
+            "${CXC_USER_MUSL_PRINTF_ELF}"
+        DEPENDS "${CXC_USER_MUSL_PRINTF_PREBUILT}"
+        COMMENT "Copying prebuilt musl printf ESP LIBMPR.ELF"
+        VERBATIM
+    )
+endif()
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -1050,6 +1080,7 @@ add_custom_command(
         --extra "LIBMAV  ELF" "${CXC_USER_MUSL_AUXV_ELF}"
         --extra "LIBMCR  ELF" "${CXC_USER_MUSL_CRT_ELF}"
         --extra "LIBMMA  ELF" "${CXC_USER_MUSL_MALLOC_ELF}"
+        --extra "LIBMPR  ELF" "${CXC_USER_MUSL_PRINTF_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -1075,6 +1106,7 @@ add_custom_command(
         "${CXC_USER_MUSL_AUXV_ELF}"
         "${CXC_USER_MUSL_CRT_ELF}"
         "${CXC_USER_MUSL_MALLOC_ELF}"
+        "${CXC_USER_MUSL_PRINTF_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -1098,9 +1130,11 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_musl_auxv_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_malloc_probe.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_printf_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_printf.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/lseek_probe.c"
@@ -1135,7 +1169,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/crt0.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/syscall.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/unistd.h"
-    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBMMA.ELF)"
+    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBMPR.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")

@@ -36,7 +36,8 @@ constexpr uint64_t arch_get_gs = 0x1004;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
-constexpr uint64_t default_brk_base = 0x0000000000405000ull;
+// Above musl-gcc stdio .data/.bss (M70 LIBMPR ends ~0x4067c8); stack at 0x418000.
+constexpr uint64_t default_brk_base = 0x0000000000407000ull;
 constexpr uint64_t brk_max_pages = 16;
 
 // Anonymous mmap bump region (above brk window).
@@ -85,6 +86,7 @@ struct Session {
     uint32_t saw_user_musl_auxv_pass;
     uint32_t saw_user_musl_crt_pass;
     uint32_t saw_user_musl_malloc_pass;
+    uint32_t saw_user_musl_printf_pass;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;
