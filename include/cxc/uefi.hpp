@@ -203,6 +203,45 @@ struct EFI_LOADED_IMAGE_PROTOCOL {
     void* unload;
 };
 
+struct EFI_FILE_PROTOCOL;
+
+using EFI_SIMPLE_FILE_SYSTEM_OPEN_VOLUME =
+    EFI_STATUS(EFIAPI*)(void*, EFI_FILE_PROTOCOL**);
+using EFI_FILE_OPEN = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, EFI_FILE_PROTOCOL**,
+                                          CHAR16*, uint64_t, uint64_t);
+using EFI_FILE_CLOSE = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*);
+using EFI_FILE_DELETE = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*);
+using EFI_FILE_READ = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, uint64_t*, void*);
+using EFI_FILE_WRITE = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, uint64_t*, void*);
+using EFI_FILE_GET_POSITION = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, uint64_t*);
+using EFI_FILE_SET_POSITION = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, uint64_t);
+using EFI_FILE_GET_INFO = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, EFI_GUID*,
+                                              uint64_t*, void*);
+using EFI_FILE_SET_INFO = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*, EFI_GUID*,
+                                              uint64_t, void*);
+using EFI_FILE_FLUSH = EFI_STATUS(EFIAPI*)(EFI_FILE_PROTOCOL*);
+
+struct EFI_SIMPLE_FILE_SYSTEM_PROTOCOL {
+    uint64_t revision;
+    EFI_SIMPLE_FILE_SYSTEM_OPEN_VOLUME open_volume;
+};
+
+struct EFI_FILE_PROTOCOL {
+    uint64_t revision;
+    EFI_FILE_OPEN open;
+    EFI_FILE_CLOSE close;
+    EFI_FILE_DELETE delete_file;
+    EFI_FILE_READ read;
+    EFI_FILE_WRITE write;
+    EFI_FILE_GET_POSITION get_position;
+    EFI_FILE_SET_POSITION set_position;
+    EFI_FILE_GET_INFO get_info;
+    EFI_FILE_SET_INFO set_info;
+    EFI_FILE_FLUSH flush;
+};
+
+constexpr uint64_t EFI_FILE_MODE_READ = 0x0000000000000001ull;
+
 namespace cxc::uefi {
 
 struct BootMemoryMap {
@@ -231,5 +270,11 @@ EFI_STATUS allocate_low_pages(EFI_SYSTEM_TABLE* system_table, uint64_t pages,
 EFI_STATUS exit_boot_services(EFI_HANDLE image_handle,
                               EFI_SYSTEM_TABLE* system_table,
                               BootMemoryMap& map);
+
+// Read a path from the LoadedImage device ESP into EfiLoaderData pages that
+// survive ExitBootServices. `physical`/`size` are filled on success.
+EFI_STATUS load_esp_file(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_table,
+                         const CHAR16* path, uint64_t max_bytes,
+                         uint64_t& physical, uint64_t& size);
 
 }  // namespace cxc::uefi

@@ -42,10 +42,28 @@ def directory_cluster(entries: list[bytes], cluster_size: int) -> bytes:
     return data.ljust(cluster_size, b"\0")
 
 
-def build_image(kernel: Path, output: Path) -> None:
+def chain_clusters(fat: list[int], first: int, count: int) -> None:
+    last = first + count - 1
+    for cluster in range(first, last + 1):
+        fat[cluster] = cluster + 1 if cluster != last else EOC
+
+
+def build_image(
+    kernel: Path,
+    output: Path,
+    extra_file: Path | None = None,
+    extra_name: bytes = b"EXT     ELF",
+) -> None:
     kernel_data = kernel.read_bytes()
     if not kernel_data:
         raise ValueError("kernel image is empty")
+    extra_data = b""
+    if extra_file is not None:
+        extra_data = extra_file.read_bytes()
+        if not extra_data:
+            raise ValueError("extra ESP file is empty")
+        if len(extra_name) != 11:
+            raise ValueError(f"extra name must be 8.3: {extra_name!r}")
 
     fat_sectors = 1
     for _ in range(32):
@@ -67,11 +85,18 @@ def build_image(kernel: Path, output: Path) -> None:
     if cluster_count + 2 >= 0x0FFFFFF5:
         raise ValueError("volume has too many FAT32 clusters")
 
-    file_cluster_count = max(1, math.ceil(len(kernel_data) / cluster_size))
-    first_file_cluster = 5
-    last_used_cluster = first_file_cluster + file_cluster_count - 1
+    kernel_cluster_count = max(1, math.ceil(len(kernel_data) / cluster_size))
+    first_kernel_cluster = 5
+    last_kernel_cluster = first_kernel_cluster + kernel_cluster_count - 1
+    first_extra_cluster = 0
+    extra_cluster_count = 0
+    last_used_cluster = last_kernel_cluster
+    if extra_data:
+        first_extra_cluster = last_kernel_cluster + 1
+        extra_cluster_count = max(1, math.ceil(len(extra_data) / cluster_size))
+        last_used_cluster = first_extra_cluster + extra_cluster_count - 1
     if last_used_cluster > cluster_count + 1:
-        raise ValueError("kernel does not fit in the ESP")
+        raise ValueError("ESP contents do not fit in the volume")
 
     fat = [0] * (fat_sectors * SECTOR_SIZE // 4)
     fat[0] = 0x0FFFFFF8
@@ -79,8 +104,9 @@ def build_image(kernel: Path, output: Path) -> None:
     fat[2] = EOC  # Root directory.
     fat[3] = EOC  # /EFI
     fat[4] = EOC  # /EFI/BOOT
-    for cluster in range(first_file_cluster, last_used_cluster + 1):
-        fat[cluster] = cluster + 1 if cluster != last_used_cluster else EOC
+    chain_clusters(fat, first_kernel_cluster, kernel_cluster_count)
+    if extra_data:
+        chain_clusters(fat, first_extra_cluster, extra_cluster_count)
     fat_data = struct.pack(f"<{len(fat)}I", *fat)
 
     boot_sector = bytearray(SECTOR_SIZE)
@@ -138,16 +164,18 @@ def build_image(kernel: Path, output: Path) -> None:
         ],
         cluster_size,
     )
-    boot = directory_cluster(
-        [
-            directory_entry(b".          ", 0x10, 4),
-            directory_entry(b"..         ", 0x10, 3),
-            directory_entry(
-                b"BOOTX64 EFI", 0x20, first_file_cluster, len(kernel_data)
-            ),
-        ],
-        cluster_size,
-    )
+    boot_entries = [
+        directory_entry(b".          ", 0x10, 4),
+        directory_entry(b"..         ", 0x10, 3),
+        directory_entry(
+            b"BOOTX64 EFI", 0x20, first_kernel_cluster, len(kernel_data)
+        ),
+    ]
+    if extra_data:
+        boot_entries.append(
+            directory_entry(extra_name, 0x20, first_extra_cluster, len(extra_data))
+        )
+    boot = directory_cluster(boot_entries, cluster_size)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("wb") as image:
@@ -160,6 +188,11 @@ def build_image(kernel: Path, output: Path) -> None:
         def write_cluster(cluster: int, data: bytes) -> None:
             sector = PARTITION_LBA + data_start_sector + (cluster - 2) * SECTORS_PER_CLUSTER
             write_sector(sector, data)
+
+        def write_file_clusters(first: int, count: int, payload: bytes) -> None:
+            for index in range(count):
+                chunk = payload[index * cluster_size : (index + 1) * cluster_size]
+                write_cluster(first + index, chunk.ljust(cluster_size, b"\0"))
 
         write_sector(0, mbr)
         write_sector(PARTITION_LBA, boot_sector)
@@ -174,13 +207,17 @@ def build_image(kernel: Path, output: Path) -> None:
         write_cluster(2, root)
         write_cluster(3, efi)
         write_cluster(4, boot)
-        for index in range(file_cluster_count):
-            chunk = kernel_data[index * cluster_size : (index + 1) * cluster_size]
-            write_cluster(first_file_cluster + index, chunk.ljust(cluster_size, b"\0"))
+        write_file_clusters(first_kernel_cluster, kernel_cluster_count, kernel_data)
+        if extra_data:
+            write_file_clusters(first_extra_cluster, extra_cluster_count, extra_data)
 
+    extra_note = ""
+    if extra_data:
+        extra_note = f", {len(extra_data)} byte {extra_name.decode(errors='replace').strip()}"
     print(
         f"created {output} ({len(kernel_data)} byte kernel, "
-        f"{file_cluster_count} file clusters, {fat_sectors} sectors/FAT)"
+        f"{kernel_cluster_count} kernel clusters{extra_note}, "
+        f"{fat_sectors} sectors/FAT)"
     )
 
 
@@ -188,8 +225,28 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--extra-file",
+        type=Path,
+        default=None,
+        help="Optional file placed next to BOOTX64.EFI (8.3 name via --extra-name)",
+    )
+    parser.add_argument(
+        "--extra-name",
+        type=str,
+        default="EXT     ELF",
+        help="Exactly 11 chars for the FAT 8.3 directory name (default EXT.ELF)",
+    )
     arguments = parser.parse_args()
-    build_image(arguments.kernel, arguments.output)
+    name = arguments.extra_name.encode("ascii")
+    if len(name) != 11:
+        raise SystemExit(f"--extra-name must be exactly 11 ASCII bytes, got {len(name)}")
+    build_image(
+        arguments.kernel,
+        arguments.output,
+        extra_file=arguments.extra_file,
+        extra_name=name,
+    )
     return 0
 
 

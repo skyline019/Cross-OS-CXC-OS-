@@ -20,6 +20,7 @@
 extern "C" void switch_stack_and_call(
     uint64_t stack_top, void (*entry)(const void*), const void* argument)
     __attribute__((noreturn));
+extern "C" void* memcpy(void*, const void*, size_t);
 
 namespace cxc {
 namespace {
@@ -30,6 +31,8 @@ uint64_t firmware_image_size = 0;
 uint64_t kernel_stack_physical = 0;
 uint64_t acpi_rsdp_address = 0;
 uint64_t smp_trampoline_physical = 0;
+uint64_t ext_elf_physical = 0;
+uint64_t ext_elf_size = 0;
 
 void require_mapping(uint64_t address, bool writable, bool executable,
                      const char* failure) {
@@ -733,6 +736,31 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(munmap.wrote_pass);
     log::write('\n');
 
+    user::ExtElfProbeResult ext{};
+    const auto* ext_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + ext_elf_physical);
+    if (ext_elf_physical == 0 || ext_elf_size == 0 ||
+        !user::run_ext_elf_probe(ext_image, static_cast<size_t>(ext_elf_size),
+                                 ext)) {
+        log::write("[debug] user ext ELF probe stage: ");
+        log::decimal(ext.stage);
+        log::write(", failure: ");
+        log::decimal(ext.failure);
+        log::write(", size: ");
+        log::decimal(ext_elf_size);
+        log::write('\n');
+        log::panic("M45 user ext ELF probe failed");
+    }
+    log::write("[ok] user ext ELF: loaded: ");
+    log::decimal(ext.loaded);
+    log::write(", enter: ");
+    log::decimal(ext.entered);
+    log::write(", exit: ");
+    log::decimal(ext.exited);
+    log::write(", pass: ");
+    log::decimal(ext.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -821,6 +849,25 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(pmm::extent_count());
     log::write('\n');
 
+    // EfiLoaderData pages are not covered by the ConventionalMemory direct
+    // map. Copy the ESP ELF into PMM pages while firmware identity maps remain
+    // (before higher-half drops the low half).
+    if (ext_elf_physical != 0 && ext_elf_size != 0) {
+        const uint64_t pages = (ext_elf_size + pmm::page_size - 1) / pmm::page_size;
+        const uint64_t dest = pmm::allocate_pages(pages);
+        if (dest == 0) {
+            log::panic("cannot allocate pages for ESP EXT.ELF");
+        }
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(dest)),
+               reinterpret_cast<const void*>(
+                   static_cast<uintptr_t>(ext_elf_physical)),
+               static_cast<size_t>(ext_elf_size));
+        ext_elf_physical = dest;
+        log::write("[ok] ESP EXT.ELF relocated to PMM pages: ");
+        log::decimal(pages);
+        log::write('\n');
+    }
+
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
         log::panic("cannot allocate kernel stack");
@@ -836,7 +883,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.45.0 - fourth midfield (M35-M44)");
+    cxc::log::line("CXC/OS 0.46.0 - ESP static ELF (A2/M45)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -859,6 +906,23 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
         cxc::log::line("[boot] cannot allocate sub-1MiB SMP trampoline pages");
         return status;
     }
+
+    // Path is UTF-16: \EFI\BOOT\EXT.ELF (M45 non-embedded user image).
+    static CHAR16 ext_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'E',  u'X', u'T', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, ext_elf_path,
+                                      64 * 1024, cxc::ext_elf_physical,
+                                      cxc::ext_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP EXT.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP EXT.ELF bytes: ");
+    cxc::log::decimal(cxc::ext_elf_size);
+    cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(
         image_handle, system_table, cxc::boot_memory_map);

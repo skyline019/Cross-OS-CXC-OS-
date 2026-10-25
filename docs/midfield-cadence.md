@@ -10,7 +10,7 @@
 | 第四次 | M35–M44 | [`midpoint-assessment-4.md`](midpoint-assessment-4.md) |
 | 第五次（计划） | M45–M54 | `midpoint-assessment-5.md`（届时新建） |
 
-当前基线：**M44 / v0.45.0**（第四次中场；A1 用户态最小闭环）。下一正式中场目标：**M54**。
+当前基线：**M45 / v0.46.0**（ESP 外部静态 ELF）。下一正式中场目标：**M54**。
 
 ## 中场窗口必做
 

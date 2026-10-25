@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace cxc::user {
@@ -83,6 +84,18 @@ struct MunmapProbeResult {
     uint64_t exit_code;
 };
 
+struct ExtElfProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -107,5 +120,10 @@ const DirProbeResult& dir_probe_result();
 // BSP-only: mmap + munmap round-trip via embedded ELF (M43).
 bool run_munmap_probe(MunmapProbeResult& result);
 const MunmapProbeResult& munmap_probe_result();
+
+// BSP-only: load a non-embedded static ELF stashed from the ESP (M45).
+bool run_ext_elf_probe(const uint8_t* image, size_t image_size,
+                       ExtElfProbeResult& result);
+const ExtElfProbeResult& ext_elf_probe_result();
 
 }  // namespace cxc::user

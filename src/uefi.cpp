@@ -86,6 +86,117 @@ EFI_STATUS find_acpi_rsdp(EFI_SYSTEM_TABLE* system_table, uint64_t& rsdp) {
     return EFI_UNSUPPORTED;
 }
 
+EFI_STATUS load_esp_file(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_table,
+                         const CHAR16* path, uint64_t max_bytes,
+                         uint64_t& physical, uint64_t& size) {
+    physical = 0;
+    size = 0;
+    if (system_table == nullptr || system_table->boot_services == nullptr ||
+        system_table->boot_services->handle_protocol == nullptr ||
+        system_table->boot_services->allocate_pages == nullptr ||
+        path == nullptr || max_bytes == 0) {
+        return EFI_INVALID_PARAMETER;
+    }
+    EFI_BOOT_SERVICES* boot = system_table->boot_services;
+
+    EFI_GUID loaded_image_guid = {
+        0x5b1b31a1, 0x9562, 0x11d2,
+        {0x8e, 0x3f, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b},
+    };
+    EFI_LOADED_IMAGE_PROTOCOL* loaded = nullptr;
+    EFI_STATUS status = boot->handle_protocol(
+        image_handle, &loaded_image_guid, reinterpret_cast<void**>(&loaded));
+    if (efi_error(status) || loaded == nullptr ||
+        loaded->device_handle == nullptr) {
+        return efi_error(status) ? status : EFI_UNSUPPORTED;
+    }
+
+    EFI_GUID file_system_guid = {
+        0x964e5b22, 0x6459, 0x11d2,
+        {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b},
+    };
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* volume_proto = nullptr;
+    status = boot->handle_protocol(loaded->device_handle, &file_system_guid,
+                                   reinterpret_cast<void**>(&volume_proto));
+    if (efi_error(status) || volume_proto == nullptr ||
+        volume_proto->open_volume == nullptr) {
+        return efi_error(status) ? status : EFI_UNSUPPORTED;
+    }
+
+    EFI_FILE_PROTOCOL* root = nullptr;
+    status = volume_proto->open_volume(volume_proto, &root);
+    if (efi_error(status) || root == nullptr || root->open == nullptr ||
+        root->close == nullptr) {
+        return efi_error(status) ? status : EFI_UNSUPPORTED;
+    }
+
+    EFI_FILE_PROTOCOL* file = nullptr;
+    status = root->open(root, &file, const_cast<CHAR16*>(path),
+                        EFI_FILE_MODE_READ, 0);
+    if (efi_error(status) || file == nullptr) {
+        root->close(root);
+        return efi_error(status) ? status : EFI_LOAD_ERROR;
+    }
+    if (file->set_position == nullptr || file->get_position == nullptr ||
+        file->read == nullptr || file->close == nullptr) {
+        file->close(file);
+        root->close(root);
+        return EFI_UNSUPPORTED;
+    }
+
+    status = file->set_position(file, 0xffffffffffffffffull);
+    if (efi_error(status)) {
+        file->close(file);
+        root->close(root);
+        return status;
+    }
+    uint64_t file_size = 0;
+    status = file->get_position(file, &file_size);
+    if (efi_error(status) || file_size == 0 || file_size > max_bytes) {
+        file->close(file);
+        root->close(root);
+        return efi_error(status) ? status : EFI_LOAD_ERROR;
+    }
+    status = file->set_position(file, 0);
+    if (efi_error(status)) {
+        file->close(file);
+        root->close(root);
+        return status;
+    }
+
+    const uint64_t pages = (file_size + 4095) / 4096;
+    EFI_PHYSICAL_ADDRESS address = 0;
+    status = boot->allocate_pages(AllocateAnyPages, EfiLoaderData, pages,
+                                  &address);
+    if (efi_error(status)) {
+        file->close(file);
+        root->close(root);
+        return status;
+    }
+
+    uint64_t remaining = file_size;
+    uint8_t* cursor = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(address));
+    while (remaining != 0) {
+        uint64_t chunk = remaining;
+        status = file->read(file, &chunk, cursor);
+        if (efi_error(status) || chunk == 0 || chunk > remaining) {
+            // Leave the pages allocated so a failure still leaves a clear
+            // signature in the memory map; caller will not ExitBootServices.
+            file->close(file);
+            root->close(root);
+            return efi_error(status) ? status : EFI_LOAD_ERROR;
+        }
+        cursor += chunk;
+        remaining -= chunk;
+    }
+
+    file->close(file);
+    root->close(root);
+    physical = address;
+    size = file_size;
+    return EFI_SUCCESS;
+}
+
 EFI_STATUS allocate_low_pages(EFI_SYSTEM_TABLE* system_table, uint64_t pages,
                               uint64_t max_address, uint64_t& physical) {
     physical = 0;

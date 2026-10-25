@@ -23,6 +23,7 @@ constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
 constexpr char expected_mmap_pass[] = "USER_MMAP_PASS\n";
 constexpr char expected_dir_pass[] = "USER_DIR_PASS\n";
 constexpr char expected_munmap_pass[] = "USER_MUNMAP_PASS\n";
+constexpr char expected_ext_elf_pass[] = "USER_EXT_ELF_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -139,6 +140,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_munmap_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_ext_elf_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_ext_elf_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_ext_elf_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_ext_elf_pass = 1;
         }
     }
 }

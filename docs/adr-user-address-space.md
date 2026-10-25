@@ -107,7 +107,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M42** | `mkdir` + 一层嵌套路径 | 串口 `USER_DIR_PASS` + `user dir: mkdir: 1, …` |
 | **M43** | `munmap` 释放 anonymous 映射 | 串口 `USER_MUNMAP_PASS` + `user munmap: …` |
 | **M44** | 第四次中场（M35–M44） | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；CI/合同统一；v0.45.0 |
-| **M45+** | 外部静态 ELF / libc 缺口 syscall | 见第四次中场 §6 |
+| **M45** | ESP 外部静态 ELF（非嵌入 PE） | 串口 `USER_EXT_ELF_PASS` + `user ext ELF: …` |
+| **M46+** | 交叉工具链 / libc 缺口 syscall | 见第四次中场 §6 |
 
 ## 6. 参考
 

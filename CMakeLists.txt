@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.45.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.46.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -276,15 +276,32 @@ target_link_options(cxc_kernel PRIVATE
     -Wl,--exclude-all-symbols
 )
 
+set(CXC_USER_EXT_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_ext.elf")
+add_custom_command(
+    OUTPUT "${CXC_USER_EXT_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
+        --output "${CXC_USER_EXT_ELF}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
+    COMMENT "Building ESP-resident static user EXT ELF"
+    VERBATIM
+)
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         --kernel "$<TARGET_FILE:cxc_kernel>"
+        --extra-file "${CXC_USER_EXT_ELF}"
+        --extra-name "EXT     ELF"
         --output "${CXC_ESP_IMAGE}"
-    DEPENDS cxc_kernel "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
-    COMMENT "Creating FAT32 UEFI system partition"
+    DEPENDS
+        cxc_kernel
+        "${CXC_USER_EXT_ELF}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
+    COMMENT "Creating FAT32 UEFI system partition (+ EXT.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")
