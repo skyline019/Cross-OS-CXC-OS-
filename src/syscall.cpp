@@ -38,6 +38,7 @@ constexpr char expected_libc_malloc_pass[] = "USER_LIBC_MALLOC_PASS\n";
 constexpr char expected_libc_errno_pass[] = "USER_LIBC_ERRNO_PASS\n";
 constexpr char expected_libc_string_pass[] = "USER_LIBC_STRING_PASS\n";
 constexpr char expected_libc_writev_pass[] = "USER_LIBC_WRITEV_PASS\n";
+constexpr char expected_libc_crt_pass[] = "USER_LIBC_CRT_PASS\n";
 constexpr int64_t mmap_error = -1;
 constexpr int64_t errno_inval = -22;
 constexpr int64_t errno_fault = -14;
@@ -341,6 +342,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_libc_writev_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_libc_crt_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_libc_crt_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_libc_crt_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_libc_crt_pass = 1;
         }
     }
 }

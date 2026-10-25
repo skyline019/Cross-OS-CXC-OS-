@@ -11,7 +11,7 @@
 | 第五次 | M45–M54 | [`midpoint-assessment-5.md`](midpoint-assessment-5.md) |
 | 第六次（计划） | M55–M64 | `midpoint-assessment-6.md`（届时新建） |
 
-当前基线：**M59 / v0.60.0**（mini-libc writev）。下一正式中场目标：**M64**。
+当前基线：**M60 / v0.61.0**（mini-libc crt0）。下一正式中场目标：**M64**。
 
 ## 中场窗口必做
 

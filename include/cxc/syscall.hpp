@@ -72,6 +72,7 @@ struct Session {
     uint32_t saw_user_libc_errno_pass;
     uint32_t saw_user_libc_string_pass;
     uint32_t saw_user_libc_writev_pass;
+    uint32_t saw_user_libc_crt_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
