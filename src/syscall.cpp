@@ -56,6 +56,7 @@ constexpr char expected_musl_unlink_pass[] = "USER_MUSL_UNL_PASS\n";
 constexpr char expected_musl_blk_pass[] = "USER_MUSL_BLK_PASS\n";
 constexpr char expected_musl_dir_pass[] = "USER_MUSL_DIR_PASS\n";
 constexpr char expected_disk_exec_pass[] = "DISK_EXEC_PASS\n";
+constexpr char expected_disk_argv_pass[] = "DISK_ARGV_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -564,6 +565,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_disk_exec_pass = 1;
         }
     }
+    if (length == sizeof(expected_disk_argv_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_disk_argv_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_disk_argv_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_disk_argv_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -760,8 +774,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.81.0");
-    fill_uts_field(local.version, "M80");
+    fill_uts_field(local.release, "0.82.0");
+    fill_uts_field(local.version, "M81");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -1122,9 +1136,36 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
         frame->rax = static_cast<uint64_t>(-1);
         return frame;
     }
-    // argv/envp ignored for M80 (NULL from stub); path is enough.
+
+    // M81: copy argv from the old address space before exec_replace tears it
+    // down. envp stays empty (NULL terminator only) for this milestone.
+    char arg_storage[user::max_exec_argc][user::max_exec_arg_bytes]{};
+    const char* arg_ptrs[user::max_exec_argc]{};
+    uint32_t argc = 0;
+    const uint64_t user_argv = frame->rsi;
+    if (user_argv != 0) {
+        for (; argc < user::max_exec_argc; ++argc) {
+            const uint64_t slot = user_argv + argc * sizeof(uint64_t);
+            if (!user_pages_ok(slot, sizeof(uint64_t), false)) {
+                frame->rax = static_cast<uint64_t>(errno_fault);
+                return frame;
+            }
+            uint64_t ptr = 0;
+            memcpy(&ptr, reinterpret_cast<const void*>(slot), sizeof(ptr));
+            if (ptr == 0) {
+                break;
+            }
+            if (!copy_user_path(ptr, arg_storage[argc],
+                                user::max_exec_arg_bytes)) {
+                frame->rax = static_cast<uint64_t>(errno_fault);
+                return frame;
+            }
+            arg_ptrs[argc] = arg_storage[argc];
+        }
+    }
+
     uint32_t failure = 0;
-    if (!user::exec_replace(path, frame, failure)) {
+    if (!user::exec_replace(path, frame, failure, arg_ptrs, argc)) {
         frame->rax = static_cast<uint64_t>(-failure);
         return frame;
     }

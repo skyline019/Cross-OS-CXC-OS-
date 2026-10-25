@@ -1,0 +1,5 @@
+feat: M81 execve argv + 32KiB CXCFS larger disk ELF (v0.82.0)
+
+Forward execve argv into the replacement process image; raise CXCFS file
+extent to 32 KiB and load a ~20 KiB payload that checks argc/argv before
+DISK_ARGV_PASS. Keeps M80 DISK_EXEC_PASS; lasting A2-shaped argv path.

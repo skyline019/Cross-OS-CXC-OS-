@@ -143,7 +143,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M78** | musl-gcc fopen `disk/` + remount 校验 | 串口 `USER_MUSL_BLK_PASS`；ESP `LIBBLK.ELF` |
 | **M79** | `disk/` mkdir/opendir；64×16KiB；4MiB 盘 | 串口 `USER_MUSL_DIR_PASS`；ESP `LIBDIR.ELF` |
 | **M80** | `execve` + 从 `disk/run.elf` 换映像 | 串口 `DISK_EXEC_PASS`；ESP `EXSTB`/`DEXEC` |
-| **M81+** | 更大 ELF/argv / POSIX → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M81** | `execve` argv + 32 KiB CXCFS + 更大盘上 ELF | 串口 `DISK_ARGV_PASS`；argc/argv 边缘 |
+| **M82+** | 更多 POSIX → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

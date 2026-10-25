@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 80 / v0.81.0：disk/ execve**（A2 主靶；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 81 / v0.82.0：disk/ execve argv**（A2 主靶；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -106,6 +106,7 @@ CXC_OS_SELF_TEST_PASS
 | musl disk (M78) | musl-gcc `fopen("disk/…")` 写回读；缺文件 ENOENT；remount 后内核复核；`USER_MUSL_BLK_PASS` |
 | disk dirs (M79) | `disk/bld` mkdir/opendir；12KiB 文件；64×16KiB/4MiB 盘；`USER_MUSL_DIR_PASS` |
 | disk exec (M80) | 写 `disk/run.elf`；stub `execve`；换地址空间；`DISK_EXEC_PASS` |
+| disk exec argv (M81) | `execve` 传 argv；32 KiB CXCFS；~20 KiB ELF；`DISK_ARGV_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -292,4 +293,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **块设备大跨步**；边缘纳入测试契约；下一正式中场约 **M84**）。须保持 M13–M75 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **更大 POSIX / 机上工具链**；边缘纳入测试契约；下一正式中场约 **M84**）。须保持 M13–M81 回归证据。

@@ -20,7 +20,7 @@ constexpr uint32_t inode_table_bytes = max_files * inode_bytes;
 constexpr uint32_t inode_sectors =
     (inode_table_bytes + 511) / 512;  // 4
 constexpr uint32_t data_lba = inode_lba + inode_sectors;  // 7
-constexpr uint32_t version = 2;  // M79 layout: 64 files × 16 KiB
+constexpr uint32_t version = 3;  // M81 layout: 64 files × 32 KiB
 
 struct Superblock {
     char magic[8];

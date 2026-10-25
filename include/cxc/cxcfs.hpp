@@ -11,9 +11,9 @@ namespace cxc::cxcfs {
 // `disk/` prefix at the fs façade (e.g. disk/persist.txt).
 // LBA0–1 reserved (M75 magic / M76 R/W). Superblock at LBA 2.
 
-// M79: raised toward A2 toolchain payloads (still one-level dirs).
+// M79→M81: 64 files; M81 raises extent to 32 KiB for larger disk ELFs.
 constexpr uint32_t max_files = 64;
-constexpr uint32_t max_file_bytes = 16384;  // 32 sectors
+constexpr uint32_t max_file_bytes = 32768;  // 64 sectors
 constexpr uint32_t sectors_per_file = max_file_bytes / 512;
 
 struct MountResult {

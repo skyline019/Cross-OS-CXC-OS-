@@ -41,11 +41,12 @@ constexpr uint64_t at_egid = 14;
 constexpr uint64_t at_secure = 23;
 constexpr uint64_t at_random = 25;
 
-// M67: seed argc/argv/envp/auxv at the top of the user stack page so musl
+// M67/M81: seed argc/argv/envp/auxv at the top of the user stack page so musl
 // `_start` (`mov %rsp,%rdi`) can read a Linux-shaped process image.
 uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
                                uint64_t entry, uint64_t phdr_va,
-                               uint64_t phent, uint64_t phnum) {
+                               uint64_t phent, uint64_t phnum,
+                               const char* const* argv, uint32_t argc) {
     memset(page, 0, pmm::page_size);
     uint8_t* cursor = page + pmm::page_size;
 
@@ -55,8 +56,26 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
         return page_va + static_cast<uint64_t>(cursor - page);
     };
 
-    static const char arg0[] = "musl";
-    const uint64_t arg0_va = push_bytes(arg0, sizeof(arg0));
+    static const char default_arg0[] = "musl";
+    const char* local_argv[1] = {default_arg0};
+    if (argv == nullptr || argc == 0) {
+        argv = local_argv;
+        argc = 1;
+    }
+    if (argc > max_exec_argc) {
+        argc = max_exec_argc;
+    }
+
+    uint64_t arg_vas[max_exec_argc]{};
+    for (uint32_t index = 0; index < argc; ++index) {
+        const char* text = argv[index] != nullptr ? argv[index] : "";
+        size_t length = 0;
+        while (length < max_exec_arg_bytes - 1 && text[length] != '\0') {
+            ++length;
+        }
+        arg_vas[index] = push_bytes(text, length + 1);
+    }
+
     uint8_t random[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
     const uint64_t random_va = push_bytes(random, sizeof(random));
 
@@ -97,10 +116,12 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
     push_u64(phdr_va);
     push_u64(at_phdr);
 
-    push_u64(0);         // envp terminator
-    push_u64(0);         // argv terminator
-    push_u64(arg0_va);   // argv[0]
-    push_u64(1);         // argc
+    push_u64(0);  // envp terminator
+    push_u64(0);  // argv terminator
+    for (uint32_t index = argc; index > 0; --index) {
+        push_u64(arg_vas[index - 1]);
+    }
+    push_u64(argc);
 
     return page_va + static_cast<uint64_t>(cursor - page);
 }
@@ -196,7 +217,7 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
         vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
         stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum);
+        loaded.at_phent, loaded.at_phnum, nullptr, 0);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
     syscall::set_user_root(user_root);
 
@@ -1342,7 +1363,7 @@ const MuslBlkdirProbeResult& musl_blkdir_probe_result() {
 }
 
 bool exec_replace(const char* path, cpu::InterruptFrame* frame,
-                  uint32_t& failure) {
+                  uint32_t& failure, const char* const* argv, uint32_t argc) {
     failure = 0;
     if (path == nullptr || frame == nullptr) {
         failure = 1;
@@ -1408,7 +1429,7 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
         vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
         stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum);
+        loaded.at_phent, loaded.at_phnum, argv, argc);
 
     if (!vmm::destroy_user_address_space(old_root)) {
         (void)vmm::destroy_user_address_space(new_root);
@@ -1490,9 +1511,12 @@ bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
     result.exited = 1;
     result.exit_code = syscall::session().exit_code;
     result.wrote_pass = syscall::session().saw_disk_exec_pass;
+    result.argv_pass = syscall::session().saw_disk_argv_pass;
+    result.elf_bytes = static_cast<uint32_t>(payload_size);
     result.stage = 4;
 
-    if (result.exit_code != 0 || result.wrote_pass == 0) {
+    if (result.exit_code != 0 || result.wrote_pass == 0 ||
+        result.argv_pass == 0) {
         syscall::clear_session();
         result.failure = 8;
         return false;

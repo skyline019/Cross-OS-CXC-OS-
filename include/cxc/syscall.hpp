@@ -99,6 +99,7 @@ struct Session {
     uint32_t saw_user_musl_blk_pass;
     uint32_t saw_user_musl_dir_pass;
     uint32_t saw_disk_exec_pass;
+    uint32_t saw_disk_argv_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t brk_grows;

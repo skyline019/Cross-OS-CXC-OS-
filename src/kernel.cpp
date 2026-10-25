@@ -1528,8 +1528,8 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::panic("M79 user musl blkdir probe failed");
     }
 
-    // Capacity: 12 KiB file on CXCFS (above prior 8 KiB ceiling).
-    static uint8_t big_pattern[12 * 1024];
+    // Capacity: 24 KiB file on CXCFS (M81 32 KiB ceiling).
+    static uint8_t big_pattern[24 * 1024];
     for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
         big_pattern[i] = static_cast<uint8_t>(i ^ 0x3c);
     }
@@ -1537,35 +1537,35 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         fs::open_path("disk/big.bin", fs::o_wronly | fs::o_creat | fs::o_trunc,
                       0644);
     if (big_fd < 0) {
-        log::panic("M79 disk/big.bin create failed");
+        log::panic("M81 disk/big.bin create failed");
     }
     if (fs::write_fd(static_cast<uint32_t>(big_fd), big_pattern,
                      sizeof(big_pattern)) !=
         static_cast<int64_t>(sizeof(big_pattern))) {
-        log::panic("M79 disk/big.bin write failed");
+        log::panic("M81 disk/big.bin write failed");
     }
     if (fs::close_fd(static_cast<uint32_t>(big_fd)) != 0) {
-        log::panic("M79 disk/big.bin close failed");
+        log::panic("M81 disk/big.bin close failed");
     }
     cxcfs::MountResult after_big{};
     if (!cxcfs::remount(after_big)) {
-        log::panic("M79 remount after big.bin failed");
+        log::panic("M81 remount after big.bin failed");
     }
     const int64_t big_in = fs::open_path("disk/big.bin", fs::o_rdonly, 0);
     if (big_in < 0) {
-        log::panic("M79 disk/big.bin reopen failed");
+        log::panic("M81 disk/big.bin reopen failed");
     }
-    static uint8_t big_read[12 * 1024];
+    static uint8_t big_read[24 * 1024];
     memset(big_read, 0, sizeof(big_read));
     if (fs::read_fd(static_cast<uint32_t>(big_in), big_read,
                     sizeof(big_read)) !=
         static_cast<int64_t>(sizeof(big_pattern))) {
-        log::panic("M79 disk/big.bin read size failed");
+        log::panic("M81 disk/big.bin read size failed");
     }
     (void)fs::close_fd(static_cast<uint32_t>(big_in));
     for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
         if (big_read[i] != big_pattern[i]) {
-            log::panic("M79 disk/big.bin content mismatch");
+            log::panic("M81 disk/big.bin content mismatch");
         }
     }
 
@@ -1603,8 +1603,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(disk_exec.wrote_pass);
         log::write(", exit: ");
         log::decimal(disk_exec.exit_code);
+        log::write(", argv: ");
+        log::decimal(disk_exec.argv_pass);
+        log::write(", elf_bytes: ");
+        log::decimal(disk_exec.elf_bytes);
         log::write('\n');
-        log::panic("M80 disk execve probe failed");
+        log::panic("M81 disk execve argv probe failed");
     }
     log::write("[ok] disk-exec: pass: ");
     log::decimal(disk_exec.wrote_pass);
@@ -1614,6 +1618,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(disk_exec.remount_ok);
     log::write('\n');
     log::line("DISK_EXEC_PASS");
+    log::write("[ok] disk-argv: pass: ");
+    log::decimal(disk_exec.argv_pass);
+    log::write(" argc: 3 elf_bytes: ");
+    log::decimal(disk_exec.elf_bytes);
+    log::write('\n');
+    log::line("DISK_ARGV_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -1842,7 +1852,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.81.0 - disk/ execve (A2/M80)");
+    cxc::log::line("CXC/OS 0.82.0 - disk/ execve argv (A2/M81)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

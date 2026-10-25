@@ -15,7 +15,7 @@
 | 第七次 | M65–M74 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md) |
 | 第八次（计划） | 约 M75–M84（大跨步编号可疏） | `midpoint-assessment-8.md`（届时新建） |
 
-当前基线：**M80 / v0.81.0**（`disk/` execve；A2 主线）。下一正式中场目标：**约 M84**。
+当前基线：**M81 / v0.82.0**（`disk/` execve argv；A2 主线）。下一正式中场目标：**约 M84**。
 
 ## 中场窗口必做
 
