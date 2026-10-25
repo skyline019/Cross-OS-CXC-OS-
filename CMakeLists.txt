@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.55.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.56.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -541,6 +541,39 @@ else()
     )
 endif()
 
+set(CXC_USER_LIBC_SBRK_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_libc_sbrk.elf")
+if(CXC_USER_CROSS_USES_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_LIBC_SBRK_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+            -o "${CXC_USER_LIBC_SBRK_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_sbrk_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_sbrk_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/unistd.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+        COMMENT "Building ESP LIBBRK.ELF via host gcc + mini_libc"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_LIBC_SBRK_ELF}"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_sbrk_elf.py"
+            --output "${CXC_USER_LIBC_SBRK_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_sbrk_elf.py"
+        COMMENT "Building ESP LIBBRK.ELF via handmade fallback"
+        VERBATIM
+    )
+endif()
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -556,6 +589,7 @@ add_custom_command(
         --extra "PRCTL   ELF" "${CXC_USER_ARCH_PRCTL_ELF}"
         --extra "LIBC    ELF" "${CXC_USER_LIBC_ELF}"
         --extra "LIBFS   ELF" "${CXC_USER_LIBC_FS_ELF}"
+        --extra "LIBBRK  ELF" "${CXC_USER_LIBC_SBRK_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -568,6 +602,7 @@ add_custom_command(
         "${CXC_USER_ARCH_PRCTL_ELF}"
         "${CXC_USER_LIBC_ELF}"
         "${CXC_USER_LIBC_FS_ELF}"
+        "${CXC_USER_LIBC_SBRK_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -578,6 +613,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_arch_prctl_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_fs_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_sbrk_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/lseek_probe.c"
@@ -587,10 +623,11 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/arch_prctl_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_fs_probe.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_sbrk_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/unistd.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/fcntl.h"
-    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBFS.ELF)"
+    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBBRK.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")

@@ -6,8 +6,11 @@ enum {
     SYS_WRITE = 1,
     SYS_OPEN = 2,
     SYS_CLOSE = 3,
+    SYS_BRK = 12,
     SYS_EXIT = 60,
 };
+
+enum { PAGE_SIZE = 4096 };
 
 static long syscall3(long number, long a, long b, long c) {
     register long rax __asm__("rax") = number;
@@ -35,6 +38,30 @@ int open(const char* path, int flags, mode_t mode) {
 
 int close(int fd) {
     return (int)syscall3(SYS_CLOSE, fd, 0, 0);
+}
+
+void* brk(void* addr) {
+    return (void*)syscall3(SYS_BRK, (long)addr, 0, 0);
+}
+
+void* sbrk(intptr_t increment) {
+    void* const cur = brk(0);
+    if (increment == 0) {
+        return cur;
+    }
+    if (increment < 0) {
+        /* Thin slice: no shrink. */
+        return (void*)(intptr_t)-1;
+    }
+    const uintptr_t want =
+        (uintptr_t)cur + (uintptr_t)increment;
+    const uintptr_t aligned =
+        (want + (PAGE_SIZE - 1)) & ~(uintptr_t)(PAGE_SIZE - 1);
+    void* const got = brk((void*)aligned);
+    if ((uintptr_t)got < aligned) {
+        return (void*)(intptr_t)-1;
+    }
+    return cur;
 }
 
 void _exit(int status) {

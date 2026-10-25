@@ -190,6 +190,20 @@ struct LibcFsProbeResult {
     uint64_t image_size;
 };
 
+struct LibcSbrkProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t grows;
+    uint32_t pages;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -259,5 +273,10 @@ const LibcProbeResult& libc_probe_result();
 bool run_libc_fs_probe(const uint8_t* image, size_t image_size,
                        LibcFsProbeResult& result);
 const LibcFsProbeResult& libc_fs_probe_result();
+
+// BSP-only: mini-libc brk/sbrk via ESP LIBBRK.ELF (M55).
+bool run_libc_sbrk_probe(const uint8_t* image, size_t image_size,
+                         LibcSbrkProbeResult& result);
+const LibcSbrkProbeResult& libc_sbrk_probe_result();
 
 }  // namespace cxc::user

@@ -66,6 +66,7 @@ struct Session {
     uint32_t saw_user_arch_prctl_pass;
     uint32_t saw_user_libc_pass;
     uint32_t saw_user_libc_fs_pass;
+    uint32_t saw_user_libc_sbrk_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
