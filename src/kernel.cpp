@@ -71,6 +71,8 @@ uint64_t musl_write_elf_physical = 0;
 uint64_t musl_write_elf_size = 0;
 uint64_t musl_auxv_elf_physical = 0;
 uint64_t musl_auxv_elf_size = 0;
+uint64_t musl_crt_elf_physical = 0;
+uint64_t musl_crt_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1203,6 +1205,24 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(musl_auxv.wrote_pass);
     log::write('\n');
 
+    user::MuslCrtProbeResult musl_crt{};
+    const auto* musl_crt_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + musl_crt_elf_physical);
+    if (musl_crt_elf_physical == 0 || musl_crt_elf_size == 0 ||
+        !user::run_musl_crt_probe(musl_crt_image,
+                                  static_cast<size_t>(musl_crt_elf_size),
+                                  musl_crt)) {
+        log::write("[debug] user musl crt probe stage: ");
+        log::decimal(musl_crt.stage);
+        log::write(", failure: ");
+        log::decimal(musl_crt.failure);
+        log::write('\n');
+        log::panic("M68 user musl crt probe failed");
+    }
+    log::write("[ok] user musl crt: pass: ");
+    log::decimal(musl_crt.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1374,6 +1394,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBMAV.ELF")) {
         log::panic("cannot relocate ESP LIBMAV.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(musl_crt_elf_physical, musl_crt_elf_size,
+                                 "ESP LIBMCR.ELF")) {
+        log::panic("cannot relocate ESP LIBMCR.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1390,7 +1414,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.68.0 - user stack auxv (A2/M67)");
+    cxc::log::line("CXC/OS 0.69.0 - musl-gcc static CRT (A2/M68)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1733,6 +1757,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBMAV.ELF bytes: ");
     cxc::log::decimal(cxc::musl_auxv_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 musl_crt_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'M', u'C',  u'R', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, musl_crt_elf_path, 64 * 1024,
+        cxc::musl_crt_elf_physical, cxc::musl_crt_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBMCR.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBMCR.ELF bytes: ");
+    cxc::log::decimal(cxc::musl_crt_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

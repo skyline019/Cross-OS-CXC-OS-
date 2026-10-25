@@ -7,6 +7,9 @@ namespace cxc::elf {
 
 struct LoadResult {
     uint64_t entry;
+    uint64_t at_phdr;
+    uint64_t at_phent;
+    uint64_t at_phnum;
     uint32_t segments;
     uint32_t pages;
     uint32_t failure;

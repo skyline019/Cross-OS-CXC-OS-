@@ -186,6 +186,27 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
     }
     result.segments = load_count;
     result.entry = header.entry;
+    result.at_phent = header.phentsize;
+    result.at_phnum = header.phnum;
+    result.at_phdr = 0;
+    // AT_PHDR = VA of program headers inside a mapped PT_LOAD (M68 musl CRT).
+    for (uint16_t index = 0; index < header.phnum; ++index) {
+        Phdr ph{};
+        const size_t offset =
+            static_cast<size_t>(header.phoff) +
+            static_cast<size_t>(index) * header.phentsize;
+        if (!read_object(image, image_size, offset, &ph, sizeof(ph))) {
+            break;
+        }
+        if (ph.type != pt_load || ph.memsz == 0) {
+            continue;
+        }
+        if (ph.offset <= header.phoff &&
+            header.phoff + ph_bytes <= ph.offset + ph.filesz) {
+            result.at_phdr = ph.vaddr + (header.phoff - ph.offset);
+            break;
+        }
+    }
     return true;
 }
 

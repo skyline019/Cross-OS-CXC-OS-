@@ -43,7 +43,8 @@ constexpr uint64_t at_random = 25;
 // M67: seed argc/argv/envp/auxv at the top of the user stack page so musl
 // `_start` (`mov %rsp,%rdi`) can read a Linux-shaped process image.
 uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
-                               uint64_t entry) {
+                               uint64_t entry, uint64_t phdr_va,
+                               uint64_t phent, uint64_t phnum) {
     memset(page, 0, pmm::page_size);
     uint8_t* cursor = page + pmm::page_size;
 
@@ -88,11 +89,11 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
     push_u64(at_base);
     push_u64(pmm::page_size);
     push_u64(at_pagesz);
-    push_u64(0);
+    push_u64(phnum);
     push_u64(at_phnum);
-    push_u64(56);
+    push_u64(phent);
     push_u64(at_phent);
-    push_u64(0);
+    push_u64(phdr_va);
     push_u64(at_phdr);
 
     push_u64(0);         // envp terminator
@@ -129,6 +130,7 @@ LibcTidProbeResult libc_tid_probe{};
 LibcPidProbeResult libc_pid_probe{};
 MuslWriteProbeResult musl_write_probe{};
 MuslAuxvProbeResult musl_auxv_probe{};
+MuslCrtProbeResult musl_crt_probe{};
 /* Above brk window (0x405000 + 16 pages) and ELF .data at 0x402000. */
 constexpr uint64_t user_stack_base = 0x0000000000418000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -183,8 +185,9 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
     const uint64_t kernel_root = vmm::kernel_address_space();
     auto* const stack_page = reinterpret_cast<uint8_t*>(
         vmm::direct_map_base + stack_physical);
-    const uint64_t user_rsp =
-        seed_linux_user_stack(stack_page, user_stack_base, loaded.entry);
+    const uint64_t user_rsp = seed_linux_user_stack(
+        stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
+        loaded.at_phent, loaded.at_phnum);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
 
     const uint64_t irq_flags = cpu::read_flags();
@@ -1064,6 +1067,38 @@ bool run_musl_auxv_probe(const uint8_t* image, size_t image_size,
 
 const MuslAuxvProbeResult& musl_auxv_probe_result() {
     return musl_auxv_probe;
+}
+
+bool run_musl_crt_probe(const uint8_t* image, size_t image_size,
+                        MuslCrtProbeResult& result) {
+    result = MuslCrtProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_musl_crt_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    musl_crt_probe = result;
+    return true;
+}
+
+const MuslCrtProbeResult& musl_crt_probe_result() {
+    return musl_crt_probe;
 }
 
 }  // namespace cxc::user

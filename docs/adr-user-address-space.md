@@ -130,7 +130,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M65** | musl 子集 `write`（标注等价） | 串口 `USER_MUSL_PASS`；ESP `LIBMSL.ELF`；[`musl-subset-link-notes.md`](musl-subset-link-notes.md) |
 | **M66** | SYSCALL/LSTAR（GDT STAR 序） | musl_subset 改 `syscall`；`int 0x80` 合同不回退 |
 | **M67** | 用户栈 argc/argv/auxv + `exit_group` | 串口 `USER_MUSL_AUXV_PASS`；ESP `LIBMAV.ELF` |
-| **M68+** | 真 musl CRT / PHDR-in-LOAD | 见 link notes §2–§4 |
+| **M68** | musl-gcc 静态 CRT + PHDR-in-LOAD | 串口 `USER_MUSL_CRT_PASS`；ESP `LIBMCR.ELF` |
+| **M69+** | 按 `__init_libc` 失败清单补号 | 见 link notes §2–§4 |
 
 ## 6. 参考
 

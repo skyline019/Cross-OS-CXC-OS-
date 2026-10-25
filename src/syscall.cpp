@@ -44,6 +44,7 @@ constexpr char expected_libc_tid_pass[] = "USER_LIBC_TID_PASS\n";
 constexpr char expected_libc_pid_pass[] = "USER_LIBC_PID_PASS\n";
 constexpr char expected_musl_write_pass[] = "USER_MUSL_PASS\n";
 constexpr char expected_musl_auxv_pass[] = "USER_MUSL_AUXV_PASS\n";
+constexpr char expected_musl_crt_pass[] = "USER_MUSL_CRT_PASS\n";
 constexpr int64_t mmap_error = -1;
 constexpr uint64_t probe_tid = 1;
 constexpr uint64_t probe_pid = 1;
@@ -430,6 +431,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_musl_auxv_pass = 1;
         }
     }
+    if (length == sizeof(expected_musl_crt_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_musl_crt_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_musl_crt_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_musl_crt_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -626,8 +640,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.68.0");
-    fill_uts_field(local.version, "M67");
+    fill_uts_field(local.release, "0.69.0");
+    fill_uts_field(local.version, "M68");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,

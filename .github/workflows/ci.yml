@@ -30,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
-            cmake python3 qemu-system-x86 ovmf
+            cmake python3 qemu-system-x86 ovmf musl-tools
 
       - name: Configure Debug (-Werror)
         run: >-
@@ -76,7 +76,7 @@ jobs:
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
-      - name: Assert serial PASS, M13–M67 markers, peer_ok=1
+      - name: Assert serial PASS, M13–M68 markers, peer_ok=1
         run: |
           set -euo pipefail
           test -f build/uefi/qemu-test/serial.log
@@ -178,6 +178,9 @@ jobs:
             build/uefi/qemu-test/serial.log
           grep -F 'USER_MUSL_AUXV_PASS' build/uefi/qemu-test/serial.log
           grep -F 'user musl auxv: pass: 1' \
+            build/uefi/qemu-test/serial.log
+          grep -F 'USER_MUSL_CRT_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'user musl crt: pass: 1' \
             build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
