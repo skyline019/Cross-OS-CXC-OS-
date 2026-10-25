@@ -141,7 +141,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M76** | 持久 virtio-blk 扇区读写 + 回读边缘 | 串口 `VIRTIO_BLK_RW_PASS`；设备保持在线供 A2 根 |
 | **M77** | CXCFS on virtio-blk；`disk/` 路径；remount 持久 | 串口 `CXCFS_PASS`；syscall 可见 |
 | **M78** | musl-gcc fopen `disk/` + remount 校验 | 串口 `USER_MUSL_BLK_PASS`；ESP `LIBBLK.ELF` |
-| **M79+** | 扩大容量 / mkdir 树 / 逼近机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M79** | `disk/` mkdir/opendir；64×16KiB；4MiB 盘 | 串口 `USER_MUSL_DIR_PASS`；ESP `LIBDIR.ELF` |
+| **M80+** | exec from disk / 更大 POSIX → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

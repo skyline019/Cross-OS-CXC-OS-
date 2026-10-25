@@ -24,6 +24,7 @@ extern "C" void switch_stack_and_call(
     uint64_t stack_top, void (*entry)(const void*), const void* argument)
     __attribute__((noreturn));
 extern "C" void* memcpy(void*, const void*, size_t);
+extern "C" void* memset(void*, int, size_t);
 
 namespace cxc {
 namespace {
@@ -88,6 +89,8 @@ uint64_t musl_unlink_elf_physical = 0;
 uint64_t musl_unlink_elf_size = 0;
 uint64_t musl_blkfs_elf_physical = 0;
 uint64_t musl_blkfs_elf_size = 0;
+uint64_t musl_blkdir_elf_physical = 0;
+uint64_t musl_blkdir_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1502,6 +1505,76 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("USER_MUSL_BLK_PASS");
 
+    user::MuslBlkdirProbeResult musl_blkdir{};
+    const auto* musl_blkdir_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + musl_blkdir_elf_physical);
+    if (musl_blkdir_elf_physical == 0 || musl_blkdir_elf_size == 0 ||
+        !user::run_musl_blkdir_probe(
+            musl_blkdir_image, static_cast<size_t>(musl_blkdir_elf_size),
+            musl_blkdir)) {
+        log::write("[debug] user musl blkdir probe stage: ");
+        log::decimal(musl_blkdir.stage);
+        log::write(", failure: ");
+        log::decimal(musl_blkdir.failure);
+        log::write(", exit: ");
+        log::decimal(musl_blkdir.exit_code);
+        log::write(", pass: ");
+        log::decimal(musl_blkdir.wrote_pass);
+        log::write('\n');
+        log::panic("M79 user musl blkdir probe failed");
+    }
+
+    // Capacity: 12 KiB file on CXCFS (above prior 8 KiB ceiling).
+    static uint8_t big_pattern[12 * 1024];
+    for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
+        big_pattern[i] = static_cast<uint8_t>(i ^ 0x3c);
+    }
+    const int64_t big_fd =
+        fs::open_path("disk/big.bin", fs::o_wronly | fs::o_creat | fs::o_trunc,
+                      0644);
+    if (big_fd < 0) {
+        log::panic("M79 disk/big.bin create failed");
+    }
+    if (fs::write_fd(static_cast<uint32_t>(big_fd), big_pattern,
+                     sizeof(big_pattern)) !=
+        static_cast<int64_t>(sizeof(big_pattern))) {
+        log::panic("M79 disk/big.bin write failed");
+    }
+    if (fs::close_fd(static_cast<uint32_t>(big_fd)) != 0) {
+        log::panic("M79 disk/big.bin close failed");
+    }
+    cxcfs::MountResult after_big{};
+    if (!cxcfs::remount(after_big)) {
+        log::panic("M79 remount after big.bin failed");
+    }
+    const int64_t big_in = fs::open_path("disk/big.bin", fs::o_rdonly, 0);
+    if (big_in < 0) {
+        log::panic("M79 disk/big.bin reopen failed");
+    }
+    static uint8_t big_read[12 * 1024];
+    memset(big_read, 0, sizeof(big_read));
+    if (fs::read_fd(static_cast<uint32_t>(big_in), big_read,
+                    sizeof(big_read)) !=
+        static_cast<int64_t>(sizeof(big_pattern))) {
+        log::panic("M79 disk/big.bin read size failed");
+    }
+    (void)fs::close_fd(static_cast<uint32_t>(big_in));
+    for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
+        if (big_read[i] != big_pattern[i]) {
+            log::panic("M79 disk/big.bin content mismatch");
+        }
+    }
+
+    log::write("[ok] user musl blkdir: pass: ");
+    log::decimal(musl_blkdir.wrote_pass);
+    log::write(" big: 1");
+    log::write(" files_cap: ");
+    log::decimal(cxcfs::max_files);
+    log::write(" file_bytes: ");
+    log::decimal(cxcfs::max_file_bytes);
+    log::write('\n');
+    log::line("USER_MUSL_DIR_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1701,6 +1774,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBBLK.ELF")) {
         log::panic("cannot relocate ESP LIBBLK.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(musl_blkdir_elf_physical, musl_blkdir_elf_size,
+                                 "ESP LIBDIR.ELF")) {
+        log::panic("cannot relocate ESP LIBDIR.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1717,7 +1794,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.79.0 - musl disk/ blkfs (A2/M78)");
+    cxc::log::line("CXC/OS 0.80.0 - disk/ dirs + capacity (A2/M79)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2172,6 +2249,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBBLK.ELF bytes: ");
     cxc::log::decimal(cxc::musl_blkfs_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 musl_blkdir_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'D', u'I',  u'R', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, musl_blkdir_elf_path, 64 * 1024,
+        cxc::musl_blkdir_elf_physical, cxc::musl_blkdir_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBDIR.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBDIR.ELF bytes: ");
+    cxc::log::decimal(cxc::musl_blkdir_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

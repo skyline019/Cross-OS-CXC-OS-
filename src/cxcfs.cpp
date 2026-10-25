@@ -20,7 +20,7 @@ constexpr uint32_t inode_table_bytes = max_files * inode_bytes;
 constexpr uint32_t inode_sectors =
     (inode_table_bytes + 511) / 512;  // 4
 constexpr uint32_t data_lba = inode_lba + inode_sectors;  // 7
-constexpr uint32_t version = 1;
+constexpr uint32_t version = 2;  // M79 layout: 64 files × 16 KiB
 
 struct Superblock {
     char magic[8];
@@ -87,25 +87,35 @@ bool write_lbas(uint64_t lba, const void* buffer, size_t sectors) {
 }
 
 bool load_inode_table() {
-    uint8_t raw[inode_table_bytes]{};
-    if (!read_lbas(inode_lba, raw, inode_sectors)) {
-        return false;
-    }
-    for (uint32_t index = 0; index < max_files; ++index) {
-        DiskInode disk{};
-        memcpy(&disk, raw + index * inode_bytes, sizeof(disk));
-        CacheInode& node = inodes[index];
-        node = CacheInode{};
-        if (disk.used == 0) {
-            continue;
+    // Sector-at-a-time to avoid MinGW ___chkstk_ms on large stack frames.
+    uint8_t sector[512]{};
+    for (uint32_t sector_index = 0; sector_index < inode_sectors;
+         ++sector_index) {
+        if (!read_lbas(inode_lba + sector_index, sector, 1)) {
+            return false;
         }
-        node.used = true;
-        node.is_dir = disk.is_dir != 0;
-        node.size = disk.size;
-        node.data_lba = disk.data_lba;
-        memcpy(node.name, disk.name, sizeof(node.name));
-        if (node.size > max_file_bytes) {
-            node.size = max_file_bytes;
+        const uint32_t base = sector_index * (512 / inode_bytes);
+        const uint32_t count = 512 / inode_bytes;
+        for (uint32_t slot = 0; slot < count; ++slot) {
+            const uint32_t index = base + slot;
+            if (index >= max_files) {
+                break;
+            }
+            DiskInode disk{};
+            memcpy(&disk, sector + slot * inode_bytes, sizeof(disk));
+            CacheInode& node = inodes[index];
+            node = CacheInode{};
+            if (disk.used == 0) {
+                continue;
+            }
+            node.used = true;
+            node.is_dir = disk.is_dir != 0;
+            node.size = disk.size;
+            node.data_lba = disk.data_lba;
+            memcpy(node.name, disk.name, sizeof(node.name));
+            if (node.size > max_file_bytes) {
+                node.size = max_file_bytes;
+            }
         }
     }
     return true;
@@ -191,9 +201,12 @@ bool format_volume() {
     if (!write_superblock()) {
         return false;
     }
-    uint8_t zero[inode_table_bytes]{};
-    if (!write_lbas(inode_lba, zero, inode_sectors)) {
-        return false;
+    uint8_t zero_sector[512]{};
+    for (uint32_t sector_index = 0; sector_index < inode_sectors;
+         ++sector_index) {
+        if (!write_lbas(inode_lba + sector_index, zero_sector, 1)) {
+            return false;
+        }
     }
     for (uint32_t index = 0; index < max_files; ++index) {
         inodes[index] = CacheInode{};
@@ -291,7 +304,13 @@ bool mount(MountResult& result) {
     result.stage = 2;
 
     Superblock super{};
-    if (!read_superblock(super)) {
+    const bool have_super = read_superblock(super);
+    const bool layout_ok =
+        have_super && super.inode_count == max_files &&
+        super.data_lba == data_lba &&
+        super.sectors_per_file == sectors_per_file &&
+        super.max_file_bytes == max_file_bytes;
+    if (!layout_ok) {
         if (!format_volume()) {
             result.failure = 3;
             last_result = result;
@@ -299,12 +318,6 @@ bool mount(MountResult& result) {
         }
         result.formatted = 1;
     } else {
-        if (super.inode_count != max_files || super.data_lba != data_lba ||
-            super.sectors_per_file != sectors_per_file) {
-            result.failure = 4;
-            last_result = result;
-            return false;
-        }
         if (!load_inode_table()) {
             result.failure = 5;
             last_result = result;

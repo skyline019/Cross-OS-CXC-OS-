@@ -569,4 +569,20 @@ bool run_musl_blkfs_probe(const uint8_t* image, size_t image_size,
                           MuslBlkfsProbeResult& result);
 const MuslBlkfsProbeResult& musl_blkfs_probe_result();
 
+struct MuslBlkdirProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
+bool run_musl_blkdir_probe(const uint8_t* image, size_t image_size,
+                           MuslBlkdirProbeResult& result);
+const MuslBlkdirProbeResult& musl_blkdir_probe_result();
+
 }  // namespace cxc::user

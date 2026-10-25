@@ -131,6 +131,8 @@ CXCFS_PASS = "CXCFS_PASS"
 CXCFS_PROBE_SUCCESS = "cxcfs: pass: 1"
 USER_MUSL_BLK_PASS = "USER_MUSL_BLK_PASS"
 USER_MUSL_BLK_PROBE_SUCCESS = "user musl blkfs: pass: 1"
+USER_MUSL_DIR_PASS = "USER_MUSL_DIR_PASS"
+USER_MUSL_DIR_PROBE_SUCCESS = "user musl blkdir: pass: 1"
 
 
 @dataclass
@@ -568,6 +570,9 @@ class ContractRunner:
         assert b"disk_user: 1" in serial
         assert USER_MUSL_BLK_PASS.encode() in serial
         assert USER_MUSL_BLK_PROBE_SUCCESS.encode() in serial
+        assert USER_MUSL_DIR_PASS.encode() in serial
+        assert USER_MUSL_DIR_PROBE_SUCCESS.encode() in serial
+        assert b"big: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -576,7 +581,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M78 blk/CXCFS/musl disk"
+            "kernel PASS + net + M75–M79 durable disk tree"
         )
 
     def negative_evidence(self, work: Path) -> str:
