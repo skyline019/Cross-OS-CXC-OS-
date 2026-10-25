@@ -64,6 +64,18 @@ struct UserAsProbeResult {
 bool run_user_as_probe(UserAsProbeResult& result);
 const UserAsProbeResult& user_as_probe_result();
 
+struct Ring3ProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t enter;
+    uint32_t int80;
+    uint32_t cpl;
+    uint32_t rsp0;
+};
+
+bool run_ring3_probe(Ring3ProbeResult& result);
+const Ring3ProbeResult& ring3_probe_result();
+
 bool activate_runtime();
 MappingInfo inspect_mapping(uint64_t virtual_address);
 bool is_mapped(uint64_t virtual_address);

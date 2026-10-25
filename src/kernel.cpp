@@ -603,6 +603,25 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::hex(vmm::user_probe_base);
     log::write('\n');
 
+    vmm::Ring3ProbeResult ring3{};
+    if (!vmm::run_ring3_probe(ring3)) {
+        log::write("[debug] ring3 probe stage: ");
+        log::decimal(ring3.stage);
+        log::write(", failure: ");
+        log::decimal(ring3.failure);
+        log::write('\n');
+        log::panic("M37 ring-3 probe failed");
+    }
+    log::write("[ok] ring3 probe: enter: ");
+    log::decimal(ring3.enter);
+    log::write(", int80: ");
+    log::decimal(ring3.int80);
+    log::write(", cpl: ");
+    log::decimal(ring3.cpl);
+    log::write(", rsp0: ");
+    log::decimal(ring3.rsp0);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -706,7 +725,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.37.0 - BSP user CR3 probe (A1/M36)");
+    cxc::log::line("CXC/OS 0.38.0 - ring-3 TSS/int80 probe (A2/M37)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

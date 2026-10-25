@@ -51,6 +51,11 @@ volatile uint64_t invalidation_count[smp::maximum_processors];
 volatile uint64_t completed_shootdowns = 0;
 volatile bool shootdown_fault = false;
 UserAsProbeResult probe_result{};
+Ring3ProbeResult ring3_result{};
+constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
+constexpr uint64_t privilege_stack_pages = 8;
+constexpr uint64_t ring3_user_stack_base = user_probe_base + 0x1000;
+constexpr uint64_t ring3_magic = 0xc0de0001ull;
 
 void invalidate_page(uint64_t virtual_address);
 
@@ -1045,6 +1050,136 @@ bool run_user_as_probe(UserAsProbeResult& result) {
 
 const UserAsProbeResult& user_as_probe_result() {
     return probe_result;
+}
+
+extern "C" void ring3_enter_iretq(uint64_t user_rip, uint64_t user_rsp);
+extern "C" void ring3_after_user();
+
+bool run_ring3_probe(Ring3ProbeResult& result) {
+    result = Ring3ProbeResult{};
+    result.stage = 1;
+    if (smp::current_cpu_index() != 0 || root_physical == 0) {
+        result.failure = 1;
+        return false;
+    }
+
+    const uint64_t stack_physical =
+        pmm::allocate_pages(privilege_stack_pages);
+    if (stack_physical == 0 ||
+        !map_kernel_stack(stack_physical, privilege_stack_base,
+                          privilege_stack_pages)) {
+        if (stack_physical != 0) {
+            pmm::free_pages(stack_physical, privilege_stack_pages);
+        }
+        result.failure = 2;
+        return false;
+    }
+    const uint64_t stack_top =
+        privilege_stack_base + privilege_stack_pages * pmm::page_size;
+    if (!cpu::initialize_tss(stack_top)) {
+        result.failure = 3;
+        return false;
+    }
+    result.rsp0 = 1;
+    result.stage = 2;
+
+    const uint64_t user_root = create_user_address_space();
+    if (user_root == 0) {
+        result.failure = 4;
+        return false;
+    }
+
+    const uint64_t code_physical = pmm::allocate_pages(1);
+    const uint64_t stack_user_physical = pmm::allocate_pages(1);
+    if (code_physical == 0 || stack_user_physical == 0) {
+        if (code_physical != 0) {
+            pmm::free_pages(code_physical, 1);
+        }
+        if (stack_user_physical != 0) {
+            pmm::free_pages(stack_user_physical, 1);
+        }
+        (void)destroy_user_address_space(user_root);
+        result.failure = 5;
+        return false;
+    }
+
+    // mov $0xc0de0001, %eax; int $0x80; ud2
+    auto* const code = static_cast<uint8_t*>(
+        pmm::physical_to_virtual(code_physical));
+    code[0] = 0xb8;
+    code[1] = static_cast<uint8_t>(ring3_magic & 0xff);
+    code[2] = static_cast<uint8_t>((ring3_magic >> 8) & 0xff);
+    code[3] = static_cast<uint8_t>((ring3_magic >> 16) & 0xff);
+    code[4] = static_cast<uint8_t>((ring3_magic >> 24) & 0xff);
+    code[5] = 0xcd;
+    code[6] = 0x80;
+    code[7] = 0x0f;
+    code[8] = 0x0b;
+
+    if (!map_user_page(user_root, user_probe_base, code_physical,
+                       user_map_executable) ||
+        !map_user_page(user_root, ring3_user_stack_base, stack_user_physical,
+                       user_map_writable)) {
+        pmm::free_pages(code_physical, 1);
+        pmm::free_pages(stack_user_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 6;
+        return false;
+    }
+    result.stage = 3;
+
+    const uint64_t kernel_root = root_physical;
+    const uint64_t user_rsp =
+        ring3_user_stack_base + pmm::page_size;
+    cpu::ring3_clear_int80_seen();
+    cpu::ring3_set_resume(reinterpret_cast<uint64_t>(&ring3_after_user));
+
+    const uint64_t irq_flags = cpu::read_flags();
+    cpu::disable_interrupts();
+    if (!activate_address_space(user_root) || read_cr3() != user_root) {
+        cpu::restore_interrupts(irq_flags);
+        pmm::free_pages(code_physical, 1);
+        pmm::free_pages(stack_user_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 7;
+        return false;
+    }
+
+    ring3_enter_iretq(user_probe_base, user_rsp);
+    result.enter = 1;
+
+    if (!activate_address_space(kernel_root) || read_cr3() != kernel_root) {
+        cpu::restore_interrupts(irq_flags);
+        result.failure = 8;
+        return false;
+    }
+    cpu::restore_interrupts(irq_flags);
+    result.stage = 4;
+
+    if (!cpu::ring3_int80_was_seen()) {
+        pmm::free_pages(code_physical, 1);
+        pmm::free_pages(stack_user_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 9;
+        return false;
+    }
+    result.int80 = 1;
+    result.cpl = 3;
+    result.stage = 5;
+
+    pmm::free_pages(code_physical, 1);
+    pmm::free_pages(stack_user_physical, 1);
+    if (!destroy_user_address_space(user_root)) {
+        result.failure = 10;
+        return false;
+    }
+    result.stage = 6;
+    ring3_result = result;
+    return true;
+}
+
+const Ring3ProbeResult& ring3_probe_result() {
+    return ring3_result;
 }
 
 uint64_t page_table_pages() {

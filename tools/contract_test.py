@@ -52,6 +52,7 @@ USER_AS_PROBE_SUCCESS = (
     "user AS probe: cr3_switch: 1, write: 1, read: 1, user_bit: 1, "
     "va: 0x0000000000400000"
 )
+RING3_PROBE_SUCCESS = "ring3 probe: enter: 1, int80: 1, cpl: 3, rsp0: 1"
 
 
 @dataclass
@@ -410,6 +411,7 @@ class ContractRunner:
         assert IRQ_RX_DEMUX_SUCCESS.encode() in serial
         assert IRQ_RX_SUBMIT_SUCCESS.encode() in serial
         assert USER_AS_PROBE_SUCCESS.encode() in serial
+        assert RING3_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -418,7 +420,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + M13 peer + M14/M26/M29–M33 IRQ + M25–M28 TX + M36 AS"
+            "kernel PASS + net contracts + M36 AS + M37 ring3"
         )
 
     def negative_evidence(self, work: Path) -> str:

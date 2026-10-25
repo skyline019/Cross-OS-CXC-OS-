@@ -34,16 +34,24 @@ static_assert(sizeof(IdtEntry) == 16);
 alignas(16) IdtEntry idt[256];
 volatile bool breakpoint_seen = false;
 
-void set_gate(uint8_t vector, uint64_t handler) {
+void set_gate(uint8_t vector, uint64_t handler, uint8_t type_attributes) {
     IdtEntry& entry = idt[vector];
     entry.offset_low = static_cast<uint16_t>(handler & 0xffff);
     entry.selector = 0x08;
     entry.ist = 0;
-    entry.type_attributes = 0x8e;  // Present, ring 0, 64-bit interrupt gate.
+    entry.type_attributes = type_attributes;
     entry.offset_middle = static_cast<uint16_t>((handler >> 16) & 0xffff);
     entry.offset_high = static_cast<uint32_t>((handler >> 32) & 0xffffffff);
     entry.reserved = 0;
 }
+
+void set_gate(uint8_t vector, uint64_t handler) {
+    set_gate(vector, handler, 0x8e);  // Present, DPL0, 64-bit interrupt gate.
+}
+
+volatile bool ring3_int80_seen = false;
+uint64_t ring3_resume_rip = 0;
+constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
 }  // namespace
 
@@ -53,13 +61,28 @@ extern "C" void isr48();
 extern "C" void isr49();
 extern "C" void isr50();
 extern "C" void isr51();
+extern "C" void isr128();
 extern "C" void isr255();
+extern "C" uint64_t ring3_saved_kernel_rsp;
 
 extern "C" cxc::cpu::InterruptFrame* interrupt_dispatch(
     cxc::cpu::InterruptFrame* frame) {
     if (frame->vector == 3) {
         breakpoint_seen = true;
         cxc::log::line("[exception] breakpoint reached ring-0 handler");
+        return frame;
+    }
+    if (frame->vector == cxc::cpu::ring3_syscall_vector) {
+        if ((frame->cs & 3u) != 3u || frame->rax != ring3_probe_magic ||
+            ring3_resume_rip == 0 || ring3_saved_kernel_rsp == 0) {
+            cxc::log::panic("unexpected int 0x80");
+        }
+        ring3_int80_seen = true;
+        frame->rip = ring3_resume_rip;
+        frame->cs = cxc::cpu::kernel_cs;
+        frame->rflags = 0x2;
+        frame->rsp = ring3_saved_kernel_rsp;
+        frame->ss = cxc::cpu::kernel_ss;
         return frame;
     }
     if (frame->vector == cxc::cpu::timer_vector) {
@@ -139,6 +162,9 @@ void initialize_idt() {
              reinterpret_cast<uint64_t>(&isr50));
     set_gate(static_cast<uint8_t>(tlb_shootdown_vector),
              reinterpret_cast<uint64_t>(&isr51));
+    // M37: DPL3 interrupt gate so CPL3 may execute `int 0x80`.
+    set_gate(static_cast<uint8_t>(ring3_syscall_vector),
+             reinterpret_cast<uint64_t>(&isr128), 0xee);
     set_gate(static_cast<uint8_t>(spurious_vector),
              reinterpret_cast<uint64_t>(&isr255));
     load_idt();
@@ -152,6 +178,18 @@ void load_idt() {
 
 bool breakpoint_was_seen() {
     return breakpoint_seen;
+}
+
+bool ring3_int80_was_seen() {
+    return ring3_int80_seen;
+}
+
+void ring3_clear_int80_seen() {
+    ring3_int80_seen = false;
+}
+
+void ring3_set_resume(uint64_t rip) {
+    ring3_resume_rip = rip;
 }
 
 }  // namespace cxc::cpu

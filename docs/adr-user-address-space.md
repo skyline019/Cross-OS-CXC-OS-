@@ -99,7 +99,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 |---|---|---|
 | **M35（本 ADR）** | 本文 Accepted | 文档入树；版本锚点；自检不回退 |
 | **M36** | BSP `create` + map 一页 + CR3 往返 + 读写探针 | 串口 `user AS probe: cr3_switch: 1, …`；`SELF_TEST_PASS` |
-| M37+ | ring-3 选择子/TSS、ELF、syscall v0 | `USER_PROGRAM_PASS` |
+| **M37** | ring-3 选择子 + TSS.RSP0 + `int 0x80` 往返 | 串口 `ring3 probe: enter: 1, int80: 1, cpl: 3, rsp0: 1` |
+| M38+ | 静态 ELF + syscall v0（通向 A2） | `USER_PROGRAM_PASS` |
 
 ## 6. 参考
 

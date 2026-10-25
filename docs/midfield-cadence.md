@@ -9,7 +9,7 @@
 | 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
 | 第四次（计划） | M35–M44 | `midpoint-assessment-4.md`（届时新建） |
 
-当前基线：**M36 / v0.37.0**（A1：BSP 用户 CR3 探针）。下一正式中场目标：**M44**。
+当前基线：**M37 / v0.38.0**（A2 脊柱：ring-3 TSS/int80）。下一正式中场目标：**M44**。
 
 ## 中场窗口必做
 

@@ -12,7 +12,14 @@ constexpr uint64_t ipi_vector = 48;
 constexpr uint64_t scheduler_ipi_vector = 49;
 constexpr uint64_t scheduler_wakeup_vector = 50;
 constexpr uint64_t tlb_shootdown_vector = 51;
+constexpr uint64_t ring3_syscall_vector = 0x80;  // M37: int 0x80 from CPL3
 constexpr uint64_t spurious_vector = 255;
+
+constexpr uint16_t kernel_cs = 0x08;
+constexpr uint16_t kernel_ss = 0x10;
+constexpr uint16_t user_cs = 0x1b;
+constexpr uint16_t user_ss = 0x23;
+constexpr uint16_t tss_selector = 0x28;
 
 // Matches interrupts.S. In 64-bit mode the CPU saves/restores SS:RSP
 // unconditionally, even without a privilege transition. The stub supplies
@@ -44,10 +51,16 @@ struct InterruptFrame {
 static_assert(sizeof(InterruptFrame) == 176);
 
 void initialize_gdt();
+// BSP-only: install TSS descriptor, load TR, set RSP0 (M37). Safe to call
+// once after higher-half GDT is active. APs must not call this.
+bool initialize_tss(uint64_t privilege_stack_top);
 void initialize_idt();
 // Loads the already initialized shared IDT on an application processor.
 void load_idt();
 bool breakpoint_was_seen();
+bool ring3_int80_was_seen();
+void ring3_clear_int80_seen();
+void ring3_set_resume(uint64_t rip);
 
 inline uint64_t read_flags() {
     uint64_t flags;

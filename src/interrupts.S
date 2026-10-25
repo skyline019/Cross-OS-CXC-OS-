@@ -75,6 +75,7 @@ isr\number:
     ISR_NO_ERROR 49
     ISR_NO_ERROR 50
     ISR_NO_ERROR 51
+    ISR_NO_ERROR 128
     ISR_NO_ERROR 255
 
 isr_common:

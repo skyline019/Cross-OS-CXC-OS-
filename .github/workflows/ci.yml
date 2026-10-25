@@ -76,7 +76,7 @@ jobs:
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
-      - name: Assert serial PASS, M13–M36 markers, peer_ok=1
+      - name: Assert serial PASS, M13–M37 markers, peer_ok=1
         run: |
           set -euo pipefail
           test -f build/uefi/qemu-test/serial.log
@@ -98,6 +98,8 @@ jobs:
           grep -F 'UDP IRQ RX submit: 266' \
             build/uefi/qemu-test/serial.log
           grep -F 'user AS probe: cr3_switch: 1, write: 1, read: 1, user_bit: 1, va: 0x0000000000400000' \
+            build/uefi/qemu-test/serial.log
+          grep -F 'ring3 probe: enter: 1, int80: 1, cpl: 3, rsp0: 1' \
             build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
