@@ -131,6 +131,7 @@ LibcPidProbeResult libc_pid_probe{};
 MuslWriteProbeResult musl_write_probe{};
 MuslAuxvProbeResult musl_auxv_probe{};
 MuslCrtProbeResult musl_crt_probe{};
+MuslMallocProbeResult musl_malloc_probe{};
 /* Above brk window (0x405000 + 16 pages) and ELF .data at 0x402000. */
 constexpr uint64_t user_stack_base = 0x0000000000418000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1099,6 +1100,38 @@ bool run_musl_crt_probe(const uint8_t* image, size_t image_size,
 
 const MuslCrtProbeResult& musl_crt_probe_result() {
     return musl_crt_probe;
+}
+
+bool run_musl_malloc_probe(const uint8_t* image, size_t image_size,
+                           MuslMallocProbeResult& result) {
+    result = MuslMallocProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_musl_malloc_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    musl_malloc_probe = result;
+    return true;
+}
+
+const MuslMallocProbeResult& musl_malloc_probe_result() {
+    return musl_malloc_probe;
 }
 
 }  // namespace cxc::user

@@ -12,7 +12,7 @@
 | 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
 | 第七次（计划） | M65–M74 | `midpoint-assessment-7.md`（届时新建） |
 
-当前基线：**M68 / v0.69.0**（musl-gcc 静态 CRT；第六次中场之后）。下一正式中场目标：**M74**。
+当前基线：**M69 / v0.70.0**（musl-gcc malloc；第六次中场之后）。下一正式中场目标：**M74**。
 
 ## 中场窗口必做
 
