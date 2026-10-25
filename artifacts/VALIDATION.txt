@@ -1,0 +1,139 @@
+CXC/OS Milestone 13 / v0.14.0 — Linux + QEMU/OVMF 实测记录
+==========================================================
+日期：2026-10-25
+宿主实测环境：Linux；QEMU 10.0.13；系统 OVMF；Python 3.13.16。
+构建：x86_64-w64-mingw32 GCC/G++ 14-win32、GNU binutils 2.44、CMake 3.31.6、Unix Makefiles。
+严格构建：-Wall -Wextra -Wpedantic -Werror，CXC_WARNINGS_AS_ERRORS=ON。
+正式 artifacts 为本 Milestone 13 Release EFI 与包含该 EFI 的 MBR+FAT32 ESP。
+PE32+ EFI 无 DLL imports；正常 run_qemu.py --check 必须同时取得内核 PASS 和完整协议 peer_ok=1。
+
+全新构建与冻结
+--------------
+- 最终 Debug：在全新 build/final-m13-debug 中 configure、严格编译、链接，并以默认 4 vCPU/128 MiB 启动通过。
+- 最终 Release：在全新 build/final-m13-release 中 configure、严格编译和链接通过。
+- Debug EFI：615341 字节；Release EFI：224727 字节；ESP：68157440 字节（65 MiB）。
+- 最终 Release 标准 qemu-test 通过；构建后 artifacts EFI/ESP 与 final-m13-release 对应文件 cmp 完全一致。
+- 最终 Release 顺序完成下面 12 个成功用例；每次都同时有 serial PASS、完整协议 peer_ok=1 和强制 UDP/ring 统计。
+- 早期开发日志不取作证据：其中曾有七项 rx_buffers 数组被 descriptor 7 越界访问的问题。正式结果只取包含八项指针数组、ring 页显式清零和完整槽状态检查的新构建。
+
+M13 强制功能证据
+----------------
+1. M11/M12 数据路径保持
+   - RX/TX 各 8 个 legacy descriptors；初始七页 RX buffer、一页 TX buffer，DMA 页全部低于 4 GiB。
+   - raw EtherType 0x88B5 请求/响应仍为 60/60 字节，PacketResult RX/TX=1/1、heads=1/1、IRQ=1/1。
+   - ARP request/reply=1/1、60/60 字节；ICMP Echo request/reply=1/1、74/74 字节。
+   - M12 协议阶段最终 heads=3/3、真实 RXQ0/TXQ0 IRQ=2/2，与 raw/UDP 计数分开。
+   - M7 entry 0/1/4 direct、per-vector PBA、function PBA 精确断言仍在 packet 前完成。
+
+2. 十个变长 UDP Echo
+   - 固定 NIC=10.0.12.2 / 52:54:00:43:58:43；peer=10.0.12.1 / 02:43:58:43:11:01。
+   - peer 源端口 0xC123，NIC 目的端口 7；IPv4 identification=0x5500+i，请求 TTL=53，响应 TTL=64。
+   - payload 长度依次为 1,2,3,7,8,15,16,31,32,33，总计 148 字节。
+   - frame 长度依次为 60,60,60,60,60,60,60,73,74,75；每方向十帧总计 642 字节。
+   - 内核检查 Ethernet/IPv4/UDP 地址和端口、IHL、total/UDP length、无分片、TTL、protocol、DD+EOP、errors 和 guard。
+   - IPv4 header checksum 与带 pseudo-header 的 UDP checksum 都必须有效；奇数长度仅在校验运算末尾补零。
+   - 响应交换地址/端口，TTL=64，重算两个 checksum；计算结果为零时 UDP checksum 写 0xFFFF。
+   - IPv4 数据后的最短帧 padding 必须为零；外部 peer 独立逐帧验证全部响应字段、payload、长度和 padding。
+   - 正式成功统计必须为 request/reply=10/10、RX/TX IRQ=10/10、payload=148、RX/TX frame bytes=642/642。
+
+3. 真实 FIFO 回收与 wrap
+   - UDP 入口实际为 RDH=3、RDT=7、TDH=TDT=3；RDT=7 表示 descriptor 3–6 四个可用，不能误写成 6。
+   - 第 i 帧使用 RX/TX descriptor (i+3) mod 8；最早已消费源为 i mod 8，重新发布目标为旧 RDT=(i+7) mod 8。
+   - 每帧清源 descriptor、清页并恢复 guard，再将该物理页发布到目标槽，release fence 后把 RDT 模 8 加一。
+   - 每帧消费一个、补充一个，始终保持四个可用 RX descriptors；七个物理页保持不同，不扩大 rings 或增加 pages。
+   - CPU 指针数组为 8 项以覆盖 descriptor 7，物理 RX pages 仍为 7；源必须已有 DD，目标指针/地址/状态必须为空。
+   - 两个 4 KiB descriptor ring 页在发布前显式清零。
+   - 最终 RX/TX heads=5/5，RX/TX tails=1/5；从初始 RDT=7 做十次回收，(7+10) mod 8=1。
+   - wrap RXh/TXh/RXt/TXt=1/1/2/1，recycled RX buffers=10；这些均为内核实际读取/推进后的强制不变量。
+
+4. 中断、同步与清理
+   - peer 依次等待 packet-ready、protocol-ready、udp-ready；成功运行恰好发送 13 个请求并验证 13 个响应。
+   - 完整 peer 写 udp_requests_sent=10、udp_replies_validated=10、validation_scope=m13-raw-arp-icmp-udp-ring、peer_ok=1。
+   - TXQE=0x2、LSC=0x4；仅在 packet/protocol/UDP 数据阶段允许明确的辅助 cause。
+   - 已知 RXQ0/TXQ0 跨向量 EITR 观察只记 cross_calls；未知 ICR 位和 synthetic 阶段规则不放宽。
+   - empty/cross 数量是时序诊断；有效分阶段 IRQ、vector errors=0 和最终清理是强制条件。
+   - 完成后停止 RX/TX 和 queue enable、屏蔽 MSI-X、撤销 bus mastering、逆序释放 10 页并核对 PMM 页数。
+   - active IRQ slots=0、unhandled=0、spurious IRQ=0 继续由内核检查。
+
+最终 Release 成功矩阵：12/12
+---------------------------
+- xAPIC 4 vCPU、128 MiB 连续 3 次：3/3 通过。
+- x2APIC 4 vCPU、128 MiB：通过。
+- x2APIC 4 vCPU、64 MiB：通过。
+- x2APIC 4 vCPU、256 MiB：通过。
+- xAPIC 4 vCPU、256 MiB：通过。
+- x2APIC 4 vCPU、512 MiB：通过。
+- UP/2/8/16 vCPU x2APIC、256 MiB：全部通过。
+- 每个成功用例都重新 grep 要求 UDP 10/10、IRQ 10/10、payload=148、642/642、heads=5/5、tails=1/5、wrap=1/1/2/1、recycle=10。
+- 每个 peer 都要求 requests_sent=13、udp_replies_validated=10、完整 M13 scope 和 peer_ok=1。
+- 2 vCPU：3 workers，PMM/heap 各 24 次，3 个 RO 故障，2 次迁移。
+- 8 vCPU：9 workers，PMM/heap 各 72 次，9 个 RO 故障，2 次迁移。
+- 16 vCPU：17 workers，PMM/heap 各 136 次，17 个 RO 故障，2 次迁移。
+
+交付 EFI/ESP 最终直接复验：4/4
+-----------------------------
+以下均只使用 artifacts/cxc-os.img，并保存对应 serial/peer：
+
+- xAPIC 4 vCPU、256 MiB：4/4 online；5 workers；counter=160；sleep/wake=20。
+  PMM/heap 各 40 次；2 次迁移；2 次 shootdown；5 个实际 RO 写故障；最终 fixed IPI=9。
+- x2APIC 4 vCPU、256 MiB：相同的 allocator、迁移、TLB 和全部网络不变量，完整 peer_ok=1。
+- UP x2APIC、256 MiB：1/1 online；2 workers；counter=64；sleep/wake=8。
+  PMM/heap 各 16 次；0 迁移；2 个实际 RO 写故障；最终 fixed IPI=0。
+- 16 vCPU x2APIC、256 MiB：16/16 online；17 workers；counter=544；sleep/wake=68。
+  PMM/heap 各 136 次；2 次迁移；17 个实际 RO 写故障；最终 fixed IPI=45。
+- 四项均为 raw=1/1、ARP=1/1、ICMP=1/1、UDP=10/10，heads=5/5、tails=1/5，完整 M13 peer_ok=1。
+
+独立交付响应检查
+----------------
+- 从正式 network-peer.log 重新解析全部 hex，独立重建并匹配 13 个请求，重新验证 13 个响应。
+- 请求与响应各 836 字节：raw 60 + ARP 60 + ICMP 74 + UDP 642。
+- 所有响应的正常形式均接受；截断、追加字节以及选定单字节损坏均被对应 validator 拒绝。
+- 十个 UDP 响应额外翻转 checksum 后均被拒绝。
+- 正式坏 UDP/坏 ICMP 请求 fixture 重新计算后 checksum 确实无效，且日志中不存在相应 reply。
+
+设备与旧功能回归保持
+------------------
+- EDU MMIO/MSI 和 256 字节 DMA 往返、guard、地址上限、PMM 清理全保持。
+- UART loopback IRQ4 四次实中断；IOAPIC PIT IRQ0 一次实中断。
+- M10 SMP allocator、共享锁、sleep/wake、受控迁移、真实 TLB fault/shootdown 全保持。
+- M8/M9 双 APIC 启动、每 CPU scheduler 和 parked AP vector-48 复验全保持。
+- 原有 PMM 连续/碎片/2000 步压力和 heap split/coalesce/1000 步压力全保持。
+
+正式镜像负对照：7/7
+------------------
+以下均直接使用 artifacts/cxc-os.img；全部产生预期 panic 且无 CXC_OS_SELF_TEST_PASS：
+
+- --no-e1000e：e1000e/packet/protocol/UDP stage=0。
+- --no-edu：在网卡前产生预期 EDU MSI/DMA panic，不错误要求网络 peer。
+- --no-network-peer：raw packet stage=2 等 RX 超时，protocol/UDP stage=0。
+- --no-protocol-peer：raw=1/1 完整成功，protocol stage=2 等 ARP；peer scope=m11-raw-only、peer_ok=1。
+- --bad-icmp-checksum：raw+ARP 成功，protocol stage=4 拒绝；ARP=1/1、ICMP=0/0、heads=3/2、IRQs=2/1，无 ICMP reply。
+- --no-udp-peer：raw+ARP+ICMP 成功，UDP stage=2/failure=2 在第 0 帧等待；UDP=0/0，peer scope=m12-raw-arp-icmp、peer_ok=1。
+- --bad-udp-checksum：翻转第一个 UDP checksum，UDP stage=2/failure=3 拒绝；request/reply=0/0、RX/TX IRQ=1/0、heads=4/3、tails=7/3，无 UDP reply。
+
+预期 panic 时部分 peer_ok=1 只表示其已完成的 raw 或 M12 阶段有效，不代表整机成功；正常成功仍必须同时有内核 PASS 和完整 M13 peer。
+
+交付文件
+--------
+- BOOTX64.efi：M13 Release 原生 UEFI PE32+。
+- cxc-os.img：65 MiB MBR 磁盘镜像；1 MiB 起始偏移后为 64 MiB FAT32 ESP。
+- qemu-serial.log / qemu-serial-x2apic.log：4 vCPU 双 APIC 成功串口日志。
+- qemu-serial-up.log / qemu-serial-smp16.log：UP 和 16 vCPU 成功串口日志。
+- network-peer.log / network-peer-x2apic.log / network-peer-up.log / network-peer-smp16.log：对应完整 13 帧外部证据。
+- qemu-no-e1000e.log / qemu-no-edu.log / qemu-no-network-peer.log：设备或无 raw 注入负对照。
+- qemu-no-protocol-peer.log / qemu-bad-icmp-checksum.log：M12 阶段负对照。
+- qemu-no-udp-peer.log / qemu-bad-udp-checksum.log：M13 阶段负对照。
+- network-peer-no-protocol.log / network-peer-bad-icmp.log / network-peer-no-udp.log / network-peer-bad-udp.log：对应 peer 证据。
+- VALIDATION.txt：本说明。
+- SHA256SUMS：上述 EFI、ESP、全部日志和本说明的 22 项 SHA-256；不包含自身。
+
+边界与声明
+----------
+- 仅实现固定地址、单队列、同步测试路径上的最小 ARP/IPv4/ICMP/UDP Echo，不是完整网络协议栈或 socket API。
+- 没有 ARP cache、DHCP、路由、IPv4 options/分片重组、其他 ICMP 类型、TCP 或用户态网络接口。
+- 没有多队列/RSS、checksum offload、完整 reset/PHY 管理或生产级异常恢复。
+- 仅在 QEMU 82574L 和本机 dgram peer 上实测，未声称物理网卡通过。
+- peer 是测试硬件后端；内核仍是独立原生 UEFI OS，不是 Linux 发行版或宿主兼容层。
+- M10 的迁移、锁和 VMM 边界不变；没有自动负载平衡或通用并发 VMM。
+- Windows/MSYS2 构建配置、跨平台 Python peer 和 GitHub Actions 工作流保留；
+  本环境未实际执行 Windows 本地构建或远端 CI，不作已通过声明。

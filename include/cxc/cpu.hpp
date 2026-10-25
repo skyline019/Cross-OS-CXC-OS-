@@ -1,0 +1,97 @@
+#pragma once
+
+#include <stdint.h>
+
+namespace cxc::cpu {
+
+constexpr uint64_t timer_vector = 32;
+constexpr uint64_t ioapic_test_vector = 33;
+constexpr uint64_t external_vector_begin = 34;
+constexpr uint64_t external_vector_end = 48;
+constexpr uint64_t ipi_vector = 48;
+constexpr uint64_t scheduler_ipi_vector = 49;
+constexpr uint64_t scheduler_wakeup_vector = 50;
+constexpr uint64_t tlb_shootdown_vector = 51;
+constexpr uint64_t spurious_vector = 255;
+
+// Matches interrupts.S. In 64-bit mode the CPU saves/restores SS:RSP
+// unconditionally, even without a privilege transition. The stub supplies
+// vector/error and the common entry supplies fifteen general registers.
+struct InterruptFrame {
+    uint64_t r15;
+    uint64_t r14;
+    uint64_t r13;
+    uint64_t r12;
+    uint64_t r11;
+    uint64_t r10;
+    uint64_t r9;
+    uint64_t r8;
+    uint64_t rsi;
+    uint64_t rdi;
+    uint64_t rbp;
+    uint64_t rdx;
+    uint64_t rcx;
+    uint64_t rbx;
+    uint64_t rax;
+    uint64_t vector;
+    uint64_t error_code;
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
+};
+static_assert(sizeof(InterruptFrame) == 176);
+
+void initialize_gdt();
+void initialize_idt();
+// Loads the already initialized shared IDT on an application processor.
+void load_idt();
+bool breakpoint_was_seen();
+
+inline uint64_t read_flags() {
+    uint64_t flags;
+    __asm__ volatile("pushfq; popq %0" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+inline bool interrupts_enabled() {
+    return (read_flags() & 0x200) != 0;
+}
+
+inline void disable_interrupts() {
+    __asm__ volatile("cli" : : : "memory");
+}
+
+inline void enable_interrupts() {
+    __asm__ volatile("sti" : : : "memory");
+}
+
+inline void restore_interrupts(uint64_t saved_flags) {
+    if ((saved_flags & 0x200) != 0) {
+        enable_interrupts();
+    }
+}
+
+inline void relax() {
+    __asm__ volatile("pause" : : : "memory");
+}
+
+inline void wait_for_interrupt() {
+    __asm__ volatile("hlt" : : : "memory");
+}
+
+inline uint64_t read_tsc() {
+    uint32_t low;
+    uint32_t high;
+    __asm__ volatile("lfence; rdtsc" : "=a"(low), "=d"(high) : : "memory");
+    return (static_cast<uint64_t>(high) << 32) | low;
+}
+
+[[noreturn]] inline void halt() {
+    for (;;) {
+        __asm__ volatile("cli; hlt" : : : "memory");
+    }
+}
+
+}  // namespace cxc::cpu

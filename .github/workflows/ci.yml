@@ -1,0 +1,253 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+
+jobs:
+  linux-uefi-qemu:
+    name: Linux (UEFI + QEMU + contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain and firmware
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            cmake python3 qemu-system-x86 ovmf
+
+      - name: Configure Debug (-Werror)
+        run: >-
+          cmake -S . -B build/uefi-debug
+          -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-uefi-mingw.cmake
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCXC_WARNINGS_AS_ERRORS=ON
+
+      - name: Build Debug kernel and ESP
+        run: cmake --build build/uefi-debug --parallel
+
+      - name: Configure Release (-Werror)
+        run: >-
+          cmake -S . -B build/uefi
+          -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-uefi-mingw.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DCXC_WARNINGS_AS_ERRORS=ON
+
+      - name: Build Release kernel and ESP
+        run: cmake --build build/uefi --parallel
+
+      - name: Host C++ net protocol tests (ctest)
+        run: |
+          cmake -S tests/host -B build/host-tests
+          cmake --build build/host-tests --parallel
+          ctest --test-dir build/host-tests --output-on-failure
+
+      - name: Host-side test contract
+        run: >-
+          python3 tools/contract_test.py --host-only
+          --work-dir build/contract-host
+
+      - name: Default qemu-test (PASS + peer_ok)
+        run: cmake --build build/uefi --target qemu-test
+
+      - name: Assert serial PASS and peer_ok=1
+        run: |
+          set -euo pipefail
+          test -f build/uefi/qemu-test/serial.log
+          test -f build/uefi/qemu-test/network-peer.log
+          grep -F 'CXC_OS_SELF_TEST_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
+
+      - name: Memory layout matrix
+        run: |
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --memory 64M --work-dir build/qemu-64m
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --memory 256M --work-dir build/qemu-256m
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpu "qemu64,+x2apic" --memory 512M \
+            --work-dir build/qemu-512m-dma-mask
+
+      - name: xAPIC and x2APIC
+        run: |
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpu "qemu64,-x2apic" --work-dir build/qemu-xapic
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpu "qemu64,+x2apic" --work-dir build/qemu-x2apic
+
+      - name: SMP UP and 8-way
+        run: |
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpus 1 --cpu "qemu64,+x2apic" \
+            --work-dir build/qemu-up
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
+            --check --cpus 8 --cpu "qemu64,+x2apic" \
+            --work-dir build/qemu-smp-8
+
+      - name: Negative — missing EDU
+        run: >-
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img
+          --check --no-edu --expect "CXC_OS_PANIC: EDU MSI/DMA"
+          --work-dir build/qemu-no-edu
+
+      - name: Negative — missing e1000e
+        run: >-
+          python3 tools/run_qemu.py --image build/uefi/cxc-os.img
+          --check --no-e1000e --expect "CXC_OS_PANIC: e1000e MSI-X"
+          --work-dir build/qemu-no-e1000e
+
+      - name: Full midpoint test contract
+        run: >-
+          python3 tools/contract_test.py
+          --image build/uefi/cxc-os.img
+          --work-dir build/contract-full
+
+      - name: Summarize Linux evidence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          roots = [
+              Path("build/uefi/BOOTX64.efi"),
+              Path("build/uefi/cxc-os.img"),
+              Path("build/uefi-debug/BOOTX64.efi"),
+              Path("build/contract-host/CONTRACT_VALIDATION.txt"),
+              Path("build/uefi/qemu-test/serial.log"),
+              Path("build/uefi/qemu-test/network-peer.log"),
+              Path("build/contract-full/CONTRACT_VALIDATION.txt"),
+          ]
+          lines = []
+          for path in roots:
+              if not path.is_file():
+                  lines.append(f"MISSING {path}")
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              lines.append(f"{digest}  {path}  ({path.stat().st_size} bytes)")
+          Path("build/linux-evidence-summary.txt").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8"
+          )
+          print("\n".join(lines))
+          if any(line.startswith("MISSING ") for line in lines):
+              raise SystemExit("required evidence files missing")
+          PY
+
+      - name: Upload Linux evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-uefi-qemu-evidence
+          path: |
+            build/uefi/BOOTX64.efi
+            build/uefi/cxc-os.img
+            build/linux-evidence-summary.txt
+            build/contract-host/**
+            build/uefi/qemu-test/serial.log
+            build/uefi/qemu-test/network-peer.log
+            build/contract-full/CONTRACT_VALIDATION.txt
+            build/contract-full/contract-report.json
+            build/contract-full/SHA256SUMS
+          if-no-files-found: error
+
+  windows-uefi-build:
+    name: Windows (MSYS2 build + host contract)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Configure Release (-Werror)
+        shell: msys2 {0}
+        run: >-
+          cmake -S . -B build/uefi -G "MinGW Makefiles"
+          -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-uefi-mingw.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DCXC_WARNINGS_AS_ERRORS=ON
+
+      - name: Build kernel and ESP
+        shell: msys2 {0}
+        run: cmake --build build/uefi --parallel
+
+      - name: Check artifacts non-empty
+        shell: msys2 {0}
+        run: >-
+          python3 -c
+          "from pathlib import Path; e=Path('build/uefi/BOOTX64.efi'); i=Path('build/uefi/cxc-os.img'); assert e.stat().st_size > 0 and i.stat().st_size > 0; print(e, e.stat().st_size, i, i.stat().st_size)"
+
+      - name: Host C++ net protocol tests (ctest)
+        shell: msys2 {0}
+        run: |
+          cmake -S tests/host -B build/host-tests
+          cmake --build build/host-tests --parallel
+          ctest --test-dir build/host-tests --output-on-failure
+
+      - name: Host-side test contract
+        shell: msys2 {0}
+        run: >-
+          python3 tools/contract_test.py --host-only
+          --work-dir build/contract-host
+
+      - name: Summarize Windows evidence
+        shell: msys2 {0}
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          roots = [
+              Path("build/uefi/BOOTX64.efi"),
+              Path("build/uefi/cxc-os.img"),
+              Path("build/contract-host/CONTRACT_VALIDATION.txt"),
+              Path("build/contract-host/contract-report.json"),
+          ]
+          lines = []
+          for path in roots:
+              if not path.is_file():
+                  lines.append(f"MISSING {path}")
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              lines.append(f"{digest}  {path}  ({path.stat().st_size} bytes)")
+          Path("build/windows-evidence-summary.txt").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8"
+          )
+          print("\n".join(lines))
+          if any(line.startswith("MISSING ") for line in lines):
+              raise SystemExit("required evidence files missing")
+          PY
+
+      - name: Upload Windows build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-uefi-build-evidence
+          path: |
+            build/uefi/BOOTX64.efi
+            build/uefi/cxc-os.img
+            build/windows-evidence-summary.txt
+            build/contract-host/**
+          if-no-files-found: error

@@ -1,0 +1,42 @@
+# Build trees
+build/
+cmake-build-*/
+out/
+dist/
+
+# Generated firmware / images (built by CMake)
+*.img
+*.efi
+*.dll.a
+OVMF_VARS.fd
+
+# Logs and local test workdirs
+serial.log
+**/serial.log
+**/network-peer.log
+contract-results/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local secrets / env
+.env
+.env.*
+*.pem
+id_rsa
+id_rsa.*
+.ssh-config-github

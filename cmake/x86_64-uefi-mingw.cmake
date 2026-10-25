@@ -1,0 +1,22 @@
+# Native UEFI PE32+ target, built with the same MinGW-w64 GCC toolchain on
+# Windows and Linux hosts. No target Windows runtime is linked into the kernel.
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+if(CMAKE_HOST_WIN32)
+    find_program(CXC_UEFI_CXX_COMPILER NAMES g++ REQUIRED)
+else()
+    find_program(CXC_UEFI_CXX_COMPILER
+        NAMES x86_64-w64-mingw32-g++ x86_64-w64-mingw32-g++-win32
+        REQUIRED
+    )
+endif()
+
+set(CMAKE_CXX_COMPILER "${CXC_UEFI_CXX_COMPILER}")
+set(CMAKE_ASM_COMPILER "${CXC_UEFI_CXX_COMPILER}")
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

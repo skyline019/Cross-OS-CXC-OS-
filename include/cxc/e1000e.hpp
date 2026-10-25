@@ -1,0 +1,126 @@
+#pragma once
+
+#include <stdint.h>
+
+namespace cxc::e1000e {
+
+struct VectorResult {
+    uint64_t calls;
+    uint64_t matched_calls;
+    uint64_t empty_calls;
+    uint64_t cross_calls;
+    uint32_t last_cause;
+    uint32_t errors;
+    uint32_t table_entry;
+    uint32_t idt_vector;
+    uint32_t expected_cause;
+    uint32_t error_cause;
+    uint32_t reserved;
+};
+
+struct PacketResult {
+    uint64_t rx_interrupts;
+    uint64_t tx_interrupts;
+    uint64_t rx_frames;
+    uint64_t tx_frames;
+    uint32_t rx_length;
+    uint32_t tx_length;
+    uint32_t rx_head;
+    uint32_t tx_head;
+    uint32_t stage;
+    uint32_t reserved;
+    uint8_t mac[6];
+    uint8_t padding[2];
+};
+
+struct ProtocolResult {
+    uint64_t rx_interrupts;
+    uint64_t tx_interrupts;
+    uint64_t arp_requests;
+    uint64_t arp_replies;
+    uint64_t icmp_requests;
+    uint64_t icmp_replies;
+    uint32_t arp_rx_bytes;
+    uint32_t arp_tx_bytes;
+    uint32_t icmp_rx_bytes;
+    uint32_t icmp_tx_bytes;
+    uint32_t rx_head;
+    uint32_t tx_head;
+    uint32_t stage;
+    uint32_t reserved;
+};
+
+struct UdpResult {
+    uint64_t rx_interrupts;
+    uint64_t tx_interrupts;
+    uint64_t requests;
+    uint64_t replies;
+    uint64_t payload_bytes;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
+    uint32_t rx_head;
+    uint32_t tx_head;
+    uint32_t rx_tail;
+    uint32_t tx_tail;
+    uint32_t rx_head_wraps;
+    uint32_t tx_head_wraps;
+    uint32_t rx_tail_wraps;
+    uint32_t tx_tail_wraps;
+    uint32_t recycled_buffers;
+    uint32_t last_rx_bytes;
+    uint32_t last_tx_bytes;
+    uint32_t datagram;
+    uint32_t rx_descriptor;
+    uint32_t tx_descriptor;
+    uint32_t stage;
+    uint32_t failure;
+    // M24: RX frames demuxed into a bound UDP socket (deliver+recv per datagram).
+    uint32_t socket_delivered;
+    uint32_t socket_received;
+};
+
+// M14: post-M13 long-stability / wrap pressure. Does not replace the M13
+// ten-datagram contract; counters stay separate so serial evidence stays 10/10.
+struct UdpStressResult {
+    uint64_t rx_interrupts;
+    uint64_t tx_interrupts;
+    uint64_t requests;
+    uint64_t replies;
+    uint64_t payload_bytes;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
+    uint32_t rx_head;
+    uint32_t tx_head;
+    uint32_t rx_tail;
+    uint32_t tx_tail;
+    uint32_t rx_head_wraps;
+    uint32_t tx_head_wraps;
+    uint32_t rx_tail_wraps;
+    uint32_t tx_tail_wraps;
+    uint32_t recycled_buffers;
+    uint32_t datagram;
+    uint32_t stage;
+    uint32_t failure;
+};
+
+struct TestInfo {
+    uint64_t csr_physical;
+    uint64_t msix_physical;
+    uint32_t table_entries;
+    uint32_t per_vector_pba_seen;
+    uint32_t function_pba_seen;
+    uint32_t stage;
+    VectorResult vectors[3];
+    PacketResult packet;
+    ProtocolResult protocol;
+    UdpResult udp;
+    UdpStressResult stress;
+};
+
+// Runs ICS/IVAR/PBA, M11 raw, M12 ARP/ICMP, M13 ten UDP Echo + ring wrap, then
+// M14 256-datagram UDP ring stress. run_qemu.py checks every response.
+// Device DMA/interrupt state, IRQ slots and all packet pages are cleaned up.
+bool run_msix_test();
+const TestInfo& test_info();
+
+}  // namespace cxc::e1000e
