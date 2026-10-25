@@ -11,6 +11,7 @@
 #include <cxc/user_fs_blob.hpp>
 #include <cxc/user_hello_blob.hpp>
 #include <cxc/user_mmap_blob.hpp>
+#include <cxc/user_munmap_blob.hpp>
 #include <cxc/vmm.hpp>
 
 #include <stddef.h>
@@ -27,6 +28,7 @@ FsProbeResult fs_probe{};
 BrkProbeResult brk_probe{};
 MmapProbeResult mmap_probe{};
 DirProbeResult dir_probe{};
+MunmapProbeResult munmap_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -265,6 +267,35 @@ bool run_dir_probe(DirProbeResult& result) {
 
 const DirProbeResult& dir_probe_result() {
     return dir_probe;
+}
+
+bool run_munmap_probe(MunmapProbeResult& result) {
+    result = MunmapProbeResult{};
+    if (!launch_user_elf(munmap_elf, munmap_elf_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_munmap_pass;
+    result.mmap_calls = syscall::session().mmap_calls;
+    result.munmap_calls = syscall::session().munmap_calls;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 ||
+        result.mmap_calls < 1 || result.munmap_calls < 1) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    munmap_probe = result;
+    return true;
+}
+
+const MunmapProbeResult& munmap_probe_result() {
+    return munmap_probe;
 }
 
 }  // namespace cxc::user

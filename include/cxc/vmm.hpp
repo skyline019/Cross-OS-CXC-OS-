@@ -45,6 +45,8 @@ uint64_t create_user_address_space();
 bool destroy_user_address_space(uint64_t user_root_physical);
 bool map_user_page(uint64_t user_root_physical, uint64_t virtual_address,
                    uint64_t physical_address, uint64_t map_flags);
+// BSP-only: clear one user PTE, free its frame, and invlpg (M43 munmap).
+bool unmap_user_page(uint64_t user_root_physical, uint64_t virtual_address);
 bool activate_address_space(uint64_t root_physical);
 // Walks `root` (not necessarily the active CR3) for evidence checks.
 MappingInfo inspect_mapping_in(uint64_t root_physical,

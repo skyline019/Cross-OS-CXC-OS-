@@ -105,7 +105,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M40** | `brk` 用户堆扩展 | 串口 `USER_BRK_PASS` + `user brk: grow: 1, …` |
 | **M41** | anonymous `mmap` | 串口 `USER_MMAP_PASS` + `user mmap: calls: 1, …` |
 | **M42** | `mkdir` + 一层嵌套路径 | 串口 `USER_DIR_PASS` + `user dir: mkdir: 1, …` |
-| M43+ | `munmap` / 更多 POSIX（通向 A2） | 另立合同 |
+| **M43** | `munmap` 释放 anonymous 映射 | 串口 `USER_MUNMAP_PASS` + `user munmap: …` |
+| **M44** | 第四次中场（M35–M44） | `midpoint-assessment-4.md`；CI/合同统一 |
 
 ## 6. 参考
 

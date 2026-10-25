@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.43.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.44.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -165,6 +165,30 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_MUNMAP_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_munmap.elf")
+set(CXC_USER_MUNMAP_SOURCE
+    "${CMAKE_CURRENT_BINARY_DIR}/user_munmap_blob.cpp")
+add_custom_command(
+    OUTPUT "${CXC_USER_MUNMAP_SOURCE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_munmap_elf.py"
+        --output "${CXC_USER_MUNMAP_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        --input "${CXC_USER_MUNMAP_ELF}"
+        --output "${CXC_USER_MUNMAP_SOURCE}"
+        --array munmap_elf --size munmap_elf_size
+        --namespace "cxc::user"
+        --header "cxc/user_munmap_blob.hpp"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_munmap_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/user_munmap_blob.hpp"
+    BYPRODUCTS "${CXC_USER_MUNMAP_ELF}"
+    COMMENT "Building embedded static user munmap ELF"
+    VERBATIM
+)
+
 add_executable(cxc_kernel
     src/acpi.cpp
     src/apic.cpp
@@ -204,6 +228,7 @@ add_executable(cxc_kernel
     "${CXC_USER_BRK_SOURCE}"
     "${CXC_USER_MMAP_SOURCE}"
     "${CXC_USER_DIR_SOURCE}"
+    "${CXC_USER_MUNMAP_SOURCE}"
     src/stack.S
     src/uefi.cpp
     src/vmm.cpp

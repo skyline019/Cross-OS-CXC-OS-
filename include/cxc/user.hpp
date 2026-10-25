@@ -70,6 +70,19 @@ struct DirProbeResult {
     uint64_t exit_code;
 };
 
+struct MunmapProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t mmap_calls;
+    uint32_t munmap_calls;
+    uint64_t entry;
+    uint64_t exit_code;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -90,5 +103,9 @@ const MmapProbeResult& mmap_probe_result();
 // BSP-only: mkdir + nested path open/read/write (M42).
 bool run_dir_probe(DirProbeResult& result);
 const DirProbeResult& dir_probe_result();
+
+// BSP-only: mmap + munmap round-trip via embedded ELF (M43).
+bool run_munmap_probe(MunmapProbeResult& result);
+const MunmapProbeResult& munmap_probe_result();
 
 }  // namespace cxc::user

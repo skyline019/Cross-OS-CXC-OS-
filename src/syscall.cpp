@@ -22,6 +22,7 @@ constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
 constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
 constexpr char expected_mmap_pass[] = "USER_MMAP_PASS\n";
 constexpr char expected_dir_pass[] = "USER_DIR_PASS\n";
+constexpr char expected_munmap_pass[] = "USER_MUNMAP_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -125,6 +126,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_dir_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_munmap_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_munmap_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_munmap_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_munmap_pass = 1;
         }
     }
 }
@@ -261,6 +275,37 @@ cpu::InterruptFrame* handle_mmap(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_munmap(cpu::InterruptFrame* frame) {
+    const uint64_t addr = frame->rdi;
+    const uint64_t length = frame->rsi;
+    const uint64_t limit = default_mmap_base + mmap_max_pages * page_size;
+    if (addr == 0 || length == 0 || (addr & (page_size - 1)) != 0 ||
+        (length & (page_size - 1)) != 0 || addr < default_mmap_base ||
+        addr + length > limit || addr + length > current.mmap_next) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+
+    const uint64_t root = read_cr3();
+    uint64_t page = addr;
+    while (page < addr + length) {
+        if (!vmm::unmap_user_page(root, page)) {
+            frame->rax = static_cast<uint64_t>(-1);
+            return frame;
+        }
+        if (current.mmap_pages > 0) {
+            --current.mmap_pages;
+        }
+        page += page_size;
+    }
+    if (addr + length == current.mmap_next) {
+        current.mmap_next = addr;
+    }
+    ++current.munmap_calls;
+    frame->rax = 0;
+    return frame;
+}
+
 cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
     const uint64_t fd = frame->rdi;
     const uint64_t buf = frame->rsi;
@@ -378,6 +423,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_close(frame);
     case sys_mmap:
         return handle_mmap(frame);
+    case sys_munmap:
+        return handle_munmap(frame);
     case sys_brk:
         return handle_brk(frame);
     case sys_mkdir:

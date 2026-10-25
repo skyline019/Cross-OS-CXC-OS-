@@ -716,6 +716,23 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(dir.wrote_pass);
     log::write('\n');
 
+    user::MunmapProbeResult munmap{};
+    if (!user::run_munmap_probe(munmap)) {
+        log::write("[debug] user munmap probe stage: ");
+        log::decimal(munmap.stage);
+        log::write(", failure: ");
+        log::decimal(munmap.failure);
+        log::write('\n');
+        log::panic("M43 user munmap probe failed");
+    }
+    log::write("[ok] user munmap: mmap: ");
+    log::decimal(munmap.mmap_calls);
+    log::write(", munmap: ");
+    log::decimal(munmap.munmap_calls);
+    log::write(", pass: ");
+    log::decimal(munmap.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -819,7 +836,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.43.0 - ramfs mkdir + nested path (A2/M42)");
+    cxc::log::line("CXC/OS 0.44.0 - munmap round-trip (A2/M43)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

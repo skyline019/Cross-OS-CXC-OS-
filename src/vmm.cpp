@@ -510,11 +510,11 @@ bool apply_high_relocations(uint64_t loaded_image_base) {
     return position == end;
 }
 
-uint64_t* find_4k_entry(uint64_t virtual_address) {
-    if (root_physical == 0) {
+uint64_t* find_4k_entry_in(uint64_t root_phys, uint64_t virtual_address) {
+    if (root_phys == 0) {
         return nullptr;
     }
-    uint64_t* root = table_at(root_physical);
+    uint64_t* root = table_at(root_phys);
     const uint64_t pml4e = root[pml4_index(virtual_address)];
     if ((pml4e & present) == 0) {
         return nullptr;
@@ -532,6 +532,10 @@ uint64_t* find_4k_entry(uint64_t virtual_address) {
     uint64_t* pt = table_at(pde & address_mask);
     uint64_t& entry = pt[pt_index(virtual_address)];
     return (entry & present) != 0 ? &entry : nullptr;
+}
+
+uint64_t* find_4k_entry(uint64_t virtual_address) {
+    return find_4k_entry_in(root_physical, virtual_address);
 }
 
 }  // namespace
@@ -940,6 +944,31 @@ bool map_user_page(uint64_t user_root_physical, uint64_t virtual_address,
     }
     return map_4k_in(user_root_physical, physical_address, virtual_address,
                      pte_flags);
+}
+
+bool unmap_user_page(uint64_t user_root_physical, uint64_t virtual_address) {
+    if (user_root_physical == 0 || user_root_physical == root_physical ||
+        smp::current_cpu_index() != 0 ||
+        (virtual_address & (pmm::page_size - 1)) != 0 || virtual_address == 0 ||
+        virtual_address >= user_canonical_limit ||
+        virtual_address >= direct_map_base) {
+        return false;
+    }
+    uint64_t* const entry =
+        find_4k_entry_in(user_root_physical, virtual_address);
+    if (entry == nullptr || (*entry & user) == 0) {
+        return false;
+    }
+    const uint64_t physical = *entry & address_mask;
+    *entry = 0;
+    if (small_page_count > 0) {
+        --small_page_count;
+    }
+    invalidate_page(virtual_address);
+    if (physical != 0) {
+        pmm::free_pages(physical, 1);
+    }
+    return true;
 }
 
 bool activate_address_space(uint64_t root_phys) {

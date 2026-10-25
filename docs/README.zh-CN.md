@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 42 / v0.43.0：ramfs mkdir + 嵌套路径（A2 脊柱）**（M13–M41 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 43 / v0.44.0：munmap 往返（A2 脊柱）**（M13–M42 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -69,6 +69,7 @@ CXC_OS_SELF_TEST_PASS
 | User brk (M40) | `brk` 增长用户堆并触达新页；串口 `USER_BRK_PASS` |
 | User mmap (M41) | anonymous `mmap`（`MAP_PRIVATE|ANONYMOUS`）；串口 `USER_MMAP_PASS` |
 | User dir (M42) | `mkdir` + `data/note.txt` 嵌套 open/read/write；串口 `USER_DIR_PASS` |
+| User munmap (M43) | `mmap`+`munmap` 一页往返并释放帧；串口 `USER_MUNMAP_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -251,4 +252,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1 脊柱（下一刀 `munmap`/更多 POSIX → libc）。须保持 M13–M42 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1 脊柱（下一刀 M44 中场 → libc）。须保持 M13–M43 回归证据。
