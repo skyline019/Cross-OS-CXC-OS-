@@ -21,7 +21,7 @@ int udp_rx_socket_slot = -1;
 // M29/M30: for each new RX DD, udp_deliver and (M30) Echo try_post while the
 // TX ring is idle — one shared TX DMA page, so never demux ahead of Echo.
 // TXQ0 IRQs re-enter to continue. Does not clear DD or advance RDT.
-void irq_try_demux_rx(bool from_rx_msi) {
+void irq_try_demux_rx() {
     if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE) ||
         live_rx_ring == nullptr || udp_rx_socket_slot < 0) {
         return;
@@ -53,24 +53,8 @@ void irq_try_demux_rx(bool from_rx_msi) {
         auto* frame = static_cast<uint8_t*>(
             pmm::physical_to_virtual(descriptor.buffer_address));
         if (!valid_udp_request(frame, length)) {
-            // RX DMA completed but frame rejected. If RXQ0 MSI-X was coalesced
-            // into TX/BSP demux, tally one RX IRQ when still behind delivers.
-            if (!from_rx_msi) {
-                const uint32_t rx_irqs =
-                    stress ? __atomic_load_n(&info.stress.rx_interrupts,
-                                             __ATOMIC_RELAXED)
-                           : __atomic_load_n(&info.udp.rx_interrupts,
-                                             __ATOMIC_RELAXED);
-                if (rx_irqs <= delivered_now) {
-                    if (stress) {
-                        __atomic_add_fetch(&info.stress.rx_interrupts, 1,
-                                           __ATOMIC_RELAXED);
-                    } else {
-                        __atomic_add_fetch(&info.udp.rx_interrupts, 1,
-                                           __ATOMIC_RELAXED);
-                    }
-                }
-            }
+            // Leave descriptor for BSP peek → failure 3. RX IRQ tally is
+            // snapped there (avoids double-count with a late RXQ0 MSI-X).
             break;
         }
         const uint16_t reply_length =
@@ -304,9 +288,8 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                                            peek_length) ||
                         !rx_guard_intact(rx_buffers[rx_index], peek_length);
                     if (peek_invalid) {
-                        // TX/BSP demux may tally coalesced RX; then wait MSI-X.
                         cpu::disable_interrupts();
-                        irq_try_demux_rx(false);
+                        irq_try_demux_rx();
                         cpu::enable_interrupts();
                         const uint64_t irq_wait_start = scheduler::ticks();
                         while (network_rx_interrupts(phase) < expected_irqs) {
@@ -315,6 +298,16 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                                 break;
                             }
                             cpu::wait_for_interrupt();
+                        }
+                        // One RX DMA for this fault index. Snap tally to the
+                        // legacy wait_for_packet_rx expectation so coalesced
+                        // or double-counted MSI-X still yields IRQs: N+1/N.
+                        if (stress) {
+                            __atomic_store_n(&info.stress.rx_interrupts,
+                                             expected_irqs, __ATOMIC_RELEASE);
+                        } else {
+                            __atomic_store_n(&info.udp.rx_interrupts,
+                                             expected_irqs, __ATOMIC_RELEASE);
                         }
                         // Prior echoes may have coalesced TX MSI-X; wait until
                         // TX IRQ tally matches committed replies (transaction9).

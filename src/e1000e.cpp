@@ -129,7 +129,7 @@ void interrupt_handler(void* opaque) {
                                    __ATOMIC_RELAXED);
             }
             if (udp_phase || udp_stress_phase) {
-                detail::irq_try_demux_rx(true);
+                detail::irq_try_demux_rx();
             }
         } else if (result->expected_cause == detail::cause_txq0) {
             if (udp_stress_phase) {

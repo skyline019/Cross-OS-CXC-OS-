@@ -131,8 +131,7 @@ extern size_t packet_page_count;
 extern uint64_t packet_free_before;
 extern bool packet_allocation_attempted;
 // M29/M30: RXQ0 MSI-X / TXQ0 / BSP kick delivers validated UDP + Echo.
-// from_rx_msi: true when entered from RXQ0 IRQ (handler already tallied RX).
-void irq_try_demux_rx(bool from_rx_msi = false);
+void irq_try_demux_rx();
 
 enum class NetworkPhase {
     Raw,
