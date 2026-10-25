@@ -14,7 +14,7 @@
 | 第七次 | M65–M74 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md) |
 | 第八次（计划） | 约 M75–M84（大跨步编号可疏） | `midpoint-assessment-8.md`（届时新建） |
 
-当前基线：**M74 / v0.75.0**（第七次中场；真 musl 子集收束 → 块设备大跨步）。下一正式中场目标：**约 M84**。
+当前基线：**M75 / v0.76.0**（virtio-blk 大跨步首刀）。下一正式中场目标：**约 M84**。
 
 ## 中场窗口必做
 

@@ -15,6 +15,7 @@
 #include <cxc/smp.hpp>
 #include <cxc/uefi.hpp>
 #include <cxc/user.hpp>
+#include <cxc/virtio_blk.hpp>
 #include <cxc/vmm.hpp>
 
 extern "C" void switch_stack_and_call(
@@ -1335,6 +1336,36 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(musl_unlink.wrote_pass);
     log::write('\n');
 
+    virtio_blk::ProbeResult virtio{};
+    if (!virtio_blk::run_probe(virtio) || virtio.pass == 0) {
+        log::write("[debug] virtio-blk stage: ");
+        log::decimal(virtio.stage);
+        log::write(", failure: ");
+        log::decimal(virtio.failure);
+        log::write(", found: ");
+        log::decimal(virtio.found);
+        log::write(", features: ");
+        log::decimal(virtio.features_ok);
+        log::write(", queue: ");
+        log::decimal(virtio.queue_ok);
+        log::write(", read: ");
+        log::decimal(virtio.read_ok);
+        log::write(", magic: ");
+        log::decimal(virtio.magic_ok);
+        log::write(", oob: ");
+        log::decimal(virtio.oob_rejected);
+        log::write('\n');
+        log::panic("M75 virtio-blk probe failed");
+    }
+    log::write("[ok] virtio-blk: pass: ");
+    log::decimal(virtio.pass);
+    log::write(" capacity: ");
+    log::decimal(virtio.capacity_sectors);
+    log::write(" oob: ");
+    log::decimal(virtio.oob_rejected);
+    log::write('\n');
+    log::line("VIRTIO_BLK_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1546,7 +1577,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.75.0 - seventh midfield / large-stride (A2/M74)");
+    cxc::log::line("CXC/OS 0.76.0 - virtio-blk probe (A2/M75)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

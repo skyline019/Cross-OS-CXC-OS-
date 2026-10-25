@@ -30,6 +30,24 @@ FIRMWARE_CANDIDATES = [
     ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
 ]
 
+# M75: second disk for virtio-blk probe (sector 0 magic CXCBLK01).
+VIRTIO_BLK_MAGIC = b"CXCBLK01"
+VIRTIO_BLK_BYTES = 1024 * 1024
+
+
+def ensure_virtio_blk_image(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    need_write = True
+    if path.is_file() and path.stat().st_size == VIRTIO_BLK_BYTES:
+        with path.open("rb") as handle:
+            need_write = handle.read(len(VIRTIO_BLK_MAGIC)) != VIRTIO_BLK_MAGIC
+    if need_write:
+        payload = bytearray(VIRTIO_BLK_BYTES)
+        payload[0:8] = VIRTIO_BLK_MAGIC
+        path.write_bytes(payload)
+    return path
+
+
 
 def find_firmware(code: str | None, variables: str | None) -> tuple[Path, Path]:
     if code and variables:
@@ -57,6 +75,11 @@ def main() -> int:
     parser.add_argument("--cpus", type=int, default=4, help="guest CPU count (1-16); default: 4")
     parser.add_argument("--no-edu", action="store_true", help="do not attach QEMU's EDU device")
     parser.add_argument("--no-e1000e", action="store_true", help="do not attach the 82574L device")
+    parser.add_argument(
+        "--no-virtio-blk",
+        action="store_true",
+        help="do not attach virtio-blk-pci (negative M75 control)",
+    )
     parser.add_argument(
         "--no-network-peer",
         action="store_true",
@@ -211,6 +234,14 @@ def main() -> int:
             command += peer.qemu_arguments()
         else:
             command += ["-device", f"e1000e,mac={NIC_MAC.hex(':')}"]
+    if not arguments.no_virtio_blk:
+        virtio_img = ensure_virtio_blk_image(work_dir / "virtio-blk.img")
+        command += [
+            "-drive",
+            f"if=none,id=virtioblk0,format=raw,file={virtio_img},snapshot=on",
+            "-device",
+            "virtio-blk-pci,drive=virtioblk0,disable-legacy=on",
+        ]
 
     if not arguments.check:
         if peer is not None:
