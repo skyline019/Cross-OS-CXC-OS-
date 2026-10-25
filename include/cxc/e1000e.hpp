@@ -142,10 +142,12 @@ struct UdpSocketTxWaitResult {
     uint32_t failure;
 };
 
-// M29: M13+M14 UDP deliver runs from RXQ0 MSI-X; BSP only drains via recv.
-// irq_rx.delivered must equal 10+256; M24/M26 deliver/recv serial stays frozen.
+// M29/M30: M13+M14 UDP deliver (+ Echo TX post) runs from RXQ0 MSI-X;
+// BSP drains recv, waits TX DD, recycles. delivered/echoes must be 266.
+// M24/M26 deliver/recv serial stays frozen.
 struct UdpIrqRxResult {
     uint32_t delivered;
+    uint32_t echoes;
     uint32_t stage;
     uint32_t failure;
 };
@@ -168,7 +170,7 @@ struct TestInfo {
     UdpIrqRxResult irq_rx;
 };
 
-// Runs ICS/IVAR/PBA, M11–M14/M26/M29, M25–M28 socket TX path.
+// Runs ICS/IVAR/PBA, M11–M14/M26/M29–M30, M25–M28 socket TX path.
 // run_qemu.py checks M11–M14 responses. DMA/IRQ state and packet pages cleaned.
 bool run_msix_test();
 const TestInfo& test_info();

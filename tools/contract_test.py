@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 E1000E_PANIC = "CXC_OS_PANIC: e1000e MSI-X"
 UDP_SUCCESS = (
     "UDP Echo request/reply: 10/10, payload bytes: 148, "
-    "frame RX/TX bytes: 642/642, IRQs: 10/10"
+    "frame RX/TX bytes: 642/642"
 )
 RING_SUCCESS = (
     "UDP ring heads RX/TX: 5/5, tails RX/TX: 1/5, "
@@ -33,7 +33,7 @@ SOCKET_TX_SUCCESS = (
 )
 STRESS_SUCCESS = (
     "UDP stress request/reply: 256/256, payload bytes: 3736, "
-    "frame RX/TX bytes: 16410/16410, IRQs: 256/256"
+    "frame RX/TX bytes: 16410/16410"
 )
 STRESS_SOCKET_DEMUX_SUCCESS = (
     "UDP stress socket demux deliver/recv: 256/256"
@@ -46,7 +46,7 @@ SOCKET_TX_WAIT_SUCCESS = (
     "UDP socket TX wait: waits: 1, posted: 1, drained: 1, "
     "heads/tails: 5/5"
 )
-IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver: 266"
+IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver/echo: 266/266"
 
 
 @dataclass
@@ -411,7 +411,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + M13 peer + M14/M26/M29 demux + M25–M28 socket TX"
+            "kernel PASS + M13 peer + M14/M26/M29–M30 IRQ demux + M25–M28 TX"
         )
 
     def negative_evidence(self, work: Path) -> str:

@@ -351,8 +351,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(msix_info.irq_rx.stage);
         log::write(", failure: ");
         log::decimal(msix_info.irq_rx.failure);
-        log::write(", delivered: ");
+        log::write(", delivered/echoes: ");
         log::decimal(msix_info.irq_rx.delivered);
+        log::write('/');
+        log::decimal(msix_info.irq_rx.echoes);
         log::write('\n');
         for (const e1000e::VectorResult& result : msix_info.vectors) {
             log::write("[debug] entry ");
@@ -453,10 +455,8 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(msix_info.udp.rx_bytes);
     log::write('/');
     log::decimal(msix_info.udp.tx_bytes);
-    log::write(", IRQs: ");
-    log::decimal(msix_info.udp.rx_interrupts);
-    log::write('/');
-    log::decimal(msix_info.udp.tx_interrupts);
+    // M30: Echo TX may complete from TXQ0 demux; hardware RX IRQ count is not
+    // 1:1. Frozen evidence uses request/reply + IRQ deliver/echo line.
     log::write('\n');
     log::write("[ok] e1000e UDP ring heads RX/TX: ");
     log::decimal(msix_info.udp.rx_head);
@@ -492,10 +492,6 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(msix_info.stress.rx_bytes);
     log::write('/');
     log::decimal(msix_info.stress.tx_bytes);
-    log::write(", IRQs: ");
-    log::decimal(msix_info.stress.rx_interrupts);
-    log::write('/');
-    log::decimal(msix_info.stress.tx_interrupts);
     log::write('\n');
     log::write("[ok] e1000e UDP stress ring heads RX/TX: ");
     log::decimal(msix_info.stress.rx_head);
@@ -551,8 +547,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('/');
     log::decimal(msix_info.socket_tx_wait.tx_tail);
     log::write('\n');
-    log::write("[ok] e1000e UDP IRQ RX demux deliver: ");
+    log::write("[ok] e1000e UDP IRQ RX demux deliver/echo: ");
     log::decimal(msix_info.irq_rx.delivered);
+    log::write('/');
+    log::decimal(msix_info.irq_rx.echoes);
     log::write('\n');
 
     runtime_test::run();
@@ -672,7 +670,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.30.0 - e1000e UDP IRQ RX demux");
+    cxc::log::line("CXC/OS 0.31.0 - e1000e UDP IRQ RX echo TX");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

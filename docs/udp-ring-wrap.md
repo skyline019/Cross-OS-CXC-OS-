@@ -174,3 +174,7 @@ Milestone 28 / v0.29.0：`post_tx_wait` 在满环时 BSP `wait_for_interrupt` �
 ## 17. M29 IRQ RX demux
 
 Milestone 29 / v0.30.0：M13/M14 的 `udp_deliver` 改在 RXQ0 MSI-X 中完成（按 `buffer_address` 扫 DD 描述符）；BSP 仅 `udp_recv` 排空。`irq_rx.delivered` 须为 266（10+256）；M24/M26 `deliver/recv` 串口合同不变。仍非通用生产 RX 线程化路径。
+
+## 18. M30 IRQ Echo TX
+
+Milestone 30 / v0.31.0：RXQ0/TXQ0 路径在 TX 环空闲时 `build_udp_echo_reply` + `try_post_tx_frame`（单 TX DMA 页串行）；IRQ 最多超前 BSP 一帧，BSP 推进 `irq_bsp_progress` 后主动排空。串口 `deliver/echo: 266/266`；M13 Echo 行不再冻结硬件 `IRQs:10/10`（TXQ0 亦 demux）。仍非 IRQ 内 RDT recycle。

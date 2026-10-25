@@ -120,7 +120,12 @@ extern volatile bool socket_tx_bp_active;
 extern volatile bool socket_tx_wait_active;
 extern volatile bool socket_irq_rx_active;
 extern volatile LegacyRxDescriptor* live_rx_ring;
+extern volatile LegacyTxDescriptor* live_tx_ring;
+extern uint8_t* live_tx_buffer;
 extern uint32_t irq_rx_next;
+extern uint32_t irq_echo_next;
+// BSP datagrams completed (replies); IRQ must not outrun socket RX depth.
+extern uint32_t irq_bsp_progress;
 extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;

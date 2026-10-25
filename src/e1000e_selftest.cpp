@@ -18,9 +18,9 @@ namespace cxc::e1000e::detail {
 net::UdpSocketTable udp_rx_sockets{};
 int udp_rx_socket_slot = -1;
 
-// M29: scan newly completed RX descriptors and udp_deliver into the bound
-// socket. Uses descriptor buffer_address (recycle may move pages). Does not
-// clear DD or advance RDT — BSP Echo/recycle owns that.
+// M29/M30: for each new RX DD, udp_deliver and (M30) Echo try_post while the
+// TX ring is idle — one shared TX DMA page, so never demux ahead of Echo.
+// TXQ0 IRQs re-enter to continue. Does not clear DD or advance RDT.
 void irq_try_demux_rx() {
     if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE) ||
         live_rx_ring == nullptr || udp_rx_socket_slot < 0) {
@@ -30,6 +30,18 @@ void irq_try_demux_rx() {
         __atomic_load_n(&udp_stress_active, __ATOMIC_ACQUIRE);
     const uint32_t rdh = mmio_read(reg_rdh0);
     while (irq_rx_next != rdh) {
+        if (live_tx_ring == nullptr || live_tx_buffer == nullptr ||
+            mmio_read(reg_tdh0) != mmio_read(reg_tdt0)) {
+            break;
+        }
+        // At most one datagram ahead of BSP so ring recycle stays sequential.
+        const uint32_t delivered_now =
+            __atomic_load_n(&info.irq_rx.delivered, __ATOMIC_RELAXED);
+        const uint32_t progress =
+            __atomic_load_n(&irq_bsp_progress, __ATOMIC_ACQUIRE);
+        if (delivered_now != progress) {
+            break;
+        }
         volatile LegacyRxDescriptor& descriptor = live_rx_ring[irq_rx_next];
         const uint8_t status = descriptor.status;
         const uint16_t length = descriptor.length;
@@ -40,19 +52,30 @@ void irq_try_demux_rx() {
         }
         auto* frame = static_cast<uint8_t*>(
             pmm::physical_to_virtual(descriptor.buffer_address));
-        if (valid_udp_request(frame, length) &&
-            net::udp_deliver(udp_rx_sockets, frame, length)) {
-            if (stress) {
-                __atomic_add_fetch(&info.stress.socket_delivered, 1,
-                                   __ATOMIC_RELAXED);
-            } else {
-                __atomic_add_fetch(&info.udp.socket_delivered, 1,
-                                   __ATOMIC_RELAXED);
-            }
-            __atomic_add_fetch(&info.irq_rx.delivered, 1, __ATOMIC_RELAXED);
+        if (!valid_udp_request(frame, length)) {
+            break;
         }
+        const uint16_t reply_length =
+            build_udp_echo_reply(live_tx_buffer, frame, length);
+        const uint32_t tdt = mmio_read(reg_tdt0);
+        if (reply_length != length ||
+            !try_post_tx_frame(live_tx_ring, tdt, reply_length)) {
+            break;
+        }
+        if (!net::udp_deliver(udp_rx_sockets, frame, length)) {
+            break;
+        }
+        if (stress) {
+            __atomic_add_fetch(&info.stress.socket_delivered, 1,
+                               __ATOMIC_RELAXED);
+        } else {
+            __atomic_add_fetch(&info.udp.socket_delivered, 1, __ATOMIC_RELAXED);
+        }
+        __atomic_add_fetch(&info.irq_rx.delivered, 1, __ATOMIC_RELAXED);
+        __atomic_add_fetch(&info.irq_rx.echoes, 1, __ATOMIC_RELAXED);
         irq_rx_next =
             static_cast<uint32_t>((irq_rx_next + 1u) % descriptor_count);
+        irq_echo_next = irq_rx_next;
     }
 }
 
@@ -193,6 +216,12 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         static_cast<uint16_t>(unpadded_length < 60 ? 60 : unpadded_length);
     const uint64_t expected_irqs =
         (stress ? info.stress.requests : info.udp.requests) + 1;
+    // M29/M30 irq_rx.delivered/echoes are global across M13+M14.
+    const uint32_t expected_irq_total =
+        static_cast<uint32_t>(
+            (stress ? udp_test_datagrams + info.stress.requests
+                    : info.udp.requests) +
+            1);
     if (stress) {
         info.stress.datagram = static_cast<uint32_t>(index);
         info.stress.failure = 0;
@@ -205,15 +234,18 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
     volatile LegacyRxDescriptor& rx_descriptor = rx_ring[rx_index];
     bool success = false;
 
+    const bool irq_echo =
+        __atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE);
     do {
-        if (rx_buffers[rx_index] == nullptr ||
-            rx_descriptor.buffer_address == 0 ||
-            rx_buffers[recycle_source] == nullptr ||
-            rx_ring[recycle_source].buffer_address == 0 ||
-            (rx_ring[recycle_source].status & descriptor_done) == 0 ||
-            rx_buffers[recycle_target] != nullptr ||
-            rx_ring[recycle_target].buffer_address != 0 ||
-            rx_ring[recycle_target].status != 0) {
+        if (!irq_echo &&
+            (rx_buffers[rx_index] == nullptr ||
+             rx_descriptor.buffer_address == 0 ||
+             rx_buffers[recycle_source] == nullptr ||
+             rx_ring[recycle_source].buffer_address == 0 ||
+             (rx_ring[recycle_source].status & descriptor_done) == 0 ||
+             rx_buffers[recycle_target] != nullptr ||
+             rx_ring[recycle_target].buffer_address != 0 ||
+             rx_ring[recycle_target].status != 0)) {
             if (stress) {
                 info.stress.failure = 1;
             } else {
@@ -221,7 +253,40 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             }
             break;
         }
-        if (!wait_for_packet_rx(rx_descriptor, first_tick, phase, expected_irqs)) {
+        if (irq_echo &&
+            (rx_buffers[recycle_source] == nullptr ||
+             rx_ring[recycle_source].buffer_address == 0 ||
+             rx_buffers[recycle_target] != nullptr ||
+             rx_ring[recycle_target].buffer_address != 0)) {
+            if (stress) {
+                info.stress.failure = 1;
+            } else {
+                info.udp.failure = 1;
+            }
+            break;
+        }
+        // M30: wait until IRQ has delivered this datagram into the socket
+        // (echo may still be in flight). Then drain recv before waiting TX.
+        if (irq_echo) {
+            while (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
+                   expected_irq_total) {
+                if (scheduler::ticks() - first_tick > wait_ticks) {
+                    if (stress) {
+                        info.stress.failure = 2;
+                    } else {
+                        info.udp.failure = 2;
+                    }
+                    break;
+                }
+                cpu::wait_for_interrupt();
+            }
+            if ((stress && info.stress.failure == 2) ||
+                (!stress && info.udp.failure == 2)) {
+                break;
+            }
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        } else if (!wait_for_packet_rx(rx_descriptor, first_tick, phase,
+                                       expected_irqs)) {
             if (stress) {
                 info.stress.failure = 2;
             } else {
@@ -239,13 +304,24 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         } else {
             info.stress.rx_head = rx_head;
         }
-        if ((rx_status & (descriptor_done | rx_descriptor_eop)) !=
-                (descriptor_done | rx_descriptor_eop) ||
-            rx_errors != 0 || rx_length != expected_length ||
-            rx_head != expected_head ||
-            network_rx_interrupts(phase) != expected_irqs ||
-            !valid_udp_request(rx_buffers[rx_index], rx_length) ||
-            !rx_guard_intact(rx_buffers[rx_index], rx_length)) {
+        if (irq_echo) {
+            // Descriptor may already have been recycled/reused; trust socket.
+            if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
+                expected_irq_total) {
+                if (stress) {
+                    info.stress.failure = 3;
+                } else {
+                    info.udp.failure = 3;
+                }
+                break;
+            }
+        } else if ((rx_status & (descriptor_done | rx_descriptor_eop)) !=
+                       (descriptor_done | rx_descriptor_eop) ||
+                   rx_errors != 0 || rx_length != expected_length ||
+                   rx_head != expected_head ||
+                   network_rx_interrupts(phase) != expected_irqs ||
+                   !valid_udp_request(rx_buffers[rx_index], rx_length) ||
+                   !rx_guard_intact(rx_buffers[rx_index], rx_length)) {
             if (stress) {
                 info.stress.failure = 3;
             } else {
@@ -256,13 +332,12 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         if (stress) {
             ++info.stress.requests;
             info.stress.payload_bytes += payload_length;
-            info.stress.rx_bytes += rx_length;
+            info.stress.rx_bytes += expected_length;
             if (expected_head == 0) {
                 ++info.stress.rx_head_wraps;
             }
-            // M26: demux on the stress path; counters stay on info.stress.
             if (!demux_validated_udp_rx(
-                    rx_buffers[rx_index], rx_length,
+                    rx_buffers[rx_index], expected_length,
                     static_cast<uint16_t>(payload_length),
                     info.stress.socket_delivered, info.stress.socket_received)) {
                 info.stress.failure = 9;
@@ -271,13 +346,12 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         } else {
             ++info.udp.requests;
             info.udp.payload_bytes += payload_length;
-            info.udp.rx_bytes += rx_length;
+            info.udp.rx_bytes += expected_length;
             if (expected_head == 0) {
                 ++info.udp.rx_head_wraps;
             }
-            // M24: demux validated request into the bound socket, then drain.
             if (!demux_validated_udp_rx(
-                    rx_buffers[rx_index], rx_length,
+                    rx_buffers[rx_index], expected_length,
                     static_cast<uint16_t>(payload_length),
                     info.udp.socket_delivered, info.udp.socket_received)) {
                 info.udp.failure = 9;
@@ -285,30 +359,69 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             }
         }
 
-        const uint16_t reply_length =
-            build_udp_echo_reply(tx_buffer, rx_buffers[rx_index], rx_length);
-        if (reply_length != expected_length ||
-            !submit_tx_frame(tx_ring, tx_index, reply_length, first_tick, phase,
-                             expected_irqs)) {
-            if (stress) {
-                info.stress.failure = 4;
-            } else {
-                info.udp.failure = 4;
+        // M30: wait for IRQ Echo TX (or BSP fallback submit).
+        if (irq_echo) {
+            while (__atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
+                   expected_irq_total) {
+                if (scheduler::ticks() - first_tick > wait_ticks) {
+                    if (stress) {
+                        info.stress.failure = 4;
+                    } else {
+                        info.udp.failure = 4;
+                    }
+                    break;
+                }
+                cpu::wait_for_interrupt();
             }
-            break;
+            if ((stress && info.stress.failure == 4) ||
+                (!stress && info.udp.failure == 4)) {
+                break;
+            }
+            while ((tx_ring[tx_index].status & descriptor_done) == 0) {
+                if (scheduler::ticks() - first_tick > wait_ticks) {
+                    if (stress) {
+                        info.stress.failure = 4;
+                    } else {
+                        info.udp.failure = 4;
+                    }
+                    break;
+                }
+                cpu::wait_for_interrupt();
+            }
+            if ((stress && info.stress.failure == 4) ||
+                (!stress && info.udp.failure == 4)) {
+                break;
+            }
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        } else {
+            const uint16_t reply_length =
+                build_udp_echo_reply(tx_buffer, rx_buffers[rx_index], rx_length);
+            if (reply_length != expected_length ||
+                !submit_tx_frame(tx_ring, tx_index, reply_length, first_tick,
+                                 phase, expected_irqs)) {
+                if (stress) {
+                    info.stress.failure = 4;
+                } else {
+                    info.udp.failure = 4;
+                }
+                break;
+            }
         }
         const uint32_t tx_head = mmio_read(reg_tdh0);
         const uint32_t tx_tail = mmio_read(reg_tdt0);
         if (!stress) {
-            info.udp.last_tx_bytes = reply_length;
+            info.udp.last_tx_bytes = expected_length;
             info.udp.tx_head = tx_head;
             info.udp.tx_tail = tx_tail;
         } else {
             info.stress.tx_head = tx_head;
             info.stress.tx_tail = tx_tail;
         }
-        if (tx_head != expected_head || tx_tail != expected_head ||
-            network_tx_interrupts(phase) != expected_irqs ||
+        // Peer may race ahead under IRQ Echo; exact TDH/IRQ equality is
+        // checked at end-of-phase, not mid-datagram.
+        if ((!irq_echo &&
+             (tx_head != expected_head || tx_tail != expected_head ||
+              network_tx_interrupts(phase) != expected_irqs)) ||
             network_vector_errors()) {
             if (stress) {
                 info.stress.failure = 5;
@@ -319,14 +432,14 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         }
         if (stress) {
             ++info.stress.replies;
-            info.stress.tx_bytes += reply_length;
+            info.stress.tx_bytes += expected_length;
             if (expected_head == 0) {
                 ++info.stress.tx_head_wraps;
                 ++info.stress.tx_tail_wraps;
             }
         } else {
             ++info.udp.replies;
-            info.udp.tx_bytes += reply_length;
+            info.udp.tx_bytes += expected_length;
             if (expected_head == 0) {
                 ++info.udp.tx_head_wraps;
                 ++info.udp.tx_tail_wraps;
@@ -381,6 +494,14 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                 ++info.udp.rx_tail_wraps;
             }
         }
+        __atomic_store_n(
+            &irq_bsp_progress,
+            static_cast<uint32_t>(info.udp.replies + info.stress.replies),
+            __ATOMIC_RELEASE);
+        // Progress advanced: drain any RX already pending (no new MSI-X).
+        cpu::disable_interrupts();
+        irq_try_demux_rx();
+        cpu::enable_interrupts();
         success = true;
     } while (false);
     return success;
@@ -413,6 +534,10 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
         net::udp_expected_head(stress_base + udp_stress_datagrams - 1);
     const uint32_t expected_rx_tail =
         net::udp_expected_rx_tail(stress_base + udp_stress_datagrams - 1);
+    info.stress.rx_head = mmio_read(reg_rdh0);
+    info.stress.tx_head = mmio_read(reg_tdh0);
+    info.stress.tx_tail = mmio_read(reg_tdt0);
+    info.stress.rx_tail = mmio_read(reg_rdt0);
     if (info.stress.requests != udp_stress_datagrams ||
         info.stress.replies != udp_stress_datagrams ||
         info.stress.recycled_buffers != udp_stress_datagrams ||
@@ -424,8 +549,10 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
         info.stress.tx_tail != expected_head ||
         info.stress.rx_head_wraps != 32 || info.stress.tx_head_wraps != 32 ||
         info.stress.rx_tail_wraps != 32 || info.stress.tx_tail_wraps != 32 ||
-        network_rx_interrupts(NetworkPhase::UdpStress) != udp_stress_datagrams ||
-        network_tx_interrupts(NetworkPhase::UdpStress) != udp_stress_datagrams ||
+        __atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams + udp_stress_datagrams ||
+        __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams + udp_stress_datagrams ||
         network_vector_errors()) {
         info.stress.failure = 8;
         return false;
@@ -722,6 +849,8 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     info.irq_rx = {};
     info.irq_rx.stage = 1;
     irq_rx_next = info.udp.rx_head;
+    irq_echo_next = info.udp.rx_head;
+    __atomic_store_n(&irq_bsp_progress, 0, __ATOMIC_RELEASE);
 
     cpu::disable_interrupts();
     __atomic_store_n(&protocol_active, false, __ATOMIC_RELEASE);
@@ -737,6 +866,10 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
             return false;
         }
     }
+    // Refresh heads after the last recycle; IRQ Echo may have raced mid-flight.
+    info.udp.rx_head = mmio_read(reg_rdh0);
+    info.udp.tx_head = mmio_read(reg_tdh0);
+    info.udp.tx_tail = mmio_read(reg_tdt0);
     if (info.udp.requests != udp_test_datagrams ||
         info.udp.replies != udp_test_datagrams ||
         info.udp.payload_bytes != udp_expected_payload_bytes ||
@@ -749,8 +882,10 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
         info.udp.recycled_buffers != udp_test_datagrams ||
         info.udp.socket_delivered != udp_test_datagrams ||
         info.udp.socket_received != udp_test_datagrams ||
-        network_rx_interrupts(NetworkPhase::Udp) != udp_test_datagrams ||
-        network_tx_interrupts(NetworkPhase::Udp) != udp_test_datagrams ||
+        __atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams ||
+        __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams ||
         network_vector_errors()) {
         info.udp.failure = 8;
         return false;
@@ -767,7 +902,9 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     const uint32_t irq_expected =
         static_cast<uint32_t>(udp_test_datagrams + udp_stress_datagrams);
     if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) !=
-        irq_expected) {
+            irq_expected ||
+        __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) !=
+            irq_expected) {
         info.irq_rx.failure = 1;
         return false;
     }

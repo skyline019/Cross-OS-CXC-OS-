@@ -153,6 +153,10 @@ void interrupt_handler(void* opaque) {
                 __atomic_add_fetch(&detail::info.packet.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
             }
+            // M30: single TX DMA page — drain pending IRQ echoes after DD.
+            if (udp_phase || udp_stress_phase) {
+                detail::irq_try_demux_rx();
+            }
         }
     }
     detail::mmio_write(detail::reg_icr, result->expected_cause |
@@ -219,7 +223,11 @@ volatile bool socket_tx_bp_active = false;
 volatile bool socket_tx_wait_active = false;
 volatile bool socket_irq_rx_active = false;
 volatile LegacyRxDescriptor* live_rx_ring = nullptr;
+volatile LegacyTxDescriptor* live_tx_ring = nullptr;
+uint8_t* live_tx_buffer = nullptr;
 uint32_t irq_rx_next = 0;
+uint32_t irq_echo_next = 0;
+uint32_t irq_bsp_progress = 0;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
 volatile bool udp_stress_active = false;
@@ -294,6 +302,7 @@ bool prepare_packet_rings(volatile LegacyRxDescriptor*& rx_ring,
     tx_ring = static_cast<volatile LegacyTxDescriptor*>(
         pmm::physical_to_virtual(tx_ring_physical));
     live_rx_ring = rx_ring;
+    live_tx_ring = tx_ring;
 
     for (size_t index = 0; index < rx_buffer_count; ++index) {
         const uint64_t physical = allocate_packet_page();
@@ -309,6 +318,7 @@ bool prepare_packet_rings(volatile LegacyRxDescriptor*& rx_ring,
         return false;
     }
     tx_buffer = static_cast<uint8_t*>(pmm::physical_to_virtual(tx_buffer_physical));
+    live_tx_buffer = tx_buffer;
 
     const uint32_t ral = mmio_read(reg_ral0);
     const uint32_t rah = mmio_read(reg_rah0);
@@ -590,7 +600,11 @@ bool run_msix_test() {
     __atomic_store_n(&detail::socket_tx_wait_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_irq_rx_active, false, __ATOMIC_RELEASE);
     detail::live_rx_ring = nullptr;
+    detail::live_tx_ring = nullptr;
+    detail::live_tx_buffer = nullptr;
     detail::irq_rx_next = 0;
+    detail::irq_echo_next = 0;
+    detail::irq_bsp_progress = 0;
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
     detail::packet_free_before = 0;
