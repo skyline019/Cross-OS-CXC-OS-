@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 35 / v0.36.0：用户地址空间 ADR（A1）**（M13–M34 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 36 / v0.37.0：BSP 用户 CR3 探针（A1）**（M13–M35 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -62,6 +62,7 @@ CXC_OS_SELF_TEST_PASS
 | Generic RX submit (M33) | `try_submit_rx_dd`（无 Echo/TestInfo）；独立 `submitted:266`；不改 M13/`266/266/266` |
 | Third midfield (M34) | [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；阶段 0 收束；主线改 A1 |
 | User AS ADR (M35) | [`adr-user-address-space.md`](adr-user-address-space.md)；共享内核高半；每线程内核栈；M36 起 BSP CR3 探针 |
+| User AS probe (M36) | `create`/`map_user_page`/CR3 往返；`cr3_switch/write/read/user_bit:1`；仍 CPL0 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -244,4 +245,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-下一阶段为 M36 BSP 用户 CR3 切换探针，再接 ELF / syscall v0；仍必须保持实际中断、外部数据完整性和 M13–M35 回归证据。
+下一阶段为 ring-3 选择子/TSS 或静态 ELF 加载；仍必须保持实际中断、外部数据完整性和 M13–M36 回归证据。

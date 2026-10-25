@@ -18,10 +18,13 @@ namespace {
 constexpr uint64_t address_mask = 0x000ffffffffff000;
 constexpr uint64_t present = uint64_t{1} << 0;
 constexpr uint64_t writable = uint64_t{1} << 1;
+constexpr uint64_t user = uint64_t{1} << 2;
 constexpr uint64_t write_through = uint64_t{1} << 3;
 constexpr uint64_t cache_disable = uint64_t{1} << 4;
 constexpr uint64_t huge_page = uint64_t{1} << 7;
 constexpr uint64_t no_execute = uint64_t{1} << 63;
+constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
+constexpr uint64_t probe_pattern = 0x4358435536000036ull;  // "CXCU\0\06"
 constexpr uint64_t large_page_size = 2 * 1024 * 1024;
 constexpr uint32_t pe_directory_base_reloc = 5;
 constexpr uint32_t pe_reloc_dir64 = 10;
@@ -47,6 +50,7 @@ volatile uint64_t shootdown_ack[smp::maximum_processors];
 volatile uint64_t invalidation_count[smp::maximum_processors];
 volatile uint64_t completed_shootdowns = 0;
 volatile bool shootdown_fault = false;
+UserAsProbeResult probe_result{};
 
 void invalidate_page(uint64_t virtual_address);
 
@@ -248,7 +252,7 @@ uint64_t pt_index(uint64_t virtual_address) {
     return (virtual_address >> 12) & 0x1ff;
 }
 
-uint64_t next_table(uint64_t& entry) {
+uint64_t next_table(uint64_t& entry, uint64_t new_table_flags) {
     if ((entry & present) != 0) {
         if ((entry & huge_page) != 0) {
             return 0;
@@ -260,7 +264,7 @@ uint64_t next_table(uint64_t& entry) {
     if (physical == 0) {
         return 0;
     }
-    entry = physical | present | writable;
+    entry = physical | present | writable | (new_table_flags & user);
     ++table_page_count;
     return physical;
 }
@@ -272,12 +276,14 @@ bool map_2m(uint64_t physical, uint64_t virtual_address, uint64_t flags) {
     }
 
     uint64_t* root = table_at(root_physical);
-    const uint64_t pdpt_physical = next_table(root[pml4_index(virtual_address)]);
+    const uint64_t pdpt_physical =
+        next_table(root[pml4_index(virtual_address)], 0);
     if (pdpt_physical == 0) {
         return false;
     }
     uint64_t* pdpt = table_at(pdpt_physical);
-    const uint64_t pd_physical = next_table(pdpt[pdpt_index(virtual_address)]);
+    const uint64_t pd_physical =
+        next_table(pdpt[pdpt_index(virtual_address)], 0);
     if (pd_physical == 0) {
         return false;
     }
@@ -292,19 +298,27 @@ bool map_2m(uint64_t physical, uint64_t virtual_address, uint64_t flags) {
     return true;
 }
 
-bool map_4k(uint64_t physical, uint64_t virtual_address, uint64_t flags) {
-    uint64_t* root = table_at(root_physical);
-    const uint64_t pdpt_physical = next_table(root[pml4_index(virtual_address)]);
+bool map_4k_in(uint64_t root_phys, uint64_t physical, uint64_t virtual_address,
+               uint64_t flags) {
+    if (root_phys == 0) {
+        return false;
+    }
+    const uint64_t walk_user = (flags & user) != 0 ? user : 0;
+    uint64_t* root = table_at(root_phys);
+    const uint64_t pdpt_physical =
+        next_table(root[pml4_index(virtual_address)], walk_user);
     if (pdpt_physical == 0) {
         return false;
     }
     uint64_t* pdpt = table_at(pdpt_physical);
-    const uint64_t pd_physical = next_table(pdpt[pdpt_index(virtual_address)]);
+    const uint64_t pd_physical =
+        next_table(pdpt[pdpt_index(virtual_address)], walk_user);
     if (pd_physical == 0) {
         return false;
     }
     uint64_t* pd = table_at(pd_physical);
-    const uint64_t pt_physical = next_table(pd[pd_index(virtual_address)]);
+    const uint64_t pt_physical =
+        next_table(pd[pd_index(virtual_address)], walk_user);
     if (pt_physical == 0) {
         return false;
     }
@@ -317,6 +331,10 @@ bool map_4k(uint64_t physical, uint64_t virtual_address, uint64_t flags) {
     entry = physical | present | flags;
     ++small_page_count;
     return true;
+}
+
+bool map_4k(uint64_t physical, uint64_t virtual_address, uint64_t flags) {
+    return map_4k_in(root_physical, physical, virtual_address, flags);
 }
 
 bool map_region(const pmm::Region& region) {
@@ -646,50 +664,59 @@ bool activate_runtime() {
     return true;
 }
 
-MappingInfo inspect_mapping(uint64_t virtual_address) {
-    if (root_physical == 0) {
-        return MappingInfo{false, false, false};
+MappingInfo inspect_mapping_in(uint64_t root_phys, uint64_t virtual_address) {
+    if (root_phys == 0) {
+        return MappingInfo{false, false, false, false};
     }
     bool can_write = true;
     bool can_execute = true;
-    const uint64_t* root = table_at(root_physical);
+    bool is_user = true;
+    const uint64_t* root = table_at(root_phys);
     const uint64_t pml4e = root[pml4_index(virtual_address)];
     if ((pml4e & present) == 0) {
-        return MappingInfo{false, false, false};
+        return MappingInfo{false, false, false, false};
     }
     can_write = can_write && (pml4e & writable) != 0;
     can_execute = can_execute && (pml4e & no_execute) == 0;
+    is_user = is_user && (pml4e & user) != 0;
 
     const uint64_t* pdpt = table_at(pml4e & address_mask);
     const uint64_t pdpte = pdpt[pdpt_index(virtual_address)];
     if ((pdpte & present) == 0) {
-        return MappingInfo{false, false, false};
+        return MappingInfo{false, false, false, false};
     }
     can_write = can_write && (pdpte & writable) != 0;
     can_execute = can_execute && (pdpte & no_execute) == 0;
+    is_user = is_user && (pdpte & user) != 0;
     if ((pdpte & huge_page) != 0) {
-        return MappingInfo{true, can_write, can_execute};
+        return MappingInfo{true, can_write, can_execute, is_user};
     }
 
     const uint64_t* pd = table_at(pdpte & address_mask);
     const uint64_t pde = pd[pd_index(virtual_address)];
     if ((pde & present) == 0) {
-        return MappingInfo{false, false, false};
+        return MappingInfo{false, false, false, false};
     }
     can_write = can_write && (pde & writable) != 0;
     can_execute = can_execute && (pde & no_execute) == 0;
+    is_user = is_user && (pde & user) != 0;
     if ((pde & huge_page) != 0) {
-        return MappingInfo{true, can_write, can_execute};
+        return MappingInfo{true, can_write, can_execute, is_user};
     }
 
     const uint64_t* pt = table_at(pde & address_mask);
     const uint64_t pte = pt[pt_index(virtual_address)];
     if ((pte & present) == 0) {
-        return MappingInfo{false, false, false};
+        return MappingInfo{false, false, false, false};
     }
     can_write = can_write && (pte & writable) != 0;
     can_execute = can_execute && (pte & no_execute) == 0;
-    return MappingInfo{true, can_write, can_execute};
+    is_user = is_user && (pte & user) != 0;
+    return MappingInfo{true, can_write, can_execute, is_user};
+}
+
+MappingInfo inspect_mapping(uint64_t virtual_address) {
+    return inspect_mapping_in(root_physical, virtual_address);
 }
 
 bool is_mapped(uint64_t virtual_address) {
@@ -822,6 +849,202 @@ bool map_smp_trampoline(uint64_t code_physical, uint64_t data_physical) {
 
 uint64_t root_physical_address() {
     return root_physical;
+}
+
+uint64_t kernel_address_space() {
+    return root_physical;
+}
+
+uint64_t create_user_address_space() {
+    if (root_physical == 0 || smp::current_cpu_index() != 0) {
+        return 0;
+    }
+    const uint64_t user_root = pmm::allocate_pages(1);
+    if (user_root == 0) {
+        return 0;
+    }
+    ++table_page_count;
+    uint64_t* const user_pml4 = table_at(user_root);
+    const uint64_t* const kernel_pml4 = table_at(root_physical);
+    // D1: share kernel high-half PML4 entries; D2: low half starts empty
+    // (SIPI identity stays only in the kernel root).
+    memset(user_pml4, 0, 256 * sizeof(uint64_t));
+    for (size_t index = 256; index < 512; ++index) {
+        user_pml4[index] = kernel_pml4[index];
+    }
+    return user_root;
+}
+
+void free_table_tree(uint64_t table_physical, unsigned level) {
+    if (table_physical == 0 || level == 0) {
+        return;
+    }
+    uint64_t* const table = table_at(table_physical);
+    for (size_t index = 0; index < 512; ++index) {
+        const uint64_t entry = table[index];
+        if ((entry & present) == 0 || (entry & huge_page) != 0) {
+            continue;
+        }
+        free_table_tree(entry & address_mask, level - 1);
+    }
+    pmm::free_pages(table_physical, 1);
+    if (table_page_count > 0) {
+        --table_page_count;
+    }
+}
+
+bool destroy_user_address_space(uint64_t user_root_physical) {
+    if (user_root_physical == 0 || user_root_physical == root_physical ||
+        smp::current_cpu_index() != 0) {
+        return false;
+    }
+    if (read_cr3() == user_root_physical) {
+        write_cr3(root_physical);
+    }
+    uint64_t* const user_pml4 = table_at(user_root_physical);
+    // Free only private low-half walks; high-half entries are shared.
+    for (size_t index = 0; index < 256; ++index) {
+        const uint64_t entry = user_pml4[index];
+        if ((entry & present) == 0 || (entry & huge_page) != 0) {
+            continue;
+        }
+        free_table_tree(entry & address_mask, 3);
+    }
+    pmm::free_pages(user_root_physical, 1);
+    if (table_page_count > 0) {
+        --table_page_count;
+    }
+    return true;
+}
+
+bool map_user_page(uint64_t user_root_physical, uint64_t virtual_address,
+                   uint64_t physical_address, uint64_t map_flags) {
+    if (user_root_physical == 0 || user_root_physical == root_physical ||
+        physical_address == 0 || smp::current_cpu_index() != 0 ||
+        ((physical_address | virtual_address) & (pmm::page_size - 1)) != 0 ||
+        virtual_address == 0 || virtual_address >= user_canonical_limit ||
+        virtual_address >= direct_map_base) {
+        return false;
+    }
+    uint64_t pte_flags = user | no_execute;
+    if ((map_flags & user_map_writable) != 0) {
+        pte_flags |= writable;
+    }
+    if ((map_flags & user_map_executable) != 0) {
+        pte_flags &= ~no_execute;
+    }
+    return map_4k_in(user_root_physical, physical_address, virtual_address,
+                     pte_flags);
+}
+
+bool activate_address_space(uint64_t root_phys) {
+    if (root_phys == 0 || smp::current_cpu_index() != 0) {
+        return false;
+    }
+    write_cr3(root_phys);
+    return true;
+}
+
+bool run_user_as_probe(UserAsProbeResult& result) {
+    result = UserAsProbeResult{};
+    result.stage = 1;
+    if (smp::current_cpu_index() != 0 || root_physical == 0) {
+        result.failure = 1;
+        return false;
+    }
+
+    const uint64_t user_root = create_user_address_space();
+    if (user_root == 0) {
+        result.failure = 2;
+        return false;
+    }
+    result.user_root = user_root;
+    result.stage = 2;
+
+    const uint64_t page_physical = pmm::allocate_pages(1);
+    if (page_physical == 0) {
+        (void)destroy_user_address_space(user_root);
+        result.failure = 3;
+        return false;
+    }
+    result.probe_physical = page_physical;
+    if (!map_user_page(user_root, user_probe_base, page_physical,
+                       user_map_writable)) {
+        pmm::free_pages(page_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 4;
+        return false;
+    }
+    result.stage = 3;
+
+    const MappingInfo mapped =
+        inspect_mapping_in(user_root, user_probe_base);
+    if (!mapped.present || !mapped.writable || !mapped.user ||
+        mapped.executable) {
+        pmm::free_pages(page_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 5;
+        return false;
+    }
+    result.user_bit = 1;
+    result.stage = 4;
+
+    const uint64_t kernel_root = root_physical;
+    const uint64_t irq_flags = cpu::read_flags();
+    cpu::disable_interrupts();
+    if (!activate_address_space(user_root) || read_cr3() != user_root) {
+        cpu::restore_interrupts(irq_flags);
+        pmm::free_pages(page_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 6;
+        return false;
+    }
+    result.cr3_switch = 1;
+
+    auto* const probe =
+        reinterpret_cast<volatile uint64_t*>(user_probe_base);
+    *probe = probe_pattern;
+    const uint64_t observed = *probe;
+    result.write_ok = observed == probe_pattern ? 1 : 0;
+    result.read_ok = result.write_ok;
+
+    if (!activate_address_space(kernel_root) || read_cr3() != kernel_root) {
+        cpu::restore_interrupts(irq_flags);
+        result.failure = 7;
+        return false;
+    }
+    cpu::restore_interrupts(irq_flags);
+    result.stage = 5;
+
+    const auto* const via_direct = static_cast<const uint64_t*>(
+        pmm::physical_to_virtual(page_physical));
+    if (result.read_ok == 0 || *via_direct != probe_pattern) {
+        pmm::free_pages(page_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 8;
+        return false;
+    }
+
+    // Kernel root must not have gained a low mapping at the probe VA.
+    if (inspect_mapping(user_probe_base).present) {
+        pmm::free_pages(page_physical, 1);
+        (void)destroy_user_address_space(user_root);
+        result.failure = 9;
+        return false;
+    }
+
+    pmm::free_pages(page_physical, 1);
+    if (!destroy_user_address_space(user_root)) {
+        result.failure = 10;
+        return false;
+    }
+    result.stage = 6;
+    probe_result = result;
+    return true;
+}
+
+const UserAsProbeResult& user_as_probe_result() {
+    return probe_result;
 }
 
 uint64_t page_table_pages() {

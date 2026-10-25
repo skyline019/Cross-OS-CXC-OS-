@@ -48,6 +48,10 @@ SOCKET_TX_WAIT_SUCCESS = (
 )
 IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver/echo/recycle: 266/266/266"
 IRQ_RX_SUBMIT_SUCCESS = "UDP IRQ RX submit: 266"
+USER_AS_PROBE_SUCCESS = (
+    "user AS probe: cr3_switch: 1, write: 1, read: 1, user_bit: 1, "
+    "va: 0x0000000000400000"
+)
 
 
 @dataclass
@@ -405,6 +409,7 @@ class ContractRunner:
         assert SOCKET_TX_WAIT_SUCCESS.encode() in serial
         assert IRQ_RX_DEMUX_SUCCESS.encode() in serial
         assert IRQ_RX_SUBMIT_SUCCESS.encode() in serial
+        assert USER_AS_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -413,7 +418,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + M13 peer + M14/M26/M29–M33 IRQ + M25–M28 TX"
+            "kernel PASS + M13 peer + M14/M26/M29–M33 IRQ + M25–M28 TX + M36 AS"
         )
 
     def negative_evidence(self, work: Path) -> str:

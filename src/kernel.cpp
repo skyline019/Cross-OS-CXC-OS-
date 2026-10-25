@@ -582,6 +582,27 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(smp_info.total_ipi_calls);
     log::write('\n');
 
+    vmm::UserAsProbeResult user_as{};
+    if (!vmm::run_user_as_probe(user_as)) {
+        log::write("[debug] user AS probe stage: ");
+        log::decimal(user_as.stage);
+        log::write(", failure: ");
+        log::decimal(user_as.failure);
+        log::write('\n');
+        log::panic("M36 user address-space probe failed");
+    }
+    log::write("[ok] user AS probe: cr3_switch: ");
+    log::decimal(user_as.cr3_switch);
+    log::write(", write: ");
+    log::decimal(user_as.write_ok);
+    log::write(", read: ");
+    log::decimal(user_as.read_ok);
+    log::write(", user_bit: ");
+    log::decimal(user_as.user_bit);
+    log::write(", va: ");
+    log::hex(vmm::user_probe_base);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -685,7 +706,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.36.0 - ADR: user address space (A1)");
+    cxc::log::line("CXC/OS 0.37.0 - BSP user CR3 probe (A1/M36)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
