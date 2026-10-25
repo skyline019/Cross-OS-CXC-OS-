@@ -141,3 +141,31 @@ python3 tools/contract_test.py --host-only \
 结果摘要见 `contract-results/CONTRACT_VALIDATION.txt`，机器可读命令和耗时见 `contract-results/contract-report.json`。
 
 CI 配置加入 host-only 检查和 Linux 完整契约，但本环境仍未实际执行远端 GitHub Actions 或 Windows 本地构建，不作已通过声明。
+
+## 8. 边缘合同（M74 起生效；权重不低于成功路径）
+
+自第七次中场（[`midpoint-assessment-7.md`](midpoint-assessment-7.md)）起，测试契约**显式纳入边缘**，且对通向 A2 的新主线（块设备 / 持久根 / 大跨步 syscall）**边缘比较重要**。
+
+### 8.1 原则
+
+1. **成功路径仍必要**，但不单独构成「可合并」；缺少约定边缘用例视为合同未完成。  
+2. **边缘与负例失败与成功路径失败同等阻塞**：不得删边缘断言换绿；不得用「happy path 已绿」豁免。  
+3. **用测试调试**：先写可复现边缘/负例（host 模型或 QEMU），再改内核/驱动；大块变更同变更集预留调试点（串口 stage/failure、路径计数等）。  
+4. 冻结的 M13 Echo / peer 成功字符串**仍不改写**；边缘扩域加在用户态/FS/块设备/新 syscall 面。
+
+### 8.2 边缘类别（最低清单；按切片增量落地）
+
+| 类别 | 示例（随切片具体化） | 期望 |
+|---|---|---|
+| 非法输入 | 空路径、超长路径、坏 flags、越界 LBA | 明确 errno / 拒绝；无 panic（除非刻意故障探针） |
+| 缺失/不存在 | `ENOENT` open/unlink；空设备 | 可区分于其他错误 |
+| 资源/忙 | fd 表满、inode 满、unlink 时 fd 仍打开 | 稳定拒绝；可回归 |
+| 边界长度 | 0 字节读写、恰好 `max_file_bytes`、BUFSIZ 边界 | 与成功路径同批证据 |
+| 权限/类型 | 对目录 unlink、对文件 getdents | 拒绝且不破坏其他 inode |
+| 故障注入 | 块设备读失败、短读（后续切片） | 有串口/合同标记；可定位 |
+
+### 8.3 落地节奏
+
+- **M74 窗口**：立约（本节）；默认 `qemu-test` 成功路径保持 M13–M73 绿。  
+- **M75+ 大跨步**：每个大块交付至少附带该切片相关的边缘自动化（host 或 QEMU）；缺边缘 = 变更集未完成。  
+- Full midpoint（正确/失败/掉电/…）网络矩阵继续有效；用户/块设备边缘是**追加面**，不替代也不削弱网络合同。

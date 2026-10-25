@@ -1,6 +1,6 @@
 # musl 子集链接实验笔记
 
-基线：Milestone 73 / v0.74.0  
+基线：Milestone 74 / v0.75.0（第七次中场后；musl 烟测主叙事结束）  
 宿主探针：Ubuntu `musl` / `musl-dev` / `musl-tools` 1.2.4（WSL / Linux CI）。
 
 ## 1. 已验证（链接）
@@ -28,8 +28,8 @@
 - **M73**：真 musl `unlink`（`USER_MUSL_UNL_PASS` / `LIBUNL.ELF`）；syscall 87；常规文件、fd 未打开时可删。
 - **不宣称**：机上编译器（A2）、完整 POSIX、SYSRET 快路径、持久块设备。
 
-## 4. 下一刀优先级
+## 4. 下一刀优先级（M74 已裁定）
 
-1. **M74 中场**：正式评估并裁定是否切 **virtio-blk** 薄切片（A2 硬阻塞；当前树无块设备代码）；  
-2. 可选：SYSCALL 返回改 SYSRET；  
+1. **块设备大跨步**（virtio-blk 或等价）— 见 [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；musl 仅按链接失败清单补号，不再作主叙事；  
+2. 大块变更：调试点预留 + 边缘合同（[`test-contract.md`](test-contract.md) §8）；  
 3. A2 机上工具链仍需独立合同。

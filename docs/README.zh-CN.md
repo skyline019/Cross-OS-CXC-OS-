@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 73 / v0.74.0：musl-gcc unlink**（M13–M72 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 74 / v0.75.0：第七次中场**（M13–M73 合同保持；此后大跨步 + 边缘契约）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -100,6 +100,7 @@ CXC_OS_SELF_TEST_PASS
 | musl-gcc fopen (M71) | 真 musl `fopen`/`fwrite`/`fread`/`fclose`；ESP `LIBFOP.ELF`；brk `0x409000`/栈 `0x420000`；`readv` + `mprotect`/`ioctl`/`fcntl` stub；串口 `USER_MUSL_FOP_PASS` |
 | musl-gcc opendir (M72) | 真 musl `mkdir`/`opendir`/`readdir`/`closedir`；ESP `LIBODR.ELF`；串口 `USER_MUSL_ODR_PASS` |
 | musl-gcc unlink (M73) | 真 musl `unlink` + 再创建；ESP `LIBUNL.ELF`；syscall 87；串口 `USER_MUSL_UNL_PASS` |
+| Seventh midfield (M74) | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；真 musl 子集收束；**大跨步 + 边缘契约**；下一主线块设备 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -107,17 +108,19 @@ CXC_OS_SELF_TEST_PASS
 
 - [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
 - [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
-- [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步契约；
-- [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc、下一刀加深 mini-libc）；
-- [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环、下一刀外部 ELF/libc）；
+- [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步；M74 后大跨步 + 边缘契约；
+- [`docs/midpoint-assessment-7.md`](docs/midpoint-assessment-7.md)：第七次中场（M65–M74、真 musl 收束、块设备大跨步）；
+- [`docs/midpoint-assessment-6.md`](docs/midpoint-assessment-6.md)：第六次中场（M55–M64、mini_libc CRT）；
+- [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc）；
+- [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环）；
 - [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
-- [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24、债项刷新与下一步）；
-- [`docs/midpoint-assessment.md`](docs/midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13 基线）；
+- [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24）；
+- [`docs/midpoint-assessment.md`](docs/midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13）；
 - [`docs/from-zero-pitfalls.md`](docs/from-zero-pitfalls.md)：从零重建与持续踩坑记录；
 - [`docs/smp-memory-migration.md`](docs/smp-memory-migration.md)：M10 锁域、两阶段迁移、TLB shootdown 和故障探针；
 - [`docs/smp-scheduler.md`](docs/smp-scheduler.md)：M9 每 CPU run queue、共享锁和本地 timer；
 - [`docs/smp-startup.md`](docs/smp-startup.md)：trampoline、GS CPU block、SIPI/IPI 和停车循环；
-- [`docs/test-contract.md`](docs/test-contract.md)：中场正确/失败/掉电/事务/循环/高压/混沌测试契约与实测；
+- [`docs/test-contract.md`](docs/test-contract.md)：中场测试契约；§8 边缘合同（M74 起）；
 - [`docs/udp-ring-wrap.md`](docs/udp-ring-wrap.md)：M13–M14 UDP/ring、M20–M25 socket 栈、RX demux 与 TX submit；
 - [`docs/arp-ipv4-icmp.md`](docs/arp-ipv4-icmp.md)：M12 ARP/IPv4/ICMP、checksum、跨向量 cause 与负对照；
 - [`docs/e1000e-packet-dma.md`](docs/e1000e-packet-dma.md)：M11 queue 0 rings、双向 DMA、peer 协议与清理；
@@ -284,4 +287,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀加深真 musl API / 机上工具链准备；下一正式中场 **M74**）。须保持 M13–M73 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **块设备大跨步**；边缘纳入测试契约；下一正式中场约 **M84**）。须保持 M13–M74 回归证据。

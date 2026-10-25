@@ -136,7 +136,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M71** | musl-gcc `fopen` + layout/stub | 串口 `USER_MUSL_FOP_PASS`；ESP `LIBFOP.ELF` |
 | **M72** | musl-gcc `opendir`/`readdir` | 串口 `USER_MUSL_ODR_PASS`；ESP `LIBODR.ELF` |
 | **M73** | musl-gcc `unlink` | 串口 `USER_MUSL_UNL_PASS`；ESP `LIBUNL.ELF` |
-| **M74** | 第七次中场（计划） | 见 cadence；块设备主线裁定 |
+| **M74** | 第七次中场 + 新格局 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；大跨步/边缘契约 |
+| **M75+** | 块设备大跨步（计划） | virtio-blk 等；调试点 + 边缘用例同变更集 |
 
 ## 6. 参考
 
