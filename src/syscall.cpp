@@ -3,6 +3,7 @@
 #include <cxc/fs.hpp>
 #include <cxc/log.hpp>
 #include <cxc/pmm.hpp>
+#include <cxc/smp.hpp>
 #include <cxc/user.hpp>
 #include <cxc/vmm.hpp>
 
@@ -58,6 +59,7 @@ constexpr char expected_musl_dir_pass[] = "USER_MUSL_DIR_PASS\n";
 constexpr char expected_disk_exec_pass[] = "DISK_EXEC_PASS\n";
 constexpr char expected_disk_argv_pass[] = "DISK_ARGV_PASS\n";
 constexpr char expected_disk_env_pass[] = "DISK_ENV_PASS\n";
+constexpr char expected_fork_wait_pass[] = "FORK_WAIT_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -65,11 +67,33 @@ constexpr uint64_t fcntl_getfl = 3;
 constexpr uint64_t fcntl_setfl = 4;
 constexpr int64_t mmap_error = -1;
 constexpr uint64_t probe_tid = 1;
-constexpr uint64_t probe_pid = 1;
-constexpr uint64_t probe_ppid = 0;
 constexpr int64_t errno_inval = -22;
 constexpr int64_t errno_fault = -14;
+constexpr int64_t errno_child = -10;   // -ECHILD
+constexpr int64_t errno_again = -11;   // -EAGAIN
 constexpr uint64_t max_iov = 8;
+
+// M83: cooperative single-child fork (child runs to exit, then parent resumes).
+struct ForkSlot {
+    uint32_t armed;
+    uint32_t child_alive;
+    uint32_t zombie;
+    uint32_t parent_pid;
+    uint32_t child_pid;
+    uint64_t parent_root;
+    uint64_t child_root;
+    uint64_t child_status;
+    uint64_t parent_brk_base;
+    uint64_t parent_brk_current;
+    uint64_t parent_mmap_next;
+    uint32_t parent_brk_pages;
+    uint32_t parent_brk_grows;
+    uint32_t parent_mmap_calls;
+    uint32_t parent_mmap_pages;
+    cpu::InterruptFrame parent_frame;
+};
+ForkSlot fork_slot{};
+uint32_t next_pid = 2;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -592,6 +616,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_disk_env_pass = 1;
         }
     }
+    if (length == sizeof(expected_fork_wait_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_fork_wait_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_fork_wait_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_fork_wait_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -788,8 +825,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.83.0");
-    fill_uts_field(local.version, "M82");
+    fill_uts_field(local.release, "0.84.0");
+    fill_uts_field(local.version, "M83");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -799,12 +836,12 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
 }
 
 cpu::InterruptFrame* handle_getpid(cpu::InterruptFrame* frame) {
-    frame->rax = probe_pid;
+    frame->rax = current.pid != 0 ? current.pid : 1;
     return frame;
 }
 
 cpu::InterruptFrame* handle_getppid(cpu::InterruptFrame* frame) {
-    frame->rax = probe_ppid;
+    frame->rax = current.ppid;
     return frame;
 }
 
@@ -1181,6 +1218,83 @@ cpu::InterruptFrame* handle_rename(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_fork(cpu::InterruptFrame* frame) {
+    if (current.user_root == 0 || smp::current_cpu_index() != 0) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    if (fork_slot.armed != 0) {
+        frame->rax = static_cast<uint64_t>(errno_again);
+        return frame;
+    }
+    const uint64_t child_root =
+        vmm::clone_user_address_space(current.user_root);
+    if (child_root == 0) {
+        frame->rax = static_cast<uint64_t>(-12);  // -ENOMEM
+        return frame;
+    }
+
+    const uint32_t parent_pid = current.pid != 0 ? current.pid : 1;
+    const uint32_t child_pid = next_pid++;
+    if (next_pid == 0) {
+        next_pid = 2;
+    }
+
+    fork_slot = ForkSlot{};
+    fork_slot.armed = 1;
+    fork_slot.child_alive = 1;
+    fork_slot.parent_pid = parent_pid;
+    fork_slot.child_pid = child_pid;
+    fork_slot.parent_root = current.user_root;
+    fork_slot.child_root = child_root;
+    fork_slot.parent_brk_base = current.brk_base;
+    fork_slot.parent_brk_current = current.brk_current;
+    fork_slot.parent_mmap_next = current.mmap_next;
+    fork_slot.parent_brk_pages = current.brk_pages;
+    fork_slot.parent_brk_grows = current.brk_grows;
+    fork_slot.parent_mmap_calls = current.mmap_calls;
+    fork_slot.parent_mmap_pages = current.mmap_pages;
+    fork_slot.parent_frame = *frame;
+    fork_slot.parent_frame.rax = child_pid;
+
+    if (!vmm::activate_address_space(child_root)) {
+        (void)vmm::destroy_user_address_space(child_root);
+        fork_slot = ForkSlot{};
+        frame->rax = static_cast<uint64_t>(-12);
+        return frame;
+    }
+    set_user_root(child_root);
+    current.pid = child_pid;
+    current.ppid = parent_pid;
+    frame->rax = 0;
+    return frame;
+}
+
+cpu::InterruptFrame* handle_wait4(cpu::InterruptFrame* frame) {
+    const int64_t want = static_cast<int64_t>(frame->rdi);
+    const uint64_t status_ptr = frame->rsi;
+    if (fork_slot.armed == 0 || fork_slot.zombie == 0) {
+        frame->rax = static_cast<uint64_t>(errno_child);
+        return frame;
+    }
+    if (want > 0 && static_cast<uint32_t>(want) != fork_slot.child_pid) {
+        frame->rax = static_cast<uint64_t>(errno_child);
+        return frame;
+    }
+    if (status_ptr != 0) {
+        if (!user_pages_ok(status_ptr, sizeof(int32_t), true)) {
+            frame->rax = static_cast<uint64_t>(errno_fault);
+            return frame;
+        }
+        const int32_t status = static_cast<int32_t>(fork_slot.child_status);
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(status_ptr)),
+               &status, sizeof(status));
+    }
+    frame->rax = fork_slot.child_pid;
+    fork_slot = ForkSlot{};
+    return frame;
+}
+
 cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -1213,6 +1327,10 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
         frame->rax = static_cast<uint64_t>(-failure);
         return frame;
     }
+    // Child execve replaces the forked root; keep fork_slot.child_root live.
+    if (fork_slot.child_alive != 0 && current.pid == fork_slot.child_pid) {
+        fork_slot.child_root = current.user_root;
+    }
     // Success: frame already retargeted; do not touch rax as return value
     // for the old image (never resumes).
     return frame;
@@ -1220,10 +1338,47 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
 
 cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
     current.exit_code = frame->rdi;
+
+    // Cooperative fork: child exit resumes the saved parent in user mode.
+    if (fork_slot.armed != 0 && fork_slot.child_alive != 0 &&
+        current.pid == fork_slot.child_pid) {
+        fork_slot.zombie = 1;
+        fork_slot.child_alive = 0;
+        fork_slot.child_status = (frame->rdi & 0xffull) << 8;
+        const uint64_t child_root = fork_slot.child_root;
+        fork_slot.child_root = 0;
+        if (child_root != 0) {
+            (void)vmm::destroy_user_address_space(child_root);
+        }
+        if (!vmm::activate_address_space(fork_slot.parent_root)) {
+            log::panic("fork parent CR3 restore failed");
+        }
+        set_user_root(fork_slot.parent_root);
+        current.pid = fork_slot.parent_pid;
+        current.ppid = 0;
+        current.brk_base = fork_slot.parent_brk_base;
+        current.brk_current = fork_slot.parent_brk_current;
+        current.mmap_next = fork_slot.parent_mmap_next;
+        current.brk_pages = fork_slot.parent_brk_pages;
+        current.brk_grows = fork_slot.parent_brk_grows;
+        current.mmap_calls = fork_slot.parent_mmap_calls;
+        current.mmap_pages = fork_slot.parent_mmap_pages;
+        current.exited = 0;
+        current.active = 1;
+        *frame = fork_slot.parent_frame;
+        return frame;
+    }
+
     current.exited = 1;
     current.active = 0;
     if (current.resume_rip == 0 || ring3_saved_kernel_rsp == 0) {
         log::panic("exit without user session resume");
+    }
+    if (fork_slot.armed != 0) {
+        if (fork_slot.child_root != 0) {
+            (void)vmm::destroy_user_address_space(fork_slot.child_root);
+        }
+        fork_slot = ForkSlot{};
     }
     finish_to_kernel(frame);
     return frame;
@@ -1232,17 +1387,27 @@ cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
 }  // namespace
 
 void clear_session() {
+    if (fork_slot.child_root != 0) {
+        (void)vmm::destroy_user_address_space(fork_slot.child_root);
+    }
+    fork_slot = ForkSlot{};
     current = Session{};
     fs::reset();
 }
 
 void begin_session(uint64_t resume_rip, uint64_t brk_base) {
+    if (fork_slot.child_root != 0) {
+        (void)vmm::destroy_user_address_space(fork_slot.child_root);
+    }
+    fork_slot = ForkSlot{};
     current = Session{};
     fs::reset();
     current.resume_rip = resume_rip;
     current.brk_base = brk_base;
     current.brk_current = brk_base;
     current.mmap_next = default_mmap_base;
+    current.pid = 1;
+    current.ppid = 0;
     current.active = 1;
 }
 
@@ -1314,8 +1479,12 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_unlink(frame);
     case sys_getdents64:
         return handle_getdents64(frame);
+    case sys_fork:
+        return handle_fork(frame);
     case sys_execve:
         return handle_execve(frame);
+    case sys_wait4:
+        return handle_wait4(frame);
     case sys_exit:
     case sys_exit_group:
         return handle_exit(frame);

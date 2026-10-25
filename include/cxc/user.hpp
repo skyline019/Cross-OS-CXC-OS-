@@ -610,6 +610,21 @@ bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
                          DiskExecProbeResult& result);
 const DiskExecProbeResult& disk_exec_probe_result();
 
+struct ForkWaitProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t exit_code;
+};
+
+// M83: launch FORK.ELF — fork + wait4 + ECHILD edge.
+bool run_fork_wait_probe(const uint8_t* image, size_t image_size,
+                         ForkWaitProbeResult& result);
+const ForkWaitProbeResult& fork_wait_probe_result();
+
 constexpr uint32_t max_exec_argc = 8;
 constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;

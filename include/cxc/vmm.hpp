@@ -43,6 +43,8 @@ struct MappingInfo {
 uint64_t kernel_address_space();
 uint64_t create_user_address_space();
 bool destroy_user_address_space(uint64_t user_root_physical);
+// M83: deep-copy low-half user pages into a new address space (fork).
+uint64_t clone_user_address_space(uint64_t src_root_physical);
 bool map_user_page(uint64_t user_root_physical, uint64_t virtual_address,
                    uint64_t physical_address, uint64_t map_flags);
 // BSP-only: clear one user PTE, free its frame, and invlpg (M43 munmap).

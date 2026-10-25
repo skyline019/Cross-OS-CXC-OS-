@@ -1,0 +1,5 @@
+feat: M83 cooperative fork/wait4 + user AS clone (v0.84.0)
+
+Add fork(57)/wait4(61) with deep-copied user address spaces: child runs
+to exit then parent resumes (gcc-shaped fork-exec-wait). Fix destroy_user
+leaf-page leak. Contract FORK_WAIT_PASS + ECHILD edge; ESP FORK.ELF.

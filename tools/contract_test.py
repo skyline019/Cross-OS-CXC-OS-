@@ -141,6 +141,10 @@ DISK_ENV_PASS = "DISK_ENV_PASS"
 DISK_ENV_PROBE_SUCCESS = "disk-env: pass: 1"
 DISK_RENAME_PASS = "DISK_RENAME_PASS"
 DISK_RENAME_PROBE_SUCCESS = "disk-rename: pass: 1"
+FORK_WAIT_PASS = "FORK_WAIT_PASS"
+FORK_WAIT_PROBE_SUCCESS = "fork-wait: pass: 1"
+FORK_WAIT_PASS = "FORK_WAIT_PASS"
+FORK_WAIT_PROBE_SUCCESS = "fork-wait: pass: 1"
 
 
 @dataclass
@@ -595,6 +599,10 @@ class ContractRunner:
         assert DISK_RENAME_PROBE_SUCCESS.encode() in serial
         assert b"edge_miss: 1" in serial
         assert b"edge_xdev: 1" in serial
+        assert FORK_WAIT_PASS.encode() in serial
+        assert FORK_WAIT_PROBE_SUCCESS.encode() in serial
+        assert b"status: 42" in serial
+        assert b"FORK_CHILD" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -603,7 +611,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M82 disk execve envp/rename"
+            "kernel PASS + net + M75–M83 fork/wait"
         )
 
     def negative_evidence(self, work: Path) -> str:

@@ -894,7 +894,18 @@ void free_table_tree(uint64_t table_physical, unsigned level) {
         if ((entry & present) == 0 || (entry & huge_page) != 0) {
             continue;
         }
-        free_table_tree(entry & address_mask, level - 1);
+        if (level == 1) {
+            // PTE leaf: free the mapped user/data frame (M83 debt fix).
+            const uint64_t frame = entry & address_mask;
+            if (frame != 0) {
+                pmm::free_pages(frame, 1);
+            }
+            if (small_page_count > 0) {
+                --small_page_count;
+            }
+        } else {
+            free_table_tree(entry & address_mask, level - 1);
+        }
     }
     pmm::free_pages(table_physical, 1);
     if (table_page_count > 0) {
@@ -924,6 +935,72 @@ bool destroy_user_address_space(uint64_t user_root_physical) {
         --table_page_count;
     }
     return true;
+}
+
+uint64_t clone_user_address_space(uint64_t src_root_physical) {
+    if (src_root_physical == 0 || src_root_physical == root_physical ||
+        smp::current_cpu_index() != 0) {
+        return 0;
+    }
+    const uint64_t dst_root = create_user_address_space();
+    if (dst_root == 0) {
+        return 0;
+    }
+    uint64_t* const src_pml4 = table_at(src_root_physical);
+    for (size_t pml4_i = 0; pml4_i < 256; ++pml4_i) {
+        const uint64_t pml4e = src_pml4[pml4_i];
+        if ((pml4e & present) == 0 || (pml4e & huge_page) != 0) {
+            continue;
+        }
+        uint64_t* const src_pdpt = table_at(pml4e & address_mask);
+        for (size_t pdpt_i = 0; pdpt_i < 512; ++pdpt_i) {
+            const uint64_t pdpte = src_pdpt[pdpt_i];
+            if ((pdpte & present) == 0 || (pdpte & huge_page) != 0) {
+                continue;
+            }
+            uint64_t* const src_pd = table_at(pdpte & address_mask);
+            for (size_t pd_i = 0; pd_i < 512; ++pd_i) {
+                const uint64_t pde = src_pd[pd_i];
+                if ((pde & present) == 0 || (pde & huge_page) != 0) {
+                    continue;
+                }
+                uint64_t* const src_pt = table_at(pde & address_mask);
+                for (size_t pt_i = 0; pt_i < 512; ++pt_i) {
+                    const uint64_t pte = src_pt[pt_i];
+                    if ((pte & present) == 0 || (pte & user) == 0) {
+                        continue;
+                    }
+                    const uint64_t va = (static_cast<uint64_t>(pml4_i) << 39) |
+                                       (static_cast<uint64_t>(pdpt_i) << 30) |
+                                       (static_cast<uint64_t>(pd_i) << 21) |
+                                       (static_cast<uint64_t>(pt_i) << 12);
+                    const uint64_t src_phys = pte & address_mask;
+                    const uint64_t dst_phys = pmm::allocate_pages(1);
+                    if (dst_phys == 0) {
+                        (void)destroy_user_address_space(dst_root);
+                        return 0;
+                    }
+                    memcpy(reinterpret_cast<void*>(direct_map_base + dst_phys),
+                           reinterpret_cast<const void*>(direct_map_base +
+                                                         src_phys),
+                           pmm::page_size);
+                    uint64_t map_flags = 0;
+                    if ((pte & writable) != 0) {
+                        map_flags |= user_map_writable;
+                    }
+                    if ((pte & no_execute) == 0) {
+                        map_flags |= user_map_executable;
+                    }
+                    if (!map_user_page(dst_root, va, dst_phys, map_flags)) {
+                        pmm::free_pages(dst_phys, 1);
+                        (void)destroy_user_address_space(dst_root);
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+    return dst_root;
 }
 
 bool map_user_page(uint64_t user_root_physical, uint64_t virtual_address,
@@ -1015,7 +1092,7 @@ bool run_user_as_probe(UserAsProbeResult& result) {
         inspect_mapping_in(user_root, user_probe_base);
     if (!mapped.present || !mapped.writable || !mapped.user ||
         mapped.executable) {
-        pmm::free_pages(page_physical, 1);
+        // Mapped leaf freed by destroy_user (M83).
         (void)destroy_user_address_space(user_root);
         result.failure = 5;
         return false;
@@ -1028,7 +1105,6 @@ bool run_user_as_probe(UserAsProbeResult& result) {
     cpu::disable_interrupts();
     if (!activate_address_space(user_root) || read_cr3() != user_root) {
         cpu::restore_interrupts(irq_flags);
-        pmm::free_pages(page_physical, 1);
         (void)destroy_user_address_space(user_root);
         result.failure = 6;
         return false;
@@ -1053,7 +1129,6 @@ bool run_user_as_probe(UserAsProbeResult& result) {
     const auto* const via_direct = static_cast<const uint64_t*>(
         pmm::physical_to_virtual(page_physical));
     if (result.read_ok == 0 || *via_direct != probe_pattern) {
-        pmm::free_pages(page_physical, 1);
         (void)destroy_user_address_space(user_root);
         result.failure = 8;
         return false;
@@ -1061,13 +1136,11 @@ bool run_user_as_probe(UserAsProbeResult& result) {
 
     // Kernel root must not have gained a low mapping at the probe VA.
     if (inspect_mapping(user_probe_base).present) {
-        pmm::free_pages(page_physical, 1);
         (void)destroy_user_address_space(user_root);
         result.failure = 9;
         return false;
     }
 
-    pmm::free_pages(page_physical, 1);
     if (!destroy_user_address_space(user_root)) {
         result.failure = 10;
         return false;
@@ -1146,12 +1219,17 @@ bool run_ring3_probe(Ring3ProbeResult& result) {
     code[8] = 0x0b;
 
     if (!map_user_page(user_root, user_probe_base, code_physical,
-                       user_map_executable) ||
-        !map_user_page(user_root, ring3_user_stack_base, stack_user_physical,
-                       user_map_writable)) {
+                       user_map_executable)) {
         pmm::free_pages(code_physical, 1);
         pmm::free_pages(stack_user_physical, 1);
         (void)destroy_user_address_space(user_root);
+        result.failure = 6;
+        return false;
+    }
+    if (!map_user_page(user_root, ring3_user_stack_base, stack_user_physical,
+                       user_map_writable)) {
+        pmm::free_pages(stack_user_physical, 1);
+        (void)destroy_user_address_space(user_root);  // frees code leaf
         result.failure = 6;
         return false;
     }
@@ -1167,8 +1245,6 @@ bool run_ring3_probe(Ring3ProbeResult& result) {
     cpu::disable_interrupts();
     if (!activate_address_space(user_root) || read_cr3() != user_root) {
         cpu::restore_interrupts(irq_flags);
-        pmm::free_pages(code_physical, 1);
-        pmm::free_pages(stack_user_physical, 1);
         (void)destroy_user_address_space(user_root);
         result.failure = 7;
         return false;
@@ -1186,8 +1262,6 @@ bool run_ring3_probe(Ring3ProbeResult& result) {
     result.stage = 4;
 
     if (!cpu::ring3_int80_was_seen()) {
-        pmm::free_pages(code_physical, 1);
-        pmm::free_pages(stack_user_physical, 1);
         (void)destroy_user_address_space(user_root);
         result.failure = 9;
         return false;
@@ -1196,8 +1270,6 @@ bool run_ring3_probe(Ring3ProbeResult& result) {
     result.cpl = 3;
     result.stage = 5;
 
-    pmm::free_pages(code_physical, 1);
-    pmm::free_pages(stack_user_physical, 1);
     if (!destroy_user_address_space(user_root)) {
         result.failure = 10;
         return false;

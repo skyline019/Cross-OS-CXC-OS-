@@ -95,6 +95,8 @@ uint64_t disk_exec_stub_elf_physical = 0;
 uint64_t disk_exec_stub_elf_size = 0;
 uint64_t disk_exec_payload_elf_physical = 0;
 uint64_t disk_exec_payload_elf_size = 0;
+uint64_t fork_wait_elf_physical = 0;
+uint64_t fork_wait_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1682,6 +1684,28 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write("[ok] disk-rename: pass: 1 edge_miss: 1 edge_xdev: 1\n");
     log::line("DISK_RENAME_PASS");
 
+    user::ForkWaitProbeResult fork_wait{};
+    const auto* fork_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + fork_wait_elf_physical);
+    if (fork_wait_elf_physical == 0 || fork_wait_elf_size == 0 ||
+        !user::run_fork_wait_probe(
+            fork_image, static_cast<size_t>(fork_wait_elf_size), fork_wait)) {
+        log::write("[debug] fork-wait stage: ");
+        log::decimal(fork_wait.stage);
+        log::write(", failure: ");
+        log::decimal(fork_wait.failure);
+        log::write(", pass: ");
+        log::decimal(fork_wait.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(fork_wait.exit_code);
+        log::write('\n');
+        log::panic("M83 fork/wait probe failed");
+    }
+    log::write("[ok] fork-wait: pass: ");
+    log::decimal(fork_wait.wrote_pass);
+    log::write(" child: 1 status: 42\n");
+    log::line("FORK_WAIT_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1893,6 +1917,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  disk_exec_payload_elf_size, "ESP DEXEC.ELF")) {
         log::panic("cannot relocate ESP DEXEC.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(fork_wait_elf_physical, fork_wait_elf_size,
+                                 "ESP FORK.ELF")) {
+        log::panic("cannot relocate ESP FORK.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1909,7 +1937,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.83.0 - disk/ execve envp + rename (A2/M82)");
+    cxc::log::line("CXC/OS 0.84.0 - fork/wait process model (A2/M83)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2412,6 +2440,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP DEXEC.ELF bytes: ");
     cxc::log::decimal(cxc::disk_exec_payload_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 fork_wait_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'F',  u'O', u'R', u'K', u'.',  u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, fork_wait_path, 64 * 1024,
+        cxc::fork_wait_elf_physical, cxc::fork_wait_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP FORK.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP FORK.ELF bytes: ");
+    cxc::log::decimal(cxc::fork_wait_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(
