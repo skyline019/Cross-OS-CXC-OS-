@@ -2,6 +2,7 @@
 
 #include <cxc/fs.hpp>
 #include <cxc/log.hpp>
+#include <cxc/pmm.hpp>
 #include <cxc/vmm.hpp>
 
 #include <stddef.h>
@@ -18,6 +19,7 @@ constexpr uint64_t page_size = 4096;
 constexpr size_t max_io = 256;
 constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
 constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
+constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -83,6 +85,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_fs_pass = 1;
         }
     }
+    if (length == sizeof(expected_brk_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_brk_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_brk_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_brk_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -106,6 +121,61 @@ bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
         }
     }
     return false;
+}
+
+bool grow_brk_to(uint64_t new_brk) {
+    const uint64_t limit =
+        current.brk_base + brk_max_pages * page_size;
+    if (new_brk < current.brk_current || new_brk > limit ||
+        (new_brk & (page_size - 1)) != 0) {
+        return false;
+    }
+    const uint64_t root = read_cr3();
+    uint64_t page = current.brk_current;
+    while (page < new_brk) {
+        const uint64_t physical = pmm::allocate_pages(1);
+        if (physical == 0) {
+            return false;
+        }
+        if (!vmm::map_user_page(root, page, physical, vmm::user_map_writable)) {
+            pmm::free_pages(physical, 1);
+            return false;
+        }
+        ++current.brk_pages;
+        page += page_size;
+    }
+    if (new_brk > current.brk_current) {
+        ++current.brk_grows;
+    }
+    current.brk_current = new_brk;
+    return true;
+}
+
+cpu::InterruptFrame* handle_brk(cpu::InterruptFrame* frame) {
+    const uint64_t request = frame->rdi;
+    if (request == 0) {
+        frame->rax = current.brk_current;
+        return frame;
+    }
+    if (request < current.brk_base) {
+        frame->rax = current.brk_current;
+        return frame;
+    }
+    if (request == current.brk_current) {
+        frame->rax = current.brk_current;
+        return frame;
+    }
+    if (request < current.brk_current) {
+        // Thin slice: no shrink; return current break (glibc-tolerant).
+        frame->rax = current.brk_current;
+        return frame;
+    }
+    if (!grow_brk_to(request)) {
+        frame->rax = current.brk_current;
+        return frame;
+    }
+    frame->rax = current.brk_current;
+    return frame;
 }
 
 cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
@@ -181,10 +251,12 @@ void clear_session() {
     fs::reset();
 }
 
-void begin_session(uint64_t resume_rip) {
+void begin_session(uint64_t resume_rip, uint64_t brk_base) {
     current = Session{};
     fs::reset();
     current.resume_rip = resume_rip;
+    current.brk_base = brk_base;
+    current.brk_current = brk_base;
     current.active = 1;
 }
 
@@ -209,6 +281,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_open(frame);
     case sys_close:
         return handle_close(frame);
+    case sys_brk:
+        return handle_brk(frame);
     case sys_exit:
         return handle_exit(frame);
     default:

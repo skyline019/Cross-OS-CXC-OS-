@@ -663,6 +663,23 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(fs.wrote_pass);
     log::write('\n');
 
+    user::BrkProbeResult brk{};
+    if (!user::run_brk_probe(brk)) {
+        log::write("[debug] user brk probe stage: ");
+        log::decimal(brk.stage);
+        log::write(", failure: ");
+        log::decimal(brk.failure);
+        log::write('\n');
+        log::panic("M40 user brk probe failed");
+    }
+    log::write("[ok] user brk: grow: ");
+    log::decimal(brk.grows);
+    log::write(", pages: ");
+    log::decimal(brk.pages);
+    log::write(", pass: ");
+    log::decimal(brk.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -766,7 +783,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.40.0 - ramfs open/read/write/close (A2/M39)");
+    cxc::log::line("CXC/OS 0.41.0 - user brk heap grow (A2/M40)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

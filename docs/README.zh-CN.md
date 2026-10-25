@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 39 / v0.40.0：ramfs open/read/write/close（A2 脊柱）**（M13–M38 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 40 / v0.41.0：user brk 堆扩展（A2 脊柱）**（M13–M39 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -66,6 +66,7 @@ CXC_OS_SELF_TEST_PASS
 | Ring-3 probe (M37) | GDT 用户选择子 + TSS.RSP0；`iretq`→CPL3→`int 0x80`；`enter/int80/cpl/rsp0` |
 | User ELF (M38) | 嵌入静态 ET_EXEC；`write`/`exit`（Linux 号）；串口 `USER_PROGRAM_PASS` |
 | User FS (M39) | 内存 ramfs；`open`/`read`/`write`/`close`；串口 `USER_FS_PASS` |
+| User brk (M40) | `brk` 增长用户堆并触达新页；串口 `USER_BRK_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -248,4 +249,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1 脊柱（下一刀目录/`brk`/`mmap` → libc）。须保持 M13–M39 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1 脊柱（下一刀 `mmap`/目录 → libc）。须保持 M13–M40 回归证据。
