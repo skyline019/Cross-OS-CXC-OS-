@@ -1,11 +1,19 @@
-/* musl-subset CRT: ELF _start → main → _exit (not full musl crt1). */
+/* musl-subset CRT: read argc/argv from user RSP before any C prologue. */
 #include "unistd.h"
 
 extern int main(int argc, char** argv);
 
-void _start(void) {
-    static char arg0[] = "musl";
-    static char* argv[] = {arg0, 0};
-    const int status = main(1, argv);
-    _exit(status);
+__attribute__((naked, noreturn)) void _start(void) {
+    __asm__ volatile(
+        "movq %%rsp, %%rdi\n\t"
+        "movl (%%rdi), %%esi\n\t"
+        "leaq 8(%%rdi), %%rdx\n\t"
+        "movl %%esi, %%edi\n\t"
+        "movq %%rdx, %%rsi\n\t"
+        "call main\n\t"
+        "movl %%eax, %%edi\n\t"
+        "call _exit\n\t"
+        :
+        :
+        : "memory");
 }

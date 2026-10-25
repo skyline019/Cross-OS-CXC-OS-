@@ -12,7 +12,7 @@
 | 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
 | 第七次（计划） | M65–M74 | `midpoint-assessment-7.md`（届时新建） |
 
-当前基线：**M66 / v0.67.0**（SYSCALL/LSTAR；第六次中场之后）。下一正式中场目标：**M74**。
+当前基线：**M67 / v0.68.0**（用户栈 auxv；第六次中场之后）。下一正式中场目标：**M74**。
 
 ## 中场窗口必做
 

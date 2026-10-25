@@ -20,6 +20,7 @@ constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_writev = 20;
 constexpr uint64_t sys_getpid = 39;
 constexpr uint64_t sys_exit = 60;
+constexpr uint64_t sys_exit_group = 231;
 constexpr uint64_t sys_uname = 63;
 constexpr uint64_t sys_arch_prctl = 158;
 constexpr uint64_t sys_mkdir = 83;
@@ -81,6 +82,7 @@ struct Session {
     uint32_t saw_user_libc_tid_pass;
     uint32_t saw_user_libc_pid_pass;
     uint32_t saw_user_musl_write_pass;
+    uint32_t saw_user_musl_auxv_pass;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;

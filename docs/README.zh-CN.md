@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 66 / v0.67.0：SYSCALL/LSTAR**（M13–M65 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 67 / v0.68.0：用户栈 auxv**（M13–M66 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -93,6 +93,7 @@ CXC_OS_SELF_TEST_PASS
 | Sixth midfield (M64) | [`midpoint-assessment-6.md`](midpoint-assessment-6.md)；mini_libc CRT/heap/缺口号收束；主线仍 A2 |
 | User musl subset write (M65) | `user/musl_subset`；ESP `LIBMSL.ELF`；串口 `USER_MUSL_PASS`；[`musl-subset-link-notes.md`](musl-subset-link-notes.md) |
 | SYSCALL/LSTAR (M66) | GDT STAR 序；LSTAR→同 int80 分发；musl_subset 改 `syscall` 指令 |
+| User stack auxv (M67) | `launch_user_elf` 种子 argc/argv/envp/auxv；ESP `LIBMAV.ELF`；`exit_group`；`USER_MUSL_AUXV_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -277,4 +278,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀用户栈 auxv 以迎真 musl CRT；下一正式中场 **M74**）。须保持 M13–M66 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀真 musl CRT / PHDR 映射；下一正式中场 **M74**）。须保持 M13–M67 回归证据。
