@@ -37,8 +37,11 @@ constexpr char expected_libc_sbrk_pass[] = "USER_LIBC_SBRK_PASS\n";
 constexpr char expected_libc_malloc_pass[] = "USER_LIBC_MALLOC_PASS\n";
 constexpr char expected_libc_errno_pass[] = "USER_LIBC_ERRNO_PASS\n";
 constexpr char expected_libc_string_pass[] = "USER_LIBC_STRING_PASS\n";
+constexpr char expected_libc_writev_pass[] = "USER_LIBC_WRITEV_PASS\n";
 constexpr int64_t mmap_error = -1;
 constexpr int64_t errno_inval = -22;
+constexpr int64_t errno_fault = -14;
+constexpr uint64_t max_iov = 8;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -327,6 +330,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_libc_string_pass = 1;
         }
     }
+    if (length == sizeof(expected_libc_writev_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_libc_writev_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_libc_writev_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_libc_writev_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -511,6 +527,71 @@ cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
     const int64_t wrote =
         fs::write_fd(static_cast<uint32_t>(fd), bytes, static_cast<size_t>(len));
     frame->rax = static_cast<uint64_t>(wrote);
+    return frame;
+}
+
+struct UserIovec {
+    uint64_t base;
+    uint64_t len;
+};
+
+cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
+    const uint64_t fd = frame->rdi;
+    const uint64_t iov_addr = frame->rsi;
+    const uint64_t iovcnt = frame->rdx;
+    if (iovcnt == 0 || iovcnt > max_iov) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    const size_t table_bytes =
+        static_cast<size_t>(iovcnt) * sizeof(UserIovec);
+    if (!user_pages_ok(iov_addr, table_bytes, false)) {
+        frame->rax = static_cast<uint64_t>(errno_fault);
+        return frame;
+    }
+    const auto* iov = reinterpret_cast<const UserIovec*>(iov_addr);
+
+    char scratch[max_io]{};
+    size_t total = 0;
+    for (uint64_t index = 0; index < iovcnt; ++index) {
+        const uint64_t base = iov[index].base;
+        const uint64_t len = iov[index].len;
+        if (len == 0) {
+            continue;
+        }
+        if (len > max_io || total > max_io - static_cast<size_t>(len) ||
+            !user_pages_ok(base, static_cast<size_t>(len), false)) {
+            frame->rax = static_cast<uint64_t>(errno_fault);
+            return frame;
+        }
+        const auto* bytes = reinterpret_cast<const char*>(base);
+        if (fd == fs::fd_stdout) {
+            for (size_t i = 0; i < static_cast<size_t>(len); ++i) {
+                scratch[total + i] = bytes[i];
+            }
+            total += static_cast<size_t>(len);
+        } else {
+            const int64_t wrote = fs::write_fd(
+                static_cast<uint32_t>(fd), bytes, static_cast<size_t>(len));
+            if (wrote < 0) {
+                frame->rax = static_cast<uint64_t>(wrote);
+                return frame;
+            }
+            total += static_cast<size_t>(wrote);
+            if (static_cast<uint64_t>(wrote) < len) {
+                break;
+            }
+        }
+    }
+    if (fd == fs::fd_stdout) {
+        if (total == 0) {
+            frame->rax = 0;
+            return frame;
+        }
+        log::write(scratch, total);
+        note_stdout_pass(scratch, total);
+    }
+    frame->rax = static_cast<uint64_t>(total);
     return frame;
 }
 
@@ -707,6 +788,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_read(frame);
     case sys_write:
         return handle_write(frame);
+    case sys_writev:
+        return handle_writev(frame);
     case sys_open:
         return handle_open(frame);
     case sys_close:

@@ -8,6 +8,7 @@ enum {
     SYS_OPEN = 2,
     SYS_CLOSE = 3,
     SYS_BRK = 12,
+    SYS_WRITEV = 20,
     SYS_EXIT = 60,
 };
 
@@ -40,6 +41,11 @@ ssize_t read(int fd, void* buf, size_t count) {
 ssize_t write(int fd, const void* buf, size_t count) {
     return (ssize_t)check_fd(
         syscall3(SYS_WRITE, fd, (long)buf, (long)count));
+}
+
+ssize_t writev(int fd, const struct iovec* iov, int iovcnt) {
+    return (ssize_t)check_fd(
+        syscall3(SYS_WRITEV, fd, (long)iov, iovcnt));
 }
 
 int open(const char* path, int flags, mode_t mode) {

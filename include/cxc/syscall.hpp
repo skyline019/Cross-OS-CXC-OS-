@@ -17,6 +17,7 @@ constexpr uint64_t sys_lseek = 8;
 constexpr uint64_t sys_mmap = 9;
 constexpr uint64_t sys_munmap = 11;
 constexpr uint64_t sys_brk = 12;
+constexpr uint64_t sys_writev = 20;
 constexpr uint64_t sys_exit = 60;
 constexpr uint64_t sys_arch_prctl = 158;
 constexpr uint64_t sys_mkdir = 83;
@@ -70,6 +71,7 @@ struct Session {
     uint32_t saw_user_libc_malloc_pass;
     uint32_t saw_user_libc_errno_pass;
     uint32_t saw_user_libc_string_pass;
+    uint32_t saw_user_libc_writev_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;

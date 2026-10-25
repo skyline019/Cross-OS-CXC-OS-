@@ -35,11 +35,15 @@ def directory_entry(name: bytes, attributes: int, cluster: int, size: int = 0) -
     return bytes(entry)
 
 
-def directory_cluster(entries: list[bytes], cluster_size: int) -> bytes:
+def directory_clusters(entries: list[bytes], cluster_size: int) -> list[bytes]:
     data = b"".join(entries)
-    if len(data) > cluster_size:
-        raise ValueError("directory exceeds one cluster")
-    return data.ljust(cluster_size, b"\0")
+    if not data:
+        return [bytes(cluster_size)]
+    out: list[bytes] = []
+    for offset in range(0, len(data), cluster_size):
+        chunk = data[offset : offset + cluster_size]
+        out.append(chunk.ljust(cluster_size, b"\0"))
+    return out
 
 
 def chain_clusters(fat: list[int], first: int, count: int) -> None:
@@ -86,8 +90,20 @@ def build_image(
     if cluster_count + 2 >= 0x0FFFFFF5:
         raise ValueError("volume has too many FAT32 clusters")
 
+    # Clusters 2=/ , 3=/EFI ; /EFI/BOOT may span multiple clusters starting at 4.
+    boot_entries_proto = [
+        directory_entry(b".          ", 0x10, 4),
+        directory_entry(b"..         ", 0x10, 3),
+        # Kernel first-cluster filled after boot dir sizing.
+        directory_entry(b"BOOTX64 EFI", 0x20, 0, len(kernel_data)),
+    ]
+    # Reserve slots for extras; first-cluster patched after layout.
+    for name, payload in extra_files:
+        boot_entries_proto.append(directory_entry(name, 0x20, 0, len(payload)))
+    boot_cluster_count = len(directory_clusters(boot_entries_proto, cluster_size))
+    first_boot_cluster = 4
+    first_kernel_cluster = first_boot_cluster + boot_cluster_count
     kernel_cluster_count = max(1, math.ceil(len(kernel_data) / cluster_size))
-    first_kernel_cluster = 5
     last_used_cluster = first_kernel_cluster + kernel_cluster_count - 1
 
     placed: list[tuple[bytes, bytes, int, int]] = []
@@ -101,12 +117,25 @@ def build_image(
     if last_used_cluster > cluster_count + 1:
         raise ValueError("ESP contents do not fit in the volume")
 
+    boot_entries = [
+        directory_entry(b".          ", 0x10, first_boot_cluster),
+        directory_entry(b"..         ", 0x10, 3),
+        directory_entry(
+            b"BOOTX64 EFI", 0x20, first_kernel_cluster, len(kernel_data)
+        ),
+    ]
+    for name, payload, first, _count in placed:
+        boot_entries.append(directory_entry(name, 0x20, first, len(payload)))
+    boot_dir = directory_clusters(boot_entries, cluster_size)
+    if len(boot_dir) != boot_cluster_count:
+        raise RuntimeError("boot directory cluster count mismatch")
+
     fat = [0] * (fat_sectors * SECTOR_SIZE // 4)
     fat[0] = 0x0FFFFFF8
     fat[1] = 0xFFFFFFFF
     fat[2] = EOC  # Root directory.
     fat[3] = EOC  # /EFI
-    fat[4] = EOC  # /EFI/BOOT
+    chain_clusters(fat, first_boot_cluster, boot_cluster_count)
     chain_clusters(fat, first_kernel_cluster, kernel_cluster_count)
     for _, _, first, count in placed:
         chain_clusters(fat, first, count)
@@ -156,27 +185,17 @@ def build_image(
     struct.pack_into("<I", mbr, 458, PARTITION_SECTORS)
     struct.pack_into("<H", mbr, 510, 0xAA55)
 
-    root = directory_cluster(
+    root = directory_clusters(
         [directory_entry(b"EFI        ", 0x10, 3)], cluster_size
-    )
-    efi = directory_cluster(
+    )[0]
+    efi = directory_clusters(
         [
             directory_entry(b".          ", 0x10, 3),
             directory_entry(b"..         ", 0x10, 2),
-            directory_entry(b"BOOT       ", 0x10, 4),
+            directory_entry(b"BOOT       ", 0x10, first_boot_cluster),
         ],
         cluster_size,
-    )
-    boot_entries = [
-        directory_entry(b".          ", 0x10, 4),
-        directory_entry(b"..         ", 0x10, 3),
-        directory_entry(
-            b"BOOTX64 EFI", 0x20, first_kernel_cluster, len(kernel_data)
-        ),
-    ]
-    for name, payload, first, _count in placed:
-        boot_entries.append(directory_entry(name, 0x20, first, len(payload)))
-    boot = directory_cluster(boot_entries, cluster_size)
+    )[0]
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("wb") as image:
@@ -207,7 +226,8 @@ def build_image(
 
         write_cluster(2, root)
         write_cluster(3, efi)
-        write_cluster(4, boot)
+        for index, chunk in enumerate(boot_dir):
+            write_cluster(first_boot_cluster + index, chunk)
         write_file_clusters(first_kernel_cluster, kernel_cluster_count, kernel_data)
         for _name, payload, first, count in placed:
             write_file_clusters(first, count, payload)
@@ -221,7 +241,8 @@ def build_image(
         extra_note = ", extras=[" + "; ".join(parts) + "]"
     print(
         f"created {output} ({len(kernel_data)} byte kernel, "
-        f"{kernel_cluster_count} kernel clusters{extra_note}, "
+        f"{kernel_cluster_count} kernel clusters, "
+        f"boot dir clusters: {boot_cluster_count}{extra_note}, "
         f"{fat_sectors} sectors/FAT)"
     )
 
