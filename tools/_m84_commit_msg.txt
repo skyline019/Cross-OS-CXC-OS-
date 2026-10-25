@@ -1,0 +1,5 @@
+docs: M84 eighth midfield — block-device arc closed (v0.85.0)
+
+Assess M75–M83: durable CXCFS root, execve argv/envp, rename, cooperative
+fork/wait. Next mainline pipe/dup toward A2. Baseline M84 / v0.85.0; next
+midfield ~M94.

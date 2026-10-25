@@ -13,9 +13,10 @@
 | 第五次 | M45–M54 | [`midpoint-assessment-5.md`](midpoint-assessment-5.md) |
 | 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
 | 第七次 | M65–M74 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md) |
-| 第八次（计划） | 约 M75–M84（大跨步编号可疏） | `midpoint-assessment-8.md`（届时新建） |
+| 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
+| 第九次（计划） | 约 M85–M94 | `midpoint-assessment-9.md`（届时新建） |
 
-当前基线：**M83 / v0.84.0**（fork/wait 进程模型；A2 主线）。下一正式中场目标：**约 M84**。
+当前基线：**M84 / v0.85.0**（第八次中场；A2 主线）。下一正式中场目标：**约 M94**。
 
 ## 中场窗口必做
 

@@ -146,7 +146,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M81** | `execve` argv + 32 KiB CXCFS + 更大盘上 ELF | 串口 `DISK_ARGV_PASS`；argc/argv 边缘 |
 | **M82** | `execve` envp + `rename`（持久根） | 串口 `DISK_ENV_PASS`/`DISK_RENAME_PASS` |
 | **M83** | 协作式 `fork`/`wait4` + AS clone | 串口 `FORK_WAIT_PASS`；ECHILD 边缘 |
-| **M84+** | pipe/dup / 中场 → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2；约 M84 中场 |
+| **M84** | 第八次中场（M75–M84） | [`midpoint-assessment-8.md`](midpoint-assessment-8.md)；下一刀 pipe/dup |
+| **M85+** | pipe/dup / 工具链 POSIX → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

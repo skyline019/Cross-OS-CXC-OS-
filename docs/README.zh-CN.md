@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 83 / v0.84.0：fork/wait 进程模型**（A2 主靶；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 84 / v0.85.0：第八次中场**（A2 主靶；见 [`product-goals.md`](product-goals.md)、[`midpoint-assessment-8.md`](midpoint-assessment-8.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -109,6 +109,7 @@ CXC_OS_SELF_TEST_PASS
 | disk exec argv (M81) | `execve` 传 argv；32 KiB CXCFS；~20 KiB ELF；`DISK_ARGV_PASS` |
 | disk env+rename (M82) | `execve` envp；`rename` 持久+边缘；`DISK_ENV_PASS`/`DISK_RENAME_PASS` |
 | fork/wait (M83) | 协作式 `fork`+`wait4`；子退出码；ECHILD 边缘；`FORK_WAIT_PASS` |
+| Eighth midfield (M84) | [`midpoint-assessment-8.md`](midpoint-assessment-8.md)；块设备大跨步收束；下一刀 pipe/dup |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -118,6 +119,7 @@ CXC_OS_SELF_TEST_PASS
 - [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
 - [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步；M74 后大跨步 + 边缘契约；
 - [`docs/midpoint-assessment-7.md`](docs/midpoint-assessment-7.md)：第七次中场（M65–M74、真 musl 收束、块设备大跨步）；
+- [`docs/midpoint-assessment-8.md`](docs/midpoint-assessment-8.md)：第八次中场（M75–M84、持久根/exec/fork 收束、pipe/dup 下一刀）；
 - [`docs/midpoint-assessment-6.md`](docs/midpoint-assessment-6.md)：第六次中场（M55–M64、mini_libc CRT）；
 - [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc）；
 - [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环）；
@@ -295,4 +297,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **pipe/更多 POSIX / 机上工具链**；边缘纳入测试契约；下一正式中场约 **M84**）。须保持 M13–M83 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **pipe/dup / 机上工具链**；边缘纳入测试契约；下一正式中场约 **M94**）。须保持 M13–M84 回归证据。
