@@ -162,3 +162,7 @@ Milestone 25 / v0.26.0 在 M14 stress 冻结后：bind `0x4D25`，`udp_send` 写
 ## 14. M26 stress RX demux
 
 Milestone 26 / v0.27.0 将 M24 的 `udp_deliver`+`udp_recv` 延伸到 M14 stress：复用 `nic_udp_port` 绑定与文件内 `demux_validated_udp_rx`；`UdpStressResult.socket_delivered/received` 须为 256/256。M13 demux 10/10、Echo/peer、M25 TX 串口保持不变；仍非通用 IRQ RX 路径。
+
+## 15. M27 TX back-pressure
+
+Milestone 27 / v0.28.0：`tx_ring_free`/`tx_ring_full`（leave-one-empty）；`try_post_tx_frame` 满环拒绝推进 TDT。M25 后短暂关闭 TCTL 填满 7 槽、第 8 次 reject、再开 TCTL 按 TDH==TDT 排空（TX IRQ 可能合并，不以 IRQ 数=7 为合同）；串口 `posted:7 rejects:1 drained:1 heads/tails:5/5`。不改写 M25 `1/1` 串口。

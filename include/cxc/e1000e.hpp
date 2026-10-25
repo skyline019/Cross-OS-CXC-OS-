@@ -118,6 +118,18 @@ struct UdpSocketTxResult {
     uint32_t failure;
 };
 
+// M27: after M25 freeze, fill TX ring to leave-one-empty full, prove reject,
+// then drain. Independent of socket_tx.*; peer does not validate these frames.
+struct UdpSocketTxBpResult {
+    uint64_t tx_interrupts;
+    uint32_t posted;
+    uint32_t rejects;
+    uint32_t tx_head;
+    uint32_t tx_tail;
+    uint32_t stage;
+    uint32_t failure;
+};
+
 struct TestInfo {
     uint64_t csr_physical;
     uint64_t msix_physical;
@@ -131,10 +143,10 @@ struct TestInfo {
     UdpResult udp;
     UdpStressResult stress;
     UdpSocketTxResult socket_tx;
+    UdpSocketTxBpResult socket_tx_bp;
 };
 
-// Runs ICS/IVAR/PBA, M11 raw, M12 ARP/ICMP, M13 ten UDP Echo + ring wrap,
-// M14/M26 256-datagram stress (+ socket demux), then M25 socket TX submit.
+// Runs ICS/IVAR/PBA, M11–M14/M26, M25 socket TX, then M27 TX back-pressure.
 // run_qemu.py checks M11–M14 responses. DMA/IRQ state and packet pages cleaned.
 bool run_msix_test();
 const TestInfo& test_info();

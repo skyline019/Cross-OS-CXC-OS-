@@ -318,6 +318,28 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", recycled: ");
         log::decimal(msix_info.udp.recycled_buffers);
         log::write('\n');
+        log::write("[debug] e1000e stress stage: ");
+        log::decimal(msix_info.stress.stage);
+        log::write(", failure: ");
+        log::decimal(msix_info.stress.failure);
+        log::write(", req/reply: ");
+        log::decimal(msix_info.stress.requests);
+        log::write('/');
+        log::decimal(msix_info.stress.replies);
+        log::write('\n');
+        log::write("[debug] e1000e socket_tx stage: ");
+        log::decimal(msix_info.socket_tx.stage);
+        log::write(", failure: ");
+        log::decimal(msix_info.socket_tx.failure);
+        log::write("; socket_tx_bp stage: ");
+        log::decimal(msix_info.socket_tx_bp.stage);
+        log::write(", failure: ");
+        log::decimal(msix_info.socket_tx_bp.failure);
+        log::write(", posted/rejects: ");
+        log::decimal(msix_info.socket_tx_bp.posted);
+        log::write('/');
+        log::decimal(msix_info.socket_tx_bp.rejects);
+        log::write('\n');
         for (const e1000e::VectorResult& result : msix_info.vectors) {
             log::write("[debug] entry ");
             log::decimal(result.table_entry);
@@ -496,6 +518,16 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('/');
     log::decimal(msix_info.socket_tx.tx_tail);
     log::write('\n');
+    // Frozen evidence: drain is TDH==TDT (TX IRQs may coalesce; count is not 1:1).
+    log::write("[ok] e1000e UDP socket TX backpressure: posted: ");
+    log::decimal(msix_info.socket_tx_bp.posted);
+    log::write(", rejects: ");
+    log::decimal(msix_info.socket_tx_bp.rejects);
+    log::write(", drained: 1, heads/tails: ");
+    log::decimal(msix_info.socket_tx_bp.tx_head);
+    log::write('/');
+    log::decimal(msix_info.socket_tx_bp.tx_tail);
+    log::write('\n');
 
     runtime_test::run();
 
@@ -614,7 +646,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.27.0 - e1000e UDP stress socket RX demux");
+    cxc::log::line("CXC/OS 0.28.0 - e1000e UDP socket TX backpressure");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

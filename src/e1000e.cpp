@@ -9,6 +9,7 @@
 #include <cxc/msix.hpp>
 #include <cxc/net/checksum.hpp>
 #include <cxc/net/proto.hpp>
+#include <cxc/net/ring_model.hpp>
 #include <cxc/pci.hpp>
 #include <cxc/pmm.hpp>
 #include <cxc/scheduler.hpp>
@@ -110,6 +111,8 @@ void interrupt_handler(void* opaque) {
             __atomic_load_n(&detail::udp_stress_active, __ATOMIC_ACQUIRE);
         const bool socket_tx_phase =
             __atomic_load_n(&detail::socket_tx_active, __ATOMIC_ACQUIRE);
+        const bool socket_tx_bp_phase =
+            __atomic_load_n(&detail::socket_tx_bp_active, __ATOMIC_ACQUIRE);
         if (result->expected_cause == detail::cause_rxq0) {
             if (udp_stress_phase) {
                 __atomic_add_fetch(&detail::info.stress.rx_interrupts, 1,
@@ -129,6 +132,9 @@ void interrupt_handler(void* opaque) {
                                    __ATOMIC_RELAXED);
             } else if (udp_phase) {
                 __atomic_add_fetch(&detail::info.udp.tx_interrupts, 1, __ATOMIC_RELAXED);
+            } else if (socket_tx_bp_phase) {
+                __atomic_add_fetch(&detail::info.socket_tx_bp.tx_interrupts, 1,
+                                   __ATOMIC_RELAXED);
             } else if (socket_tx_phase) {
                 __atomic_add_fetch(&detail::info.socket_tx.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
@@ -201,6 +207,7 @@ TestInfo info;
 
 volatile bool packet_active = false;
 volatile bool socket_tx_active = false;
+volatile bool socket_tx_bp_active = false;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
 volatile bool udp_stress_active = false;
@@ -454,6 +461,9 @@ uint64_t network_tx_interrupts(NetworkPhase phase) {
     if (phase == NetworkPhase::UdpSocketTx) {
         return __atomic_load_n(&info.socket_tx.tx_interrupts, __ATOMIC_ACQUIRE);
     }
+    if (phase == NetworkPhase::UdpSocketTxBp) {
+        return __atomic_load_n(&info.socket_tx_bp.tx_interrupts, __ATOMIC_ACQUIRE);
+    }
     return phase == NetworkPhase::Protocol
                ? __atomic_load_n(&info.protocol.tx_interrupts, __ATOMIC_ACQUIRE)
                : __atomic_load_n(&info.packet.tx_interrupts, __ATOMIC_ACQUIRE);
@@ -496,10 +506,14 @@ bool network_vector_errors() {
     return false;
 }
 
-bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
-                     uint16_t length, uint64_t first_tick, NetworkPhase phase,
-                     uint64_t expected_interrupts) {
+bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
+                       uint16_t length) {
     if (tx_ring == nullptr || index >= descriptor_count || length == 0) {
+        return false;
+    }
+    const uint32_t tdh = mmio_read(reg_tdh0);
+    const uint32_t tdt = mmio_read(reg_tdt0);
+    if (tdt != index || net::tx_ring_full(tdh, tdt)) {
         return false;
     }
     volatile LegacyTxDescriptor& descriptor = tx_ring[index];
@@ -513,6 +527,15 @@ bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
     __atomic_thread_fence(__ATOMIC_RELEASE);
     mmio_write(reg_tdt0,
                static_cast<uint32_t>((index + 1) % descriptor_count));
+    return true;
+}
+
+bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
+                     uint16_t length, uint64_t first_tick, NetworkPhase phase,
+                     uint64_t expected_interrupts) {
+    if (!try_post_tx_frame(tx_ring, index, length)) {
+        return false;
+    }
     return wait_for_packet_tx(tx_ring[index], first_tick, phase,
                               expected_interrupts);
 }
@@ -531,6 +554,7 @@ bool run_msix_test() {
     __atomic_store_n(&detail::udp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::udp_stress_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_tx_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&detail::socket_tx_bp_active, false, __ATOMIC_RELEASE);
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
     detail::packet_free_before = 0;

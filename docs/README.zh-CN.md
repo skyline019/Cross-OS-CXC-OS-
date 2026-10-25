@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 26 / v0.27.0：e1000e UDP stress socket RX demux**（M13–M25 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 27 / v0.28.0：e1000e UDP socket TX backpressure**（M13–M26 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -53,6 +53,7 @@ CXC_OS_SELF_TEST_PASS
 | UDP demux (M24) | M13 每帧 `udp_deliver`+`recv`；串口 10/10；不改 Echo/peer |
 | UDP socket TX (M25) | stress 后 `udp_send`→e1000e TX；独立 `socket_tx` 计数；不改 Echo/peer |
 | UDP stress demux (M26) | M14 256 帧 `deliver`+`recv`；独立 `stress.socket_*` 256/256 |
+| UDP TX backpressure (M27) | leave-one-empty 满环拒绝；`posted:7 rejects:1 drained:1`；不改 M25 串口 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

@@ -62,4 +62,15 @@ constexpr RingRecycleStep udp_recycle_step(size_t index) {
     };
 }
 
+// M27: TX leave-one-empty free slots. Hardware may own [tdt, tdh) modulo 8;
+// software must not fill the last empty slot (would look identical to empty).
+constexpr uint32_t tx_ring_free(uint32_t tdh, uint32_t tdt) {
+    return ring_mod(tdh + static_cast<uint32_t>(ring_descriptor_count) - tdt -
+                    1u);
+}
+
+constexpr bool tx_ring_full(uint32_t tdh, uint32_t tdt) {
+    return tx_ring_free(tdh, tdt) == 0;
+}
+
 }  // namespace cxc::net

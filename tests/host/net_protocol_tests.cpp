@@ -351,6 +351,15 @@ void test_ring_model() {
     }
     expect(rx_head_wraps == 1, "one RX head wrap across ten datagrams");
     expect(rx_tail_wraps == 2, "two RX tail wraps across ten datagrams");
+
+    // M27: leave-one-empty TX free/full.
+    expect(cxc::net::tx_ring_free(0, 0) == 7, "empty ring has 7 free");
+    expect(!cxc::net::tx_ring_full(0, 0), "empty ring is not full");
+    expect(cxc::net::tx_ring_free(6, 6) == 7, "empty at 6 has 7 free");
+    expect(cxc::net::tx_ring_free(6, 5) == 0, "7 outstanding → full");
+    expect(cxc::net::tx_ring_full(6, 5), "full when free is 0");
+    expect(cxc::net::tx_ring_free(0, 7) == 0, "full wrapping tdt");
+    expect(cxc::net::tx_ring_free(3, 0) == 2, "partial fill free slots");
 }
 
 void test_ring_long_stability() {

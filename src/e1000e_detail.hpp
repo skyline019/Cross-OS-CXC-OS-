@@ -116,6 +116,7 @@ extern volatile bool protocol_active;
 extern volatile bool udp_active;
 extern volatile bool udp_stress_active;
 extern volatile bool socket_tx_active;
+extern volatile bool socket_tx_bp_active;
 extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;
@@ -127,6 +128,7 @@ enum class NetworkPhase {
     Udp,
     UdpStress,
     UdpSocketTx,
+    UdpSocketTxBp,
 };
 
 uint32_t mmio_read(uint32_t offset);
@@ -160,6 +162,10 @@ bool wait_for_packet_tx(volatile LegacyTxDescriptor& descriptor,
                         uint64_t first_tick, NetworkPhase phase,
                         uint64_t expected_interrupts);
 bool network_vector_errors();
+// Posts one TX descriptor if the ring has a free leave-one-empty slot.
+// Does not wait for DD. Returns false when full or arguments are invalid.
+bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
+                       uint16_t length);
 bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                      uint16_t length, uint64_t first_tick, NetworkPhase phase,
                      uint64_t expected_interrupts);
