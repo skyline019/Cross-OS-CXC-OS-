@@ -9,6 +9,7 @@
 #include <cxc/user_brk_blob.hpp>
 #include <cxc/user_fs_blob.hpp>
 #include <cxc/user_hello_blob.hpp>
+#include <cxc/user_mmap_blob.hpp>
 #include <cxc/vmm.hpp>
 
 #include <stddef.h>
@@ -23,6 +24,7 @@ namespace {
 ElfProbeResult elf_probe{};
 FsProbeResult fs_probe{};
 BrkProbeResult brk_probe{};
+MmapProbeResult mmap_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -201,6 +203,35 @@ bool run_brk_probe(BrkProbeResult& result) {
 
 const BrkProbeResult& brk_probe_result() {
     return brk_probe;
+}
+
+bool run_mmap_probe(MmapProbeResult& result) {
+    result = MmapProbeResult{};
+    if (!launch_user_elf(mmap_elf, mmap_elf_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_mmap_pass;
+    result.calls = syscall::session().mmap_calls;
+    result.pages = syscall::session().mmap_pages;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 || result.calls < 1 ||
+        result.pages < 1) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    mmap_probe = result;
+    return true;
+}
+
+const MmapProbeResult& mmap_probe_result() {
+    return mmap_probe;
 }
 
 }  // namespace cxc::user

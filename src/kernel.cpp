@@ -680,6 +680,23 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(brk.wrote_pass);
     log::write('\n');
 
+    user::MmapProbeResult mmap{};
+    if (!user::run_mmap_probe(mmap)) {
+        log::write("[debug] user mmap probe stage: ");
+        log::decimal(mmap.stage);
+        log::write(", failure: ");
+        log::decimal(mmap.failure);
+        log::write('\n');
+        log::panic("M41 user mmap probe failed");
+    }
+    log::write("[ok] user mmap: calls: ");
+    log::decimal(mmap.calls);
+    log::write(", pages: ");
+    log::decimal(mmap.pages);
+    log::write(", pass: ");
+    log::decimal(mmap.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -783,7 +800,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.41.0 - user brk heap grow (A2/M40)");
+    cxc::log::line("CXC/OS 0.42.0 - anonymous mmap (A2/M41)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

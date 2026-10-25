@@ -20,6 +20,8 @@ constexpr size_t max_io = 256;
 constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
 constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
 constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
+constexpr char expected_mmap_pass[] = "USER_MMAP_PASS\n";
+constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -96,6 +98,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_brk_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_mmap_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_mmap_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_mmap_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_mmap_pass = 1;
         }
     }
 }
@@ -178,6 +193,60 @@ cpu::InterruptFrame* handle_brk(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_mmap(cpu::InterruptFrame* frame) {
+    // Linux x86-64: mmap(addr, len, prot, flags, fd, off) uses r10 for flags.
+    const uint64_t addr = frame->rdi;
+    const uint64_t length = frame->rsi;
+    const uint64_t prot = frame->rdx;
+    const uint64_t flags = frame->r10;
+    const uint64_t fd = frame->r8;
+    const uint64_t offset = frame->r9;
+
+    const uint64_t anon_private = map_private | map_anonymous;
+    if (addr != 0 || length == 0 || (length & (page_size - 1)) != 0 ||
+        length > mmap_max_pages * page_size ||
+        (prot & ~(prot_read | prot_write)) != 0 ||
+        (prot & (prot_read | prot_write)) == 0 ||
+        (flags & anon_private) != anon_private ||
+        fd != static_cast<uint64_t>(-1) || offset != 0) {
+        frame->rax = static_cast<uint64_t>(mmap_error);
+        return frame;
+    }
+
+    const uint64_t limit = default_mmap_base + mmap_max_pages * page_size;
+    if (current.mmap_next == 0 ||
+        current.mmap_next + length > limit) {
+        frame->rax = static_cast<uint64_t>(mmap_error);
+        return frame;
+    }
+
+    const uint64_t root = read_cr3();
+    const uint64_t base = current.mmap_next;
+    uint64_t mapped = 0;
+    while (mapped < length) {
+        const uint64_t physical = pmm::allocate_pages(1);
+        if (physical == 0) {
+            frame->rax = static_cast<uint64_t>(mmap_error);
+            return frame;
+        }
+        uint64_t map_flags = 0;
+        if ((prot & prot_write) != 0) {
+            map_flags |= vmm::user_map_writable;
+        }
+        if (!vmm::map_user_page(root, base + mapped, physical, map_flags)) {
+            pmm::free_pages(physical, 1);
+            frame->rax = static_cast<uint64_t>(mmap_error);
+            return frame;
+        }
+        ++current.mmap_pages;
+        mapped += page_size;
+    }
+    current.mmap_next = base + length;
+    ++current.mmap_calls;
+    frame->rax = base;
+    return frame;
+}
+
 cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
     const uint64_t fd = frame->rdi;
     const uint64_t buf = frame->rsi;
@@ -257,6 +326,7 @@ void begin_session(uint64_t resume_rip, uint64_t brk_base) {
     current.resume_rip = resume_rip;
     current.brk_base = brk_base;
     current.brk_current = brk_base;
+    current.mmap_next = default_mmap_base;
     current.active = 1;
 }
 
@@ -281,6 +351,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_open(frame);
     case sys_close:
         return handle_close(frame);
+    case sys_mmap:
+        return handle_mmap(frame);
     case sys_brk:
         return handle_brk(frame);
     case sys_exit:
