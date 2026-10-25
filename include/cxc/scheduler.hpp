@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cxc/cpu.hpp>
+#include <cxc/smp.hpp>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -17,7 +18,9 @@ using ThreadEntry = void (*)(void*);
 // stack pages (BSP unmap + PMM free); recreate then allocate/maps again.
 constexpr size_t maximum_threads = 3;
 constexpr size_t workers_per_cpu = maximum_threads - 1;
-constexpr size_t event_waiter_capacity = 8;
+// Must cover all runtime-test workers (cpu_count+1) contending on one Event /
+// Mutex gate — previously 8, which panics once SMP exceeds ~8 CPUs.
+constexpr size_t event_waiter_capacity = smp::maximum_processors + 1;
 constexpr uint64_t thread_stack_pages = 8;
 constexpr uint64_t worker_stack_region = 0xffffffff70000000;
 constexpr uint64_t worker_stack_stride = 0x200000;
