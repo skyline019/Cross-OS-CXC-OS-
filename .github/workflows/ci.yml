@@ -76,7 +76,7 @@ jobs:
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
-      - name: Assert serial PASS, M13–M75 markers, peer_ok=1
+      - name: Assert serial PASS, M13–M76 markers, peer_ok=1
         run: |
           set -euo pipefail
           test -f build/uefi/qemu-test/serial.log
@@ -200,6 +200,11 @@ jobs:
           grep -F 'VIRTIO_BLK_PASS' build/uefi/qemu-test/serial.log
           grep -F 'virtio-blk: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'oob: 1' build/uefi/qemu-test/serial.log
+          grep -F 'VIRTIO_BLK_RW_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'virtio-blk-rw: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'roundtrip: 1' build/uefi/qemu-test/serial.log
+          grep -F 'oob_w: 1' build/uefi/qemu-test/serial.log
+          grep -F 'online: 1' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

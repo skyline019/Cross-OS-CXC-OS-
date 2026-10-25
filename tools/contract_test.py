@@ -125,6 +125,8 @@ USER_MUSL_UNL_PASS = "USER_MUSL_UNL_PASS"
 USER_MUSL_UNL_PROBE_SUCCESS = "user musl unlink: pass: 1"
 VIRTIO_BLK_PASS = "VIRTIO_BLK_PASS"
 VIRTIO_BLK_PROBE_SUCCESS = "virtio-blk: pass: 1"
+VIRTIO_BLK_RW_PASS = "VIRTIO_BLK_RW_PASS"
+VIRTIO_BLK_RW_PROBE_SUCCESS = "virtio-blk-rw: pass: 1"
 
 
 @dataclass
@@ -551,6 +553,11 @@ class ContractRunner:
         assert VIRTIO_BLK_PASS.encode() in serial
         assert VIRTIO_BLK_PROBE_SUCCESS.encode() in serial
         assert b"oob: 1" in serial
+        assert VIRTIO_BLK_RW_PASS.encode() in serial
+        assert VIRTIO_BLK_RW_PROBE_SUCCESS.encode() in serial
+        assert b"roundtrip: 1" in serial
+        assert b"oob_w: 1" in serial
+        assert b"online: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -559,7 +566,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M75 virtio-blk"
+            "kernel PASS + net contracts + M75/M76 virtio-blk R/W"
         )
 
     def negative_evidence(self, work: Path) -> str:

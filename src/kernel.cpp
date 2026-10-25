@@ -1366,6 +1366,35 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("VIRTIO_BLK_PASS");
 
+    if (!virtio_blk::run_rw_probe(virtio) || virtio.rw_pass == 0) {
+        log::write("[debug] virtio-blk-rw stage: ");
+        log::decimal(virtio.stage);
+        log::write(", failure: ");
+        log::decimal(virtio.failure);
+        log::write(", write: ");
+        log::decimal(virtio.write_ok);
+        log::write(", roundtrip: ");
+        log::decimal(virtio.rw_roundtrip_ok);
+        log::write(", oob_w: ");
+        log::decimal(virtio.oob_write_rejected);
+        log::write(", io_fail: ");
+        log::decimal(virtio_blk::last_io_failure());
+        log::write('\n');
+        log::panic("M76 virtio-blk R/W probe failed");
+    }
+    log::write("[ok] virtio-blk-rw: pass: ");
+    log::decimal(virtio.rw_pass);
+    log::write(" write: ");
+    log::decimal(virtio.write_ok);
+    log::write(" roundtrip: ");
+    log::decimal(virtio.rw_roundtrip_ok);
+    log::write(" oob_w: ");
+    log::decimal(virtio.oob_write_rejected);
+    log::write(" online: ");
+    log::decimal(virtio_blk::is_ready() ? 1u : 0u);
+    log::write('\n');
+    log::line("VIRTIO_BLK_RW_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1577,7 +1606,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.76.0 - virtio-blk probe (A2/M75)");
+    cxc::log::line("CXC/OS 0.77.0 - virtio-blk R/W online (A2/M76)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

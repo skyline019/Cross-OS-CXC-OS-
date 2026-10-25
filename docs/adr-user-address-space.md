@@ -138,7 +138,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M73** | musl-gcc `unlink` | 串口 `USER_MUSL_UNL_PASS`；ESP `LIBUNL.ELF` |
 | **M74** | 第七次中场 + 新格局 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；大跨步/边缘契约 |
 | **M75** | virtio-blk 读探针 + OOB 边缘 | 串口 `VIRTIO_BLK_PASS`；调试点 stage/failure |
-| **M76+** | 块设备加深 / 用户可见根 | 大跨步；边缘合同同变更集 |
+| **M76** | 持久 virtio-blk 扇区读写 + 回读边缘 | 串口 `VIRTIO_BLK_RW_PASS`；设备保持在线供 A2 根 |
+| **M77+** | 可挂载根 / 用户可见块文件 → 机上工具链 | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

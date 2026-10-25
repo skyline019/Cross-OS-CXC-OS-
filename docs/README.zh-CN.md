@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 75 / v0.76.0：virtio-blk 探针**（M13–M74 合同保持；大跨步 + 边缘）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 76 / v0.77.0：持久 virtio-blk 读写**（A2 主靶不变；ELF 客体；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -101,7 +101,7 @@ CXC_OS_SELF_TEST_PASS
 | musl-gcc opendir (M72) | 真 musl `mkdir`/`opendir`/`readdir`/`closedir`；ESP `LIBODR.ELF`；串口 `USER_MUSL_ODR_PASS` |
 | musl-gcc unlink (M73) | 真 musl `unlink` + 再创建；ESP `LIBUNL.ELF`；syscall 87；串口 `USER_MUSL_UNL_PASS` |
 | Seventh midfield (M74) | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；真 musl 子集收束；**大跨步 + 边缘契约**；下一主线块设备 |
-| virtio-blk (M75) | PCI modern virtio-blk；读 LBA0 魔数 `CXCBLK01`；OOB LBA 边缘拒绝；串口 `VIRTIO_BLK_PASS` |
+| virtio-blk (M75–M76) | 持久 modern virtio-blk；LBA0 魔数；扇区写回读；OOB 读/写拒绝；设备保持在线；`VIRTIO_BLK_PASS` + `VIRTIO_BLK_RW_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
