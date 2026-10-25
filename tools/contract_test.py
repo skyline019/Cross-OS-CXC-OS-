@@ -26,6 +26,15 @@ RING_SUCCESS = (
     "UDP ring heads RX/TX: 5/5, tails RX/TX: 1/5, "
     "wraps RXh/TXh/RXt/TXt: 1/1/2/1, recycled RX buffers: 10"
 )
+# M24 RX demux (M13 path only) and M25 post-stress socket→TX submit.
+SOCKET_DEMUX_SUCCESS = "UDP socket demux deliver/recv: 10/10"
+SOCKET_TX_SUCCESS = (
+    "UDP socket TX submit: 1/1, bytes: 60, heads/tails: 6/6"
+)
+STRESS_SUCCESS = (
+    "UDP stress request/reply: 256/256, payload bytes: 3736, "
+    "frame RX/TX bytes: 16410/16410, IRQs: 256/256"
+)
 
 
 @dataclass
@@ -375,6 +384,9 @@ class ContractRunner:
         peer = (work / "network-peer.log").read_text()
         assert b"CXC_OS_SELF_TEST_PASS" in serial
         assert UDP_SUCCESS.encode() in serial and RING_SUCCESS.encode() in serial
+        assert SOCKET_DEMUX_SUCCESS.encode() in serial
+        assert STRESS_SUCCESS.encode() in serial
+        assert SOCKET_TX_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -382,7 +394,9 @@ class ContractRunner:
             "validation_scope=m14-raw-arp-icmp-udp-ring-stress\n" in peer
         )
         assert "peer_ok=1\n" in peer
-        return "kernel PASS + M13 peer + M14 256-frame stress + UDP/ring invariants"
+        return (
+            "kernel PASS + M13 peer + M14 stress + M24 demux + M25 socket TX"
+        )
 
     def negative_evidence(self, work: Path) -> str:
         serial = (work / "serial.log").read_bytes()

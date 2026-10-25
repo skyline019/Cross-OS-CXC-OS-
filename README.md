@@ -5,7 +5,7 @@
 
 **Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, and a minimal UDP socket API. Acceptance requires kernel `CXC_OS_SELF_TEST_PASS` **and** external Python peer `peer_ok=1`.
 
-> Chinese deep-dive / milestone notes: [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Midfield reviews: [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)
+> Chinese deep-dive: [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Cadence: [`docs/midfield-cadence.md`](docs/midfield-cadence.md) · Midfield: [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)
 
 ## Status
 

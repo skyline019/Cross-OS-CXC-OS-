@@ -1,0 +1,33 @@
+---
+description: Every 10 milestones — midfield review, unify CI, fix issues, sync tests
+alwaysApply: true
+---
+
+# Midfield cadence (CXC/OS)
+
+## Schedule
+
+- Full **midfield assessment** every **10 milestones** after the prior gate.
+- Historical gates: **M13** (`midpoint-assessment.md`), **M24** (`midpoint-assessment-2.md`).
+- Next full gate: **M34** (covers M25–M34). Do not skip or merge with storage/userspace sprawl.
+- Between gates: thin TD slices only; never weaken `CXC_OS_SELF_TEST_PASS` / `peer_ok=1`.
+
+## At each midfield (mandatory checklist)
+
+1. **Write** `docs/midpoint-assessment-N.md`: progress, evidence, open TD, next single mainline.
+2. **Unify CI**: workflow must exercise the new baseline (serial markers, SMP matrix, timeouts, host ctest, full `contract_test.py`).
+3. **Fix issues**: any CI flake/panic/timeout discovered during the gate is fixed before starting the next decade; do not paper over by dropping asserts.
+4. **Sync tests**: `tools/contract_test.py`, host `ctest`, and CI `grep`/matrix must assert new milestone evidence in the same change set as the feature (or immediately in the midfield PR). No “docs say Mxx but contract still asserts Myy”.
+
+## Continuous (every milestone, not only midfield)
+
+- New serial evidence → add constants/asserts in `contract_test.py` success path.
+- New acceptance markers → CI “Assert serial PASS…” step greps them.
+- Prefer independent counters over rewriting frozen M13 Echo / peer strings.
+- One mainline at a time (network vs storage vs userspace).
+
+## Anti-patterns
+
+- Shipping a milestone without updating contract/CI asserts.
+- Raising timeouts or deleting matrix rows to hide hangs without a root-cause fix.
+- Claiming midfield complete while CI is red or tests still encode the previous baseline.
