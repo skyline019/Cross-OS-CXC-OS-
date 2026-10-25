@@ -10,8 +10,10 @@ enum {
     SYS_CLOSE = 3,
     SYS_BRK = 12,
     SYS_WRITEV = 20,
+    SYS_GETPID = 39,
     SYS_EXIT = 60,
     SYS_UNAME = 63,
+    SYS_GETPPID = 110,
     SYS_SET_TID_ADDRESS = 218,
 };
 
@@ -96,4 +98,12 @@ int uname(struct utsname* buf) {
 
 long set_tid_address(int* tidptr) {
     return syscall3(SYS_SET_TID_ADDRESS, (long)tidptr, 0, 0);
+}
+
+pid_t getpid(void) {
+    return (pid_t)syscall3(SYS_GETPID, 0, 0, 0);
+}
+
+pid_t getppid(void) {
+    return (pid_t)syscall3(SYS_GETPPID, 0, 0, 0);
 }

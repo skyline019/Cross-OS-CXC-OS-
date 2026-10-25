@@ -11,7 +11,7 @@
 | 第五次 | M45–M54 | [`midpoint-assessment-5.md`](midpoint-assessment-5.md) |
 | 第六次（计划） | M55–M64 | `midpoint-assessment-6.md`（届时新建） |
 
-当前基线：**M62 / v0.63.0**（mini-libc set_tid_address）。下一正式中场目标：**M64**。
+当前基线：**M63 / v0.64.0**（mini-libc getpid）。下一正式中场目标：**M64**。
 
 ## 中场窗口必做
 

@@ -6,6 +6,7 @@ typedef unsigned long size_t;
 typedef long intptr_t;
 typedef unsigned long uintptr_t;
 typedef int mode_t;
+typedef int pid_t;
 
 struct iovec {
     void* iov_base;
@@ -20,4 +21,6 @@ int close(int fd);
 void* brk(void* addr);
 void* sbrk(intptr_t increment);
 long set_tid_address(int* tidptr);
+pid_t getpid(void);
+pid_t getppid(void);
 void _exit(int status) __attribute__((noreturn));
