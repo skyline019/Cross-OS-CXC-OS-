@@ -116,7 +116,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M51** | `arch_prctl` SET/GET_FS（拒 GS） | 串口 `USER_ARCH_PRCTL_PASS` + `user arch_prctl: …` |
 | **M52** | mini-libc `write`/`_exit` 链接烟测 | 串口 `USER_LIBC_PASS` + `user libc: …` |
 | **M53** | mini-libc `open`/`read`/`write`/`close` | 串口 `USER_LIBC_FS_PASS` + `user libc fs: …` |
-| **M54** | 第五次中场（M45–M54） | [`midpoint-assessment-5.md`](midpoint-assessment-5.md)（届时） |
+| **M54** | 第五次中场（M45–M54） | [`midpoint-assessment-5.md`](midpoint-assessment-5.md)；CI/合同统一；v0.55.0 |
+| **M55+** | 加深 mini-libc / musl CRT 缺口 | 见第五次中场 §6 |
 
 ## 6. 参考
 

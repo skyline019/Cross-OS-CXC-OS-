@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 53 / v0.54.0：mini-libc open/read/close（libc FS）**（M13–M52 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 54 / v0.55.0：第五次中场（M45–M54）**（M13–M53 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -80,6 +80,7 @@ CXC_OS_SELF_TEST_PASS
 | User arch_prctl (M51) | `ARCH_SET_FS`/`GET_FS`（拒 GS）；ESP `PRCTL.ELF`；串口 `USER_ARCH_PRCTL_PASS` |
 | User mini-libc (M52) | host-gcc 链接 `write`/`_exit`；ESP `LIBC.ELF`；串口 `USER_LIBC_PASS` |
 | User mini-libc FS (M53) | `open`/`read`/`write`/`close` 经 mini_libc；ESP `LIBFS.ELF`；串口 `USER_LIBC_FS_PASS` |
+| Fifth midfield (M54) | [`midpoint-assessment-5.md`](midpoint-assessment-5.md)；外部 ELF→libc 缺口→mini_libc 收束；主线仍 A2 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -88,6 +89,7 @@ CXC_OS_SELF_TEST_PASS
 - [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
 - [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
 - [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步契约；
+- [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc、下一刀加深 mini-libc）；
 - [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环、下一刀外部 ELF/libc）；
 - [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
 - [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24、债项刷新与下一步）；
@@ -263,4 +265,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一正式中场 **M54**）。须保持 M13–M53 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀加深 mini-libc / CRT 缺口；下一正式中场 **M64**）。须保持 M13–M54 回归证据。
