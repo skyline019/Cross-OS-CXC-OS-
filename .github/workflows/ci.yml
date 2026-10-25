@@ -58,6 +58,16 @@ jobs:
           cmake --build build/host-tests --parallel
           ctest --test-dir build/host-tests --output-on-failure
 
+      - name: Host net tests under ASan / UBSan / TSan
+        run: |
+          set -euo pipefail
+          for san in address undefined thread; do
+            cmake -S tests/host -B "build/host-${san}" \
+              -DCXC_HOST_SANITIZER="${san}"
+            cmake --build "build/host-${san}" --parallel
+            ctest --test-dir "build/host-${san}" --output-on-failure
+          done
+
       - name: Host-side test contract
         run: >-
           python3 tools/contract_test.py --host-only

@@ -226,7 +226,6 @@ volatile LegacyRxDescriptor* live_rx_ring = nullptr;
 volatile LegacyTxDescriptor* live_tx_ring = nullptr;
 uint8_t* live_tx_buffer = nullptr;
 uint32_t irq_rx_next = 0;
-uint32_t irq_echo_next = 0;
 uint32_t irq_bsp_progress = 0;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
@@ -603,7 +602,6 @@ bool run_msix_test() {
     detail::live_tx_ring = nullptr;
     detail::live_tx_buffer = nullptr;
     detail::irq_rx_next = 0;
-    detail::irq_echo_next = 0;
     detail::irq_bsp_progress = 0;
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
@@ -838,7 +836,6 @@ bool run_msix_test() {
             }
         }
         if (success) {
-            detail::info.stage = 11;
             detail::info.stage = 20;
             if (detail::run_packet_phase()) {
                 detail::info.stage = 21;

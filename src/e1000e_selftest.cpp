@@ -77,25 +77,20 @@ void irq_try_demux_rx() {
         __atomic_add_fetch(&info.irq_rx.echoes, 1, __ATOMIC_RELAXED);
         irq_rx_next =
             static_cast<uint32_t>((irq_rx_next + 1u) % descriptor_count);
-        irq_echo_next = irq_rx_next;
     }
 }
 
 namespace {
 
-// M24/M26/M29: when IRQ demux is active, deliver already ran in RXQ0 MSI-X;
-// BSP only drains. Otherwise (should not happen after M29) deliver here.
+// M24/M26/M29: IRQ demux already udp_deliver'd; BSP only drains recv.
 bool demux_validated_udp_rx(const uint8_t* frame, uint16_t frame_length,
                             uint16_t payload_length, uint32_t& delivered,
                             uint32_t& received) {
+    (void)frame;
+    (void)frame_length;
+    (void)delivered;
     if (udp_rx_socket_slot < 0) {
         return false;
-    }
-    if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE)) {
-        if (!net::udp_deliver(udp_rx_sockets, frame, frame_length)) {
-            return false;
-        }
-        ++delivered;
     }
     net::UdpQueuedDatagram queued{};
     if (!net::udp_recv(udp_rx_sockets, static_cast<size_t>(udp_rx_socket_slot),
@@ -203,6 +198,9 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                       volatile LegacyTxDescriptor* tx_ring,
                       uint8_t* tx_buffer, uint64_t first_tick, size_t index,
                       NetworkPhase phase) {
+    // Echo TX uses live_tx_buffer from IRQ; phase budget is per-datagram.
+    (void)tx_buffer;
+    (void)first_tick;
     const bool stress = phase == NetworkPhase::UdpStress;
     const net::RingRecycleStep step = net::udp_recycle_step(index);
     const uint32_t rx_index = step.rx_descriptor;
@@ -236,30 +234,20 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
     volatile LegacyRxDescriptor& rx_descriptor = rx_ring[rx_index];
     bool success = false;
 
-    const bool irq_echo =
-        __atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE);
-    do {
-        if (!irq_echo &&
-            (rx_buffers[rx_index] == nullptr ||
-             rx_descriptor.buffer_address == 0 ||
-             rx_buffers[recycle_source] == nullptr ||
-             rx_ring[recycle_source].buffer_address == 0 ||
-             (rx_ring[recycle_source].status & descriptor_done) == 0 ||
-             rx_buffers[recycle_target] != nullptr ||
-             rx_ring[recycle_target].buffer_address != 0 ||
-             rx_ring[recycle_target].status != 0)) {
-            if (stress) {
-                info.stress.failure = 1;
-            } else {
-                info.udp.failure = 1;
-            }
-            break;
+    // M29+ keeps socket_irq_rx_active for the whole UDP/stress phase.
+    if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE)) {
+        if (stress) {
+            info.stress.failure = 1;
+        } else {
+            info.udp.failure = 1;
         }
-        if (irq_echo &&
-            (rx_buffers[recycle_source] == nullptr ||
-             rx_ring[recycle_source].buffer_address == 0 ||
-             rx_buffers[recycle_target] != nullptr ||
-             rx_ring[recycle_target].buffer_address != 0)) {
+        return false;
+    }
+    do {
+        if (rx_buffers[recycle_source] == nullptr ||
+            rx_ring[recycle_source].buffer_address == 0 ||
+            rx_buffers[recycle_target] != nullptr ||
+            rx_ring[recycle_target].buffer_address != 0) {
             if (stress) {
                 info.stress.failure = 1;
             } else {
@@ -271,103 +259,87 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         // so stress/fault paths do not inherit a spent global deadline.
         // Invalid DD → wait RX IRQ tally + RDH snapshot → failure 3.
         // Valid DD without deliver → kick demux (coalesced MSI-X).
-        if (irq_echo) {
-            const uint64_t rx_wait_start = scheduler::ticks();
-            while (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
-                   expected_irq_total) {
-                if ((rx_descriptor.status & descriptor_done) != 0) {
-                    const uint8_t peek_status = rx_descriptor.status;
-                    const uint8_t peek_errors = rx_descriptor.errors;
-                    const uint16_t peek_length = rx_descriptor.length;
-                    const bool peek_invalid =
-                        (peek_status &
-                         (descriptor_done | rx_descriptor_eop)) !=
-                            (descriptor_done | rx_descriptor_eop) ||
-                        peek_errors != 0 || peek_length != expected_length ||
-                        !valid_udp_request(rx_buffers[rx_index],
-                                           peek_length) ||
-                        !rx_guard_intact(rx_buffers[rx_index], peek_length);
-                    if (peek_invalid) {
-                        cpu::disable_interrupts();
-                        irq_try_demux_rx();
-                        cpu::enable_interrupts();
-                        const uint64_t irq_wait_start = scheduler::ticks();
-                        while (network_rx_interrupts(phase) < expected_irqs) {
-                            if (scheduler::ticks() - irq_wait_start >
-                                wait_ticks) {
-                                break;
-                            }
-                            cpu::wait_for_interrupt();
-                        }
-                        // One RX DMA for this fault index. Snap tally to the
-                        // legacy wait_for_packet_rx expectation so coalesced
-                        // or double-counted MSI-X still yields IRQs: N+1/N.
-                        if (stress) {
-                            __atomic_store_n(&info.stress.rx_interrupts,
-                                             expected_irqs, __ATOMIC_RELEASE);
-                        } else {
-                            __atomic_store_n(&info.udp.rx_interrupts,
-                                             expected_irqs, __ATOMIC_RELEASE);
-                        }
-                        // Prior echoes may have coalesced TX MSI-X; wait until
-                        // TX IRQ tally matches committed replies (transaction9).
-                        const uint64_t tx_irq_target =
-                            stress ? info.stress.replies : info.udp.replies;
-                        while (network_tx_interrupts(phase) < tx_irq_target) {
-                            if (scheduler::ticks() - irq_wait_start >
-                                wait_ticks) {
-                                break;
-                            }
-                            cpu::wait_for_interrupt();
-                        }
-                        const uint32_t peek_head = mmio_read(reg_rdh0);
-                        if (!stress) {
-                            info.udp.last_rx_bytes = peek_length;
-                            info.udp.rx_head = peek_head;
-                        } else {
-                            info.stress.rx_head = peek_head;
-                        }
-                        if (stress) {
-                            info.stress.failure = 3;
-                        } else {
-                            info.udp.failure = 3;
-                        }
-                        break;
-                    }
-                    // Valid frame pending: poll demux if MSI-X was coalesced.
+        const uint64_t rx_wait_start = scheduler::ticks();
+        while (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
+               expected_irq_total) {
+            if ((rx_descriptor.status & descriptor_done) != 0) {
+                const uint8_t peek_status = rx_descriptor.status;
+                const uint8_t peek_errors = rx_descriptor.errors;
+                const uint16_t peek_length = rx_descriptor.length;
+                const bool peek_invalid =
+                    (peek_status & (descriptor_done | rx_descriptor_eop)) !=
+                        (descriptor_done | rx_descriptor_eop) ||
+                    peek_errors != 0 || peek_length != expected_length ||
+                    !valid_udp_request(rx_buffers[rx_index], peek_length) ||
+                    !rx_guard_intact(rx_buffers[rx_index], peek_length);
+                if (peek_invalid) {
                     cpu::disable_interrupts();
                     irq_try_demux_rx();
                     cpu::enable_interrupts();
-                    continue;
-                }
-                if (scheduler::ticks() - rx_wait_start > wait_ticks) {
+                    const uint64_t irq_wait_start = scheduler::ticks();
+                    while (network_rx_interrupts(phase) < expected_irqs) {
+                        if (scheduler::ticks() - irq_wait_start > wait_ticks) {
+                            break;
+                        }
+                        cpu::wait_for_interrupt();
+                    }
+                    // One RX DMA for this fault index. Snap tally to the
+                    // legacy wait_for_packet_rx expectation so coalesced
+                    // or double-counted MSI-X still yields IRQs: N+1/N.
                     if (stress) {
-                        info.stress.failure = 2;
+                        __atomic_store_n(&info.stress.rx_interrupts,
+                                         expected_irqs, __ATOMIC_RELEASE);
                     } else {
-                        info.udp.failure = 2;
+                        __atomic_store_n(&info.udp.rx_interrupts, expected_irqs,
+                                         __ATOMIC_RELEASE);
+                    }
+                    // Prior echoes may have coalesced TX MSI-X; wait until
+                    // TX IRQ tally matches committed replies (transaction9).
+                    const uint64_t tx_irq_target =
+                        stress ? info.stress.replies : info.udp.replies;
+                    while (network_tx_interrupts(phase) < tx_irq_target) {
+                        if (scheduler::ticks() - irq_wait_start > wait_ticks) {
+                            break;
+                        }
+                        cpu::wait_for_interrupt();
+                    }
+                    const uint32_t peek_head = mmio_read(reg_rdh0);
+                    if (!stress) {
+                        info.udp.last_rx_bytes = peek_length;
+                        info.udp.rx_head = peek_head;
+                    } else {
+                        info.stress.rx_head = peek_head;
+                    }
+                    if (stress) {
+                        info.stress.failure = 3;
+                    } else {
+                        info.udp.failure = 3;
                     }
                     break;
                 }
+                // Valid frame pending: poll demux if MSI-X was coalesced.
+                cpu::disable_interrupts();
+                irq_try_demux_rx();
+                cpu::enable_interrupts();
                 cpu::wait_for_interrupt();
+                continue;
             }
-            if ((stress &&
-                 (info.stress.failure == 2 || info.stress.failure == 3)) ||
-                (!stress &&
-                 (info.udp.failure == 2 || info.udp.failure == 3))) {
+            if (scheduler::ticks() - rx_wait_start > wait_ticks) {
+                if (stress) {
+                    info.stress.failure = 2;
+                } else {
+                    info.udp.failure = 2;
+                }
                 break;
             }
-            __atomic_thread_fence(__ATOMIC_ACQUIRE);
-        } else if (!wait_for_packet_rx(rx_descriptor, first_tick, phase,
-                                       expected_irqs)) {
-            if (stress) {
-                info.stress.failure = 2;
-            } else {
-                info.udp.failure = 2;
-            }
+            cpu::wait_for_interrupt();
+        }
+        if ((stress &&
+             (info.stress.failure == 2 || info.stress.failure == 3)) ||
+            (!stress && (info.udp.failure == 2 || info.udp.failure == 3))) {
             break;
         }
-        const uint8_t rx_status = rx_descriptor.status;
-        const uint8_t rx_errors = rx_descriptor.errors;
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
         const uint16_t rx_length = rx_descriptor.length;
         const uint32_t rx_head = mmio_read(reg_rdh0);
         if (!stress) {
@@ -376,31 +348,7 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         } else {
             info.stress.rx_head = rx_head;
         }
-        if (irq_echo) {
-            // Descriptor may already have been recycled/reused; trust socket.
-            if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
-                expected_irq_total) {
-                if (stress) {
-                    info.stress.failure = 3;
-                } else {
-                    info.udp.failure = 3;
-                }
-                break;
-            }
-        } else if ((rx_status & (descriptor_done | rx_descriptor_eop)) !=
-                       (descriptor_done | rx_descriptor_eop) ||
-                   rx_errors != 0 || rx_length != expected_length ||
-                   rx_head != expected_head ||
-                   network_rx_interrupts(phase) != expected_irqs ||
-                   !valid_udp_request(rx_buffers[rx_index], rx_length) ||
-                   !rx_guard_intact(rx_buffers[rx_index], rx_length)) {
-            if (stress) {
-                info.stress.failure = 3;
-            } else {
-                info.udp.failure = 3;
-            }
-            break;
-        }
+        // delivered==echoes in irq_try_demux_rx; trust socket after deliver wait.
         if (stress) {
             ++info.stress.requests;
             info.stress.payload_bytes += payload_length;
@@ -431,65 +379,10 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             }
         }
 
-        // M30: wait for IRQ Echo TX (or BSP fallback submit).
-        if (irq_echo) {
-            const uint64_t echo_wait_start = scheduler::ticks();
-            while (__atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
-                   expected_irq_total) {
-                if (scheduler::ticks() - echo_wait_start > wait_ticks) {
-                    if (stress) {
-                        info.stress.failure = 4;
-                    } else {
-                        info.udp.failure = 4;
-                    }
-                    break;
-                }
-                cpu::wait_for_interrupt();
-            }
-            if ((stress && info.stress.failure == 4) ||
-                (!stress && info.udp.failure == 4)) {
-                break;
-            }
-            const uint64_t tx_dd_wait_start = scheduler::ticks();
-            while ((tx_ring[tx_index].status & descriptor_done) == 0) {
-                if (scheduler::ticks() - tx_dd_wait_start > wait_ticks) {
-                    if (stress) {
-                        info.stress.failure = 4;
-                    } else {
-                        info.udp.failure = 4;
-                    }
-                    break;
-                }
-                cpu::wait_for_interrupt();
-            }
-            if ((stress && info.stress.failure == 4) ||
-                (!stress && info.udp.failure == 4)) {
-                break;
-            }
-            // Legacy wait_for_packet_tx tallied one TX IRQ per echo; keep 1:1
-            // so fault-path serial IRQs match transaction9 (…/N).
-            while (network_tx_interrupts(phase) < expected_irqs) {
-                if (scheduler::ticks() - tx_dd_wait_start > wait_ticks) {
-                    if (stress) {
-                        info.stress.failure = 4;
-                    } else {
-                        info.udp.failure = 4;
-                    }
-                    break;
-                }
-                cpu::wait_for_interrupt();
-            }
-            if ((stress && info.stress.failure == 4) ||
-                (!stress && info.udp.failure == 4)) {
-                break;
-            }
-            __atomic_thread_fence(__ATOMIC_ACQUIRE);
-        } else {
-            const uint16_t reply_length =
-                build_udp_echo_reply(tx_buffer, rx_buffers[rx_index], rx_length);
-            if (reply_length != expected_length ||
-                !submit_tx_frame(tx_ring, tx_index, reply_length, first_tick,
-                                 phase, expected_irqs)) {
+        // M30: IRQ already posted Echo; wait TX DD + 1:1 TX IRQ tally.
+        const uint64_t tx_dd_wait_start = scheduler::ticks();
+        while ((tx_ring[tx_index].status & descriptor_done) == 0) {
+            if (scheduler::ticks() - tx_dd_wait_start > wait_ticks) {
                 if (stress) {
                     info.stress.failure = 4;
                 } else {
@@ -497,7 +390,30 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                 }
                 break;
             }
+            cpu::wait_for_interrupt();
         }
+        if ((stress && info.stress.failure == 4) ||
+            (!stress && info.udp.failure == 4)) {
+            break;
+        }
+        // Legacy wait_for_packet_tx tallied one TX IRQ per echo; keep 1:1
+        // so fault-path serial IRQs match transaction9 (…/N).
+        while (network_tx_interrupts(phase) < expected_irqs) {
+            if (scheduler::ticks() - tx_dd_wait_start > wait_ticks) {
+                if (stress) {
+                    info.stress.failure = 4;
+                } else {
+                    info.udp.failure = 4;
+                }
+                break;
+            }
+            cpu::wait_for_interrupt();
+        }
+        if ((stress && info.stress.failure == 4) ||
+            (!stress && info.udp.failure == 4)) {
+            break;
+        }
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
         const uint32_t tx_head = mmio_read(reg_tdh0);
         const uint32_t tx_tail = mmio_read(reg_tdt0);
         if (!stress) {
@@ -510,10 +426,7 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         }
         // Peer may race ahead under IRQ Echo; exact TDH/IRQ equality is
         // checked at end-of-phase, not mid-datagram.
-        if ((!irq_echo &&
-             (tx_head != expected_head || tx_tail != expected_head ||
-              network_tx_interrupts(phase) != expected_irqs)) ||
-            network_vector_errors()) {
+        if (network_vector_errors()) {
             if (stress) {
                 info.stress.failure = 5;
             } else {
@@ -940,7 +853,6 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     info.irq_rx = {};
     info.irq_rx.stage = 1;
     irq_rx_next = info.udp.rx_head;
-    irq_echo_next = info.udp.rx_head;
     __atomic_store_n(&irq_bsp_progress, 0, __ATOMIC_RELEASE);
 
     cpu::disable_interrupts();
