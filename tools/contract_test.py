@@ -46,7 +46,7 @@ SOCKET_TX_WAIT_SUCCESS = (
     "UDP socket TX wait: waits: 1, posted: 1, drained: 1, "
     "heads/tails: 5/5"
 )
-IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver/echo: 266/266"
+IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver/echo/recycle: 266/266/266"
 
 
 @dataclass
@@ -411,7 +411,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + M13 peer + M14/M26/M29–M30 IRQ demux + M25–M28 TX"
+            "kernel PASS + M13 peer + M14/M26/M29–M31 IRQ demux + M25–M28 TX"
         )
 
     def negative_evidence(self, work: Path) -> str:

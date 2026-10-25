@@ -225,6 +225,7 @@ volatile bool socket_irq_rx_active = false;
 volatile LegacyRxDescriptor* live_rx_ring = nullptr;
 volatile LegacyTxDescriptor* live_tx_ring = nullptr;
 uint8_t* live_tx_buffer = nullptr;
+uint8_t** live_rx_buffers = nullptr;
 uint32_t irq_rx_next = 0;
 uint32_t irq_bsp_progress = 0;
 volatile bool protocol_active = false;
@@ -302,6 +303,7 @@ bool prepare_packet_rings(volatile LegacyRxDescriptor*& rx_ring,
         pmm::physical_to_virtual(tx_ring_physical));
     live_rx_ring = rx_ring;
     live_tx_ring = tx_ring;
+    live_rx_buffers = rx_buffers;
 
     for (size_t index = 0; index < rx_buffer_count; ++index) {
         const uint64_t physical = allocate_packet_page();
@@ -601,6 +603,7 @@ bool run_msix_test() {
     detail::live_rx_ring = nullptr;
     detail::live_tx_ring = nullptr;
     detail::live_tx_buffer = nullptr;
+    detail::live_rx_buffers = nullptr;
     detail::irq_rx_next = 0;
     detail::irq_bsp_progress = 0;
     detail::packet_allocation_attempted = false;

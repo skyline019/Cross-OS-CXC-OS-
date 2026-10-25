@@ -177,4 +177,8 @@ Milestone 29 / v0.30.0：M13/M14 的 `udp_deliver` 改在 RXQ0 MSI-X 中完成�
 
 ## 18. M30 IRQ Echo TX
 
-Milestone 30 / v0.31.0：RXQ0/TXQ0 路径在 TX 环空闲时 `build_udp_echo_reply` + `try_post_tx_frame`（单 TX DMA 页串行）；IRQ 最多超前 BSP 一帧，BSP 推进 `irq_bsp_progress` 后主动排空。串口 `deliver/echo: 266/266`；M13 Echo 行不再冻结硬件 `IRQs:10/10`（TXQ0 亦 demux）。仍非 IRQ 内 RDT recycle。
+Milestone 30 / v0.31.0：RXQ0/TXQ0 路径在 TX 环空闲时 `build_udp_echo_reply` + `try_post_tx_frame`（单 TX DMA 页串行）；IRQ 最多超前 BSP 一帧，BSP 推进 `irq_bsp_progress` 后主动排空。串口 `deliver/echo: 266/266`；M13 Echo 行不再冻结硬件 `IRQs:10/10`（TXQ0 亦 demux）。
+
+## 19. M31 IRQ RDT recycle
+
+Milestone 31 / v0.32.0：IRQ 在 deliver+Echo 后按 `udp_recycle_step` 移动最旧页并推进 RDT；BSP 仅等待 `irq_rx.recycled` 并核对 RDT。串口 `deliver/echo/recycle: 266/266/266`；M13/M14 `recycled_buffers` 仍由 IRQ 记账。仍非 Event/`udp_send_wait` 通用阻塞 IO。

@@ -18,12 +18,13 @@ namespace cxc::e1000e::detail {
 net::UdpSocketTable udp_rx_sockets{};
 int udp_rx_socket_slot = -1;
 
-// M29/M30: for each new RX DD, udp_deliver and (M30) Echo try_post while the
-// TX ring is idle — one shared TX DMA page, so never demux ahead of Echo.
-// TXQ0 IRQs re-enter to continue. Does not clear DD or advance RDT.
+// M29–M31: for each new RX DD, udp_deliver + Echo try_post + RDT recycle
+// while TX ring is idle (one shared TX DMA page). Never demux ahead of BSP.
+// TXQ0 IRQs re-enter to continue.
 void irq_try_demux_rx() {
     if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE) ||
-        live_rx_ring == nullptr || udp_rx_socket_slot < 0) {
+        live_rx_ring == nullptr || live_rx_buffers == nullptr ||
+        udp_rx_socket_slot < 0) {
         return;
     }
     const bool stress =
@@ -67,14 +68,63 @@ void irq_try_demux_rx() {
         if (!net::udp_deliver(udp_rx_sockets, frame, length)) {
             break;
         }
+        // M31: payload is queued; recycle oldest page into prior RDT slot.
+        const net::RingRecycleStep step =
+            net::udp_recycle_step(static_cast<size_t>(delivered_now));
+        uint8_t* recycled_buffer = live_rx_buffers[step.recycle_source];
+        const uint64_t recycled_physical =
+            live_rx_ring[step.recycle_source].buffer_address;
+        if (recycled_buffer == nullptr || recycled_physical == 0 ||
+            live_rx_buffers[step.recycle_target] != nullptr ||
+            live_rx_ring[step.recycle_target].buffer_address != 0) {
+            break;
+        }
+        memset(recycled_buffer, 0, 2048);
+        fill_rx_guard(recycled_buffer);
+        live_rx_ring[step.recycle_source].buffer_address = 0;
+        live_rx_ring[step.recycle_source].length = 0;
+        live_rx_ring[step.recycle_source].checksum = 0;
+        live_rx_ring[step.recycle_source].status = 0;
+        live_rx_ring[step.recycle_source].errors = 0;
+        live_rx_ring[step.recycle_source].special = 0;
+        live_rx_buffers[step.recycle_source] = nullptr;
+        volatile LegacyRxDescriptor& target =
+            live_rx_ring[step.recycle_target];
+        target.buffer_address = recycled_physical;
+        target.length = 0;
+        target.checksum = 0;
+        target.status = 0;
+        target.errors = 0;
+        target.special = 0;
+        live_rx_buffers[step.recycle_target] = recycled_buffer;
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        mmio_write(reg_rdt0, step.expected_rx_tail);
+        if (mmio_read(reg_rdt0) != step.expected_rx_tail) {
+            break;
+        }
         if (stress) {
             __atomic_add_fetch(&info.stress.socket_delivered, 1,
                                __ATOMIC_RELAXED);
+            __atomic_add_fetch(&info.stress.recycled_buffers, 1,
+                               __ATOMIC_RELAXED);
+            if (step.expected_rx_tail == 0) {
+                __atomic_add_fetch(&info.stress.rx_tail_wraps, 1,
+                                   __ATOMIC_RELAXED);
+            }
+            __atomic_store_n(&info.stress.rx_tail, step.expected_rx_tail,
+                             __ATOMIC_RELAXED);
         } else {
             __atomic_add_fetch(&info.udp.socket_delivered, 1, __ATOMIC_RELAXED);
+            __atomic_add_fetch(&info.udp.recycled_buffers, 1, __ATOMIC_RELAXED);
+            if (step.expected_rx_tail == 0) {
+                __atomic_add_fetch(&info.udp.rx_tail_wraps, 1, __ATOMIC_RELAXED);
+            }
+            __atomic_store_n(&info.udp.rx_tail, step.expected_rx_tail,
+                             __ATOMIC_RELAXED);
         }
         __atomic_add_fetch(&info.irq_rx.delivered, 1, __ATOMIC_RELAXED);
         __atomic_add_fetch(&info.irq_rx.echoes, 1, __ATOMIC_RELAXED);
+        __atomic_add_fetch(&info.irq_rx.recycled, 1, __ATOMIC_RELAXED);
         irq_rx_next =
             static_cast<uint32_t>((irq_rx_next + 1u) % descriptor_count);
     }
@@ -205,8 +255,6 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
     const net::RingRecycleStep step = net::udp_recycle_step(index);
     const uint32_t rx_index = step.rx_descriptor;
     const uint32_t tx_index = step.tx_descriptor;
-    const uint32_t recycle_source = step.recycle_source;
-    const uint32_t recycle_target = step.recycle_target;
     const uint32_t expected_head = step.expected_head;
     const uint32_t expected_rx_tail = step.expected_rx_tail;
     const size_t payload_length =
@@ -244,10 +292,9 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         return false;
     }
     do {
-        if (rx_buffers[recycle_source] == nullptr ||
-            rx_ring[recycle_source].buffer_address == 0 ||
-            rx_buffers[recycle_target] != nullptr ||
-            rx_ring[recycle_target].buffer_address != 0) {
+        // M31: IRQ owns recycle; prior datagrams must already be recycled.
+        if (__atomic_load_n(&info.irq_rx.recycled, __ATOMIC_ACQUIRE) <
+            static_cast<uint32_t>(index)) {
             if (stress) {
                 info.stress.failure = 1;
             } else {
@@ -450,29 +497,24 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             }
         }
 
-        // Move the oldest consumed page to the old RDT slot, then advance RDT.
-        uint8_t* recycled_buffer = rx_buffers[recycle_source];
-        const uint64_t recycled_physical =
-            rx_ring[recycle_source].buffer_address;
-        memset(recycled_buffer, 0, 2048);
-        fill_rx_guard(recycled_buffer);
-        rx_ring[recycle_source].buffer_address = 0;
-        rx_ring[recycle_source].length = 0;
-        rx_ring[recycle_source].checksum = 0;
-        rx_ring[recycle_source].status = 0;
-        rx_ring[recycle_source].errors = 0;
-        rx_ring[recycle_source].special = 0;
-        rx_buffers[recycle_source] = nullptr;
-        volatile LegacyRxDescriptor& target = rx_ring[recycle_target];
-        target.buffer_address = recycled_physical;
-        target.length = 0;
-        target.checksum = 0;
-        target.status = 0;
-        target.errors = 0;
-        target.special = 0;
-        rx_buffers[recycle_target] = recycled_buffer;
-        __atomic_thread_fence(__ATOMIC_RELEASE);
-        mmio_write(reg_rdt0, expected_rx_tail);
+        // M31: IRQ already recycled; wait for tally + confirm RDT.
+        const uint64_t recycle_wait_start = scheduler::ticks();
+        while (__atomic_load_n(&info.irq_rx.recycled, __ATOMIC_ACQUIRE) <
+               expected_irq_total) {
+            if (scheduler::ticks() - recycle_wait_start > wait_ticks) {
+                if (stress) {
+                    info.stress.failure = 6;
+                } else {
+                    info.udp.failure = 6;
+                }
+                break;
+            }
+            cpu::wait_for_interrupt();
+        }
+        if ((stress && info.stress.failure == 6) ||
+            (!stress && info.udp.failure == 6)) {
+            break;
+        }
         const uint32_t rx_tail = mmio_read(reg_rdt0);
         if (stress) {
             info.stress.rx_tail = rx_tail;
@@ -486,17 +528,6 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                 info.udp.failure = 6;
             }
             break;
-        }
-        if (stress) {
-            ++info.stress.recycled_buffers;
-            if (expected_rx_tail == 0) {
-                ++info.stress.rx_tail_wraps;
-            }
-        } else {
-            ++info.udp.recycled_buffers;
-            if (expected_rx_tail == 0) {
-                ++info.udp.rx_tail_wraps;
-            }
         }
         __atomic_store_n(
             &irq_bsp_progress,
@@ -556,6 +587,8 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
         __atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
             udp_test_datagrams + udp_stress_datagrams ||
         __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams + udp_stress_datagrams ||
+        __atomic_load_n(&info.irq_rx.recycled, __ATOMIC_ACQUIRE) <
             udp_test_datagrams + udp_stress_datagrams ||
         network_vector_errors()) {
         info.stress.failure = 8;
@@ -889,6 +922,8 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
             udp_test_datagrams ||
         __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) <
             udp_test_datagrams ||
+        __atomic_load_n(&info.irq_rx.recycled, __ATOMIC_ACQUIRE) <
+            udp_test_datagrams ||
         network_vector_errors()) {
         info.udp.failure = 8;
         return false;
@@ -897,7 +932,7 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
 
     // M13 serial evidence stays frozen in info.udp; M14 uses info.stress;
     // M25 socket TX freezes info.socket_tx; M27 uses info.socket_tx_bp;
-    // M28 uses info.socket_tx_wait; M29 irq_rx covers M13+M14 delivers.
+    // M28 uses info.socket_tx_wait; M29–M31 irq_rx covers M13+M14.
     if (!run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
                               first_tick)) {
         return false;
@@ -907,6 +942,8 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) !=
             irq_expected ||
         __atomic_load_n(&info.irq_rx.echoes, __ATOMIC_ACQUIRE) !=
+            irq_expected ||
+        __atomic_load_n(&info.irq_rx.recycled, __ATOMIC_ACQUIRE) !=
             irq_expected) {
         info.irq_rx.failure = 1;
         return false;

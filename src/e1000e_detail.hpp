@@ -122,6 +122,7 @@ extern volatile bool socket_irq_rx_active;
 extern volatile LegacyRxDescriptor* live_rx_ring;
 extern volatile LegacyTxDescriptor* live_tx_ring;
 extern uint8_t* live_tx_buffer;
+extern uint8_t** live_rx_buffers;
 extern uint32_t irq_rx_next;
 // BSP datagrams completed (replies); IRQ must not outrun socket RX depth.
 extern uint32_t irq_bsp_progress;
@@ -129,7 +130,7 @@ extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;
 extern bool packet_allocation_attempted;
-// M29/M30: RXQ0 MSI-X / TXQ0 / BSP kick delivers validated UDP + Echo.
+// M29–M31: RXQ0/TXQ0 demux deliver + Echo TX + RDT recycle.
 void irq_try_demux_rx();
 
 enum class NetworkPhase {
