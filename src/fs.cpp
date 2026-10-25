@@ -1,5 +1,7 @@
 #include <cxc/fs.hpp>
 
+#include <cxc/cxcfs.hpp>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -8,6 +10,9 @@ extern "C" void* memset(void*, int, size_t);
 
 namespace cxc::fs {
 namespace {
+
+constexpr uint8_t backend_ram = 0;
+constexpr uint8_t backend_disk = 1;
 
 struct Inode {
     bool used;
@@ -19,11 +24,27 @@ struct Inode {
 
 struct FileDesc {
     bool used;
+    uint8_t backend;
     uint32_t inode;
     uint32_t offset;
     uint32_t writable;
     uint32_t readable;
 };
+
+// Paths `disk/...` go to durable CXCFS (virtio-blk); everything else stays ramfs.
+bool disk_rest(const char* name, size_t length, const char*& rest,
+               size_t& rest_len) {
+    if (length < 6) {
+        return false;
+    }
+    if (name[0] != 'd' || name[1] != 'i' || name[2] != 's' || name[3] != 'k' ||
+        name[4] != '/') {
+        return false;
+    }
+    rest = name + 5;
+    rest_len = length - 5;
+    return rest_len > 0 && rest_len < max_path;
+}
 
 Inode inodes[max_files]{};
 FileDesc fds[fd_table_end]{};
@@ -193,6 +214,16 @@ int64_t mkdir_path(const char* path, uint64_t /*mode*/) {
     if (!normalize(path, name, name_len)) {
         return -1;
     }
+    const char* rest = nullptr;
+    size_t rest_len = 0;
+    if (disk_rest(name, name_len, rest, rest_len)) {
+        const int64_t rc = cxcfs::mkdir_name(rest, rest_len);
+        if (rc == 0) {
+            ++current_stats.mkdirs;
+            ++current_stats.dirs;
+        }
+        return rc;
+    }
     // Single-component directory names only (no nested mkdir yet).
     for (size_t index = 0; index < name_len; ++index) {
         if (name[index] == '/') {
@@ -220,6 +251,26 @@ int64_t unlink_path(const char* path) {
     if (!normalize(path, name, name_len)) {
         return -1;
     }
+    const char* rest = nullptr;
+    size_t rest_len = 0;
+    if (disk_rest(name, name_len, rest, rest_len)) {
+        for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
+            if (fds[fd].used && fds[fd].backend == backend_disk) {
+                // Busy check via name match would need reverse lookup; deny if
+                // any disk fd open for simplicity when inode matches.
+                const int32_t inode = cxcfs::find_inode(rest, rest_len);
+                if (inode >= 0 &&
+                    fds[fd].inode == static_cast<uint32_t>(inode)) {
+                    return -1;
+                }
+            }
+        }
+        const int64_t rc = cxcfs::unlink_name(rest, rest_len);
+        if (rc == 0) {
+            ++current_stats.unlinks;
+        }
+        return rc;
+    }
     const int32_t inode = find_inode(name, name_len);
     if (inode < 0) {
         return -2;  // -ENOENT
@@ -228,7 +279,8 @@ int64_t unlink_path(const char* path) {
         return -1;
     }
     for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
-        if (fds[fd].used && fds[fd].inode == static_cast<uint32_t>(inode)) {
+        if (fds[fd].used && fds[fd].backend == backend_ram &&
+            fds[fd].inode == static_cast<uint32_t>(inode)) {
             return -1;
         }
     }
@@ -254,6 +306,44 @@ int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
     const bool want_write = access == o_wronly || access == o_rdwr;
     if (!want_read && !want_write) {
         return -1;
+    }
+
+    const char* rest = nullptr;
+    size_t rest_len = 0;
+    if (disk_rest(name, name_len, rest, rest_len)) {
+        const int32_t existing = cxcfs::find_inode(rest, rest_len);
+        const bool is_dir =
+            existing >= 0 &&
+            cxcfs::inode_is_dir(static_cast<uint32_t>(existing));
+        int32_t disk_inode = -1;
+        if (is_dir) {
+            if (want_write || creat || trunc) {
+                return -1;
+            }
+            disk_inode = cxcfs::open_or_create(rest, rest_len, false, false,
+                                               false, true);
+        } else {
+            disk_inode = cxcfs::open_or_create(rest, rest_len, creat, trunc,
+                                               want_write, false);
+        }
+        if (disk_inode < 0) {
+            return disk_inode;
+        }
+        const int32_t fd = alloc_fd();
+        if (fd < 0) {
+            return -1;
+        }
+        fds[fd].used = true;
+        fds[fd].backend = backend_disk;
+        fds[fd].inode = static_cast<uint32_t>(disk_inode);
+        fds[fd].offset = 0;
+        fds[fd].readable = want_read ? 1u : 0u;
+        fds[fd].writable = want_write ? 1u : 0u;
+        ++current_stats.opens;
+        if (creat && !is_dir) {
+            ++current_stats.files;
+        }
+        return fd;
     }
 
     int32_t inode = find_inode(name, name_len);
@@ -289,6 +379,7 @@ int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
         return -1;
     }
     fds[fd].used = true;
+    fds[fd].backend = backend_ram;
     fds[fd].inode = static_cast<uint32_t>(inode);
     fds[fd].offset = 0;
     fds[fd].readable = want_read ? 1u : 0u;
@@ -311,6 +402,20 @@ int64_t read_fd(uint32_t fd, void* buffer, size_t length) {
         fd >= fd_table_end || !fds[fd].used || fds[fd].readable == 0) {
         return -1;
     }
+    if (fds[fd].backend == backend_disk) {
+        if (cxcfs::inode_is_dir(fds[fd].inode)) {
+            return -1;
+        }
+        const int64_t got =
+            cxcfs::read_inode(fds[fd].inode, fds[fd].offset, buffer, length);
+        if (got > 0) {
+            fds[fd].offset += static_cast<uint32_t>(got);
+        }
+        if (got >= 0) {
+            ++current_stats.reads;
+        }
+        return got;
+    }
     Inode& node = inodes[fds[fd].inode];
     if (node.is_dir) {
         return -1;
@@ -332,6 +437,20 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || fd < fd_table_begin ||
         fd >= fd_table_end || !fds[fd].used || fds[fd].writable == 0) {
         return -1;
+    }
+    if (fds[fd].backend == backend_disk) {
+        if (cxcfs::inode_is_dir(fds[fd].inode)) {
+            return -1;
+        }
+        const int64_t got =
+            cxcfs::write_inode(fds[fd].inode, fds[fd].offset, buffer, length);
+        if (got > 0) {
+            fds[fd].offset += static_cast<uint32_t>(got);
+        }
+        if (got >= 0) {
+            ++current_stats.writes;
+        }
+        return got;
     }
     Inode& node = inodes[fds[fd].inode];
     if (node.is_dir) {
@@ -359,9 +478,23 @@ int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
-    Inode& node = inodes[fds[fd].inode];
-    if (node.is_dir) {
-        return -1;
+    int64_t size = 0;
+    uint32_t size_cap = max_file_bytes;
+    if (fds[fd].backend == backend_disk) {
+        if (cxcfs::inode_is_dir(fds[fd].inode)) {
+            return -1;
+        }
+        size = cxcfs::inode_size(fds[fd].inode);
+        if (size < 0) {
+            return -1;
+        }
+        size_cap = cxcfs::max_file_bytes;
+    } else {
+        Inode& node = inodes[fds[fd].inode];
+        if (node.is_dir) {
+            return -1;
+        }
+        size = static_cast<int64_t>(node.size);
     }
 
     int64_t base = 0;
@@ -370,13 +503,13 @@ int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
     } else if (whence == seek_cur) {
         base = static_cast<int64_t>(fds[fd].offset);
     } else if (whence == seek_end) {
-        base = static_cast<int64_t>(node.size);
+        base = size;
     } else {
         return -1;
     }
 
     const int64_t next = base + offset;
-    if (next < 0 || static_cast<uint64_t>(next) > max_file_bytes) {
+    if (next < 0 || static_cast<uint64_t>(next) > size_cap) {
         return -1;
     }
     fds[fd].offset = static_cast<uint32_t>(next);
@@ -388,7 +521,11 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
-    fill_stat(fds[fd].inode, out);
+    if (fds[fd].backend == backend_disk) {
+        cxcfs::fill_stat(fds[fd].inode, out);
+    } else {
+        fill_stat(fds[fd].inode, out);
+    }
     ++current_stats.fstats;
     return 0;
 }
@@ -398,6 +535,17 @@ int64_t stat_path(const char* path, StatBuf& out) {
     size_t name_len = 0;
     if (!normalize(path, name, name_len)) {
         return -1;
+    }
+    const char* rest = nullptr;
+    size_t rest_len = 0;
+    if (disk_rest(name, name_len, rest, rest_len)) {
+        const int32_t inode = cxcfs::find_inode(rest, rest_len);
+        if (inode < 0) {
+            return -1;
+        }
+        cxcfs::fill_stat(static_cast<uint32_t>(inode), out);
+        ++current_stats.stats;
+        return 0;
     }
     const int32_t inode = find_inode(name, name_len);
     if (inode < 0) {
@@ -412,6 +560,22 @@ int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || length > max_getdents ||
         fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
+    }
+    if (fds[fd].backend == backend_disk) {
+        if (!cxcfs::inode_is_dir(fds[fd].inode) || fds[fd].readable == 0) {
+            return -1;
+        }
+        // Simple one-shot listing (cookie ignored for M77).
+        if (fds[fd].offset != 0) {
+            return 0;
+        }
+        const int64_t got =
+            cxcfs::getdents_inode(fds[fd].inode, buffer, length);
+        if (got >= 0) {
+            fds[fd].offset = 1;
+            ++current_stats.getdents;
+        }
+        return got;
     }
     const Inode& dir = inodes[fds[fd].inode];
     if (!dir.is_dir || fds[fd].readable == 0) {

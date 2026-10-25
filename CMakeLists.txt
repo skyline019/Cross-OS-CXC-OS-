@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.77.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.78.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -233,6 +233,7 @@ add_executable(cxc_kernel
     src/stack.S
     src/uefi.cpp
     src/virtio_blk.cpp
+    src/cxcfs.cpp
     src/vmm.cpp
 )
 target_include_directories(cxc_kernel PRIVATE include src)

@@ -3,6 +3,7 @@
 #include <cxc/cpu.hpp>
 #include <cxc/e1000e.hpp>
 #include <cxc/edu.hpp>
+#include <cxc/fs.hpp>
 #include <cxc/heap.hpp>
 #include <cxc/ioapic.hpp>
 #include <cxc/irq.hpp>
@@ -15,6 +16,7 @@
 #include <cxc/smp.hpp>
 #include <cxc/uefi.hpp>
 #include <cxc/user.hpp>
+#include <cxc/cxcfs.hpp>
 #include <cxc/virtio_blk.hpp>
 #include <cxc/vmm.hpp>
 
@@ -1395,6 +1397,68 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("VIRTIO_BLK_RW_PASS");
 
+    cxcfs::MountResult cxcfs_probe{};
+    if (!cxcfs::run_probe(cxcfs_probe) || cxcfs_probe.pass == 0) {
+        log::write("[debug] cxcfs stage: ");
+        log::decimal(cxcfs_probe.stage);
+        log::write(", failure: ");
+        log::decimal(cxcfs_probe.failure);
+        log::write(", mounted: ");
+        log::decimal(cxcfs_probe.mounted);
+        log::write(", persist: ");
+        log::decimal(cxcfs_probe.persist_ok);
+        log::write(", remount: ");
+        log::decimal(cxcfs_probe.remount_ok);
+        log::write('\n');
+        log::panic("M77 CXCFS probe failed");
+    }
+    // User-visible path via existing open/read/write (disk/ prefix).
+    const int64_t ufd = fs::open_path("disk/user.txt", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+    if (ufd < 0) {
+        log::panic("M77 disk/user.txt create failed");
+    }
+    static const char user_payload[] = "DISKOK";
+    if (fs::write_fd(static_cast<uint32_t>(ufd), user_payload,
+                     sizeof(user_payload) - 1) !=
+        static_cast<int64_t>(sizeof(user_payload) - 1)) {
+        log::panic("M77 disk/user.txt write failed");
+    }
+    if (fs::close_fd(static_cast<uint32_t>(ufd)) != 0) {
+        log::panic("M77 disk/user.txt close failed");
+    }
+    cxcfs::MountResult remount_check = cxcfs_probe;
+    if (!cxcfs::remount(remount_check)) {
+        log::panic("M77 CXCFS remount after user path failed");
+    }
+    const int64_t rfd = fs::open_path("disk/user.txt", fs::o_rdonly, 0);
+    if (rfd < 0) {
+        log::panic("M77 disk/user.txt reopen failed");
+    }
+    char user_buf[8]{};
+    if (fs::read_fd(static_cast<uint32_t>(rfd), user_buf, sizeof(user_buf)) !=
+        static_cast<int64_t>(sizeof(user_payload) - 1)) {
+        log::panic("M77 disk/user.txt read failed");
+    }
+    if (fs::close_fd(static_cast<uint32_t>(rfd)) != 0) {
+        log::panic("M77 disk/user.txt reclose failed");
+    }
+    if (user_buf[0] != 'D' || user_buf[1] != 'I' || user_buf[2] != 'S' ||
+        user_buf[3] != 'K' || user_buf[4] != 'O' || user_buf[5] != 'K') {
+        log::panic("M77 disk/user.txt payload mismatch");
+    }
+
+    log::write("[ok] cxcfs: pass: ");
+    log::decimal(cxcfs_probe.pass);
+    log::write(" persist: ");
+    log::decimal(cxcfs_probe.persist_ok);
+    log::write(" remount: ");
+    log::decimal(remount_check.remount_ok);
+    log::write(" formatted: ");
+    log::decimal(cxcfs_probe.formatted);
+    log::write(" disk_user: 1");
+    log::write('\n');
+    log::line("CXCFS_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1606,7 +1670,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.77.0 - virtio-blk R/W online (A2/M76)");
+    cxc::log::line("CXC/OS 0.78.0 - CXCFS durable root (A2/M77)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

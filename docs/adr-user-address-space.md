@@ -139,7 +139,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M74** | 第七次中场 + 新格局 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；大跨步/边缘契约 |
 | **M75** | virtio-blk 读探针 + OOB 边缘 | 串口 `VIRTIO_BLK_PASS`；调试点 stage/failure |
 | **M76** | 持久 virtio-blk 扇区读写 + 回读边缘 | 串口 `VIRTIO_BLK_RW_PASS`；设备保持在线供 A2 根 |
-| **M77+** | 可挂载根 / 用户可见块文件 → 机上工具链 | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M77** | CXCFS on virtio-blk；`disk/` 路径；remount 持久 | 串口 `CXCFS_PASS`；syscall 可见 |
+| **M78+** | 扩大容量 / 用户 musl 落盘 / 逼近机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 
