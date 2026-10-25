@@ -76,7 +76,7 @@ jobs:
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
-      - name: Assert serial PASS, M13–M47 markers, peer_ok=1
+      - name: Assert serial PASS, M13–M48 markers, peer_ok=1
         run: |
           set -euo pipefail
           test -f build/uefi/qemu-test/serial.log
@@ -127,6 +127,9 @@ jobs:
             build/uefi/qemu-test/serial.log
           grep -F 'USER_LSEEK_PASS' build/uefi/qemu-test/serial.log
           grep -F 'user lseek: calls: 3, pass: 1' \
+            build/uefi/qemu-test/serial.log
+          grep -F 'USER_FSTAT_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'user fstat: calls: 1, pass: 1' \
             build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \

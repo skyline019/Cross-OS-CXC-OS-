@@ -339,4 +339,27 @@ int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
     return next;
 }
 
+int64_t fstat_fd(uint32_t fd, StatBuf& out) {
+    if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
+        return -1;
+    }
+    const Inode& node = inodes[fds[fd].inode];
+    out = StatBuf{};
+    out.st_dev = 1;
+    out.st_ino = fds[fd].inode + 1;
+    out.st_nlink = 1;
+    if (node.is_dir) {
+        out.st_mode = s_ifdir | 0755;
+        out.st_size = 0;
+    } else {
+        out.st_mode = s_ifreg | 0644;
+        out.st_size = static_cast<int64_t>(node.size);
+    }
+    out.st_blksize = static_cast<int64_t>(max_file_bytes);
+    out.st_blocks =
+        (out.st_size + 511) / 512;  // 512-byte units, Linux convention.
+    ++current_stats.fstats;
+    return 0;
+}
+
 }  // namespace cxc::fs

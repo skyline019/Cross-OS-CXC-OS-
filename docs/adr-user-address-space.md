@@ -110,7 +110,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M45** | ESP 外部静态 ELF（非嵌入 PE） | 串口 `USER_EXT_ELF_PASS` + `user ext ELF: …` |
 | **M46** | host gcc 产出 `CROSS.ELF`（无 libc） | 串口 `USER_CROSS_ELF_PASS` + `user cross ELF: …` |
 | **M47** | `lseek`（SEEK_SET/CUR/END） | 串口 `USER_LSEEK_PASS` + `user lseek: …` |
-| **M48+** | `stat`/`fstat`/`getdents`/`arch_prctl` 等 | 见第四次中场 §6 |
+| **M48** | `fstat`（Linux x86-64 `struct stat`） | 串口 `USER_FSTAT_PASS` + `user fstat: …` |
+| **M49+** | `stat`/`getdents`/`arch_prctl` 等 | 见第四次中场 §6 |
 
 ## 6. 参考
 

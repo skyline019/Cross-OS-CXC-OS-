@@ -37,6 +37,8 @@ uint64_t cross_elf_physical = 0;
 uint64_t cross_elf_size = 0;
 uint64_t lseek_elf_physical = 0;
 uint64_t lseek_elf_size = 0;
+uint64_t fstat_elf_physical = 0;
+uint64_t fstat_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -834,6 +836,27 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(lseek.wrote_pass);
     log::write('\n');
 
+    user::FstatProbeResult fstat{};
+    const auto* fstat_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + fstat_elf_physical);
+    if (fstat_elf_physical == 0 || fstat_elf_size == 0 ||
+        !user::run_fstat_probe(fstat_image, static_cast<size_t>(fstat_elf_size),
+                               fstat)) {
+        log::write("[debug] user fstat probe stage: ");
+        log::decimal(fstat.stage);
+        log::write(", failure: ");
+        log::decimal(fstat.failure);
+        log::write(", fstats: ");
+        log::decimal(fstat.fstat_calls);
+        log::write('\n');
+        log::panic("M48 user fstat probe failed");
+    }
+    log::write("[ok] user fstat: calls: ");
+    log::decimal(fstat.fstat_calls);
+    log::write(", pass: ");
+    log::decimal(fstat.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -937,6 +960,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LSEEK.ELF")) {
         log::panic("cannot relocate ESP LSEEK.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(fstat_elf_physical, fstat_elf_size,
+                                 "ESP FSTAT.ELF")) {
+        log::panic("cannot relocate ESP FSTAT.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -953,7 +980,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.48.0 - lseek libc-gap (A2/M47)");
+    cxc::log::line("CXC/OS 0.49.0 - fstat libc-gap (A2/M48)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1024,6 +1051,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LSEEK.ELF bytes: ");
     cxc::log::decimal(cxc::lseek_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 fstat_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'F',  u'S', u'T', u'A', u'T',  u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, fstat_elf_path,
+                                      64 * 1024, cxc::fstat_elf_physical,
+                                      cxc::fstat_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP FSTAT.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP FSTAT.ELF bytes: ");
+    cxc::log::decimal(cxc::fstat_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

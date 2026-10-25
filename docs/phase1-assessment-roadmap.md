@@ -1,6 +1,6 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 47 / v0.48.0（2026-10；lseek；主靶 A2 / 次靶 B；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
+**基线**：Milestone 48 / v0.49.0（2026-10；fstat；主靶 A2 / 次靶 B；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint（正确/失败/掉电/事务/循环/高压/混沌）绿；host `ctest` + ASan/UBSan/TSan（Linux CI）。  
 **中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第四次中场已完成（M44）；下一正式中场目标 **M54**。
 
