@@ -114,7 +114,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M49** | 路径 `stat`（文件+目录） | 串口 `USER_STAT_PASS` + `user stat: …` |
 | **M50** | `getdents64` + 目录只读 open | 串口 `USER_GETDENTS_PASS` + `user getdents: …` |
 | **M51** | `arch_prctl` SET/GET_FS（拒 GS） | 串口 `USER_ARCH_PRCTL_PASS` + `user arch_prctl: …` |
-| **M52+** | musl 子集 / 更多 libc ABI | 见第四次中场 §6 |
+| **M52** | mini-libc `write`/`_exit` 链接烟测 | 串口 `USER_LIBC_PASS` + `user libc: …` |
+| **M53+** | 更多 mini-libc / musl 缺口 | 见第四次中场 §6 |
 
 ## 6. 参考
 

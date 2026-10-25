@@ -31,6 +31,7 @@ constexpr char expected_fstat_pass[] = "USER_FSTAT_PASS\n";
 constexpr char expected_stat_pass[] = "USER_STAT_PASS\n";
 constexpr char expected_getdents_pass[] = "USER_GETDENTS_PASS\n";
 constexpr char expected_arch_prctl_pass[] = "USER_ARCH_PRCTL_PASS\n";
+constexpr char expected_libc_pass[] = "USER_LIBC_PASS\n";
 constexpr int64_t mmap_error = -1;
 constexpr int64_t errno_inval = -22;
 
@@ -241,6 +242,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_arch_prctl_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_libc_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_libc_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_libc_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_libc_pass = 1;
         }
     }
 }
