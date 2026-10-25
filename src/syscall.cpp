@@ -40,7 +40,9 @@ constexpr char expected_libc_string_pass[] = "USER_LIBC_STRING_PASS\n";
 constexpr char expected_libc_writev_pass[] = "USER_LIBC_WRITEV_PASS\n";
 constexpr char expected_libc_crt_pass[] = "USER_LIBC_CRT_PASS\n";
 constexpr char expected_libc_uname_pass[] = "USER_LIBC_UNAME_PASS\n";
+constexpr char expected_libc_tid_pass[] = "USER_LIBC_TID_PASS\n";
 constexpr int64_t mmap_error = -1;
+constexpr uint64_t probe_tid = 1;
 constexpr int64_t errno_inval = -22;
 constexpr int64_t errno_fault = -14;
 constexpr uint64_t max_iov = 8;
@@ -371,6 +373,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_libc_uname_pass = 1;
         }
     }
+    if (length == sizeof(expected_libc_tid_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_libc_tid_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_libc_tid_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_libc_tid_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -567,13 +582,25 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.62.0");
-    fill_uts_field(local.version, "M61");
+    fill_uts_field(local.release, "0.63.0");
+    fill_uts_field(local.version, "M62");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
            sizeof(local));
     frame->rax = 0;
+    return frame;
+}
+
+cpu::InterruptFrame* handle_set_tid_address(cpu::InterruptFrame* frame) {
+    // Linux: always succeeds; returns caller's tid. Pointer may be NULL.
+    const uint64_t tidptr = frame->rdi;
+    if (tidptr != 0 && !user_pages_ok(tidptr, sizeof(int), true)) {
+        frame->rax = static_cast<uint64_t>(errno_fault);
+        return frame;
+    }
+    current.clear_child_tid = tidptr;
+    frame->rax = probe_tid;
     return frame;
 }
 
@@ -885,6 +912,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_exit(frame);
     case sys_uname:
         return handle_uname(frame);
+    case sys_set_tid_address:
+        return handle_set_tid_address(frame);
     default:
         frame->rax = static_cast<uint64_t>(-38);  // -ENOSYS
         return frame;

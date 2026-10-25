@@ -12,6 +12,7 @@ enum {
     SYS_WRITEV = 20,
     SYS_EXIT = 60,
     SYS_UNAME = 63,
+    SYS_SET_TID_ADDRESS = 218,
 };
 
 enum { PAGE_SIZE = 4096 };
@@ -91,4 +92,8 @@ void _exit(int status) {
 
 int uname(struct utsname* buf) {
     return (int)check_fd(syscall3(SYS_UNAME, (long)buf, 0, 0));
+}
+
+long set_tid_address(int* tidptr) {
+    return syscall3(SYS_SET_TID_ADDRESS, (long)tidptr, 0, 0);
 }

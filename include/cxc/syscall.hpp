@@ -23,6 +23,7 @@ constexpr uint64_t sys_uname = 63;
 constexpr uint64_t sys_arch_prctl = 158;
 constexpr uint64_t sys_mkdir = 83;
 constexpr uint64_t sys_getdents64 = 217;
+constexpr uint64_t sys_set_tid_address = 218;
 
 // Linux arch_prctl codes (x86-64). Only FS is supported for user TLS.
 constexpr uint64_t arch_set_gs = 0x1001;
@@ -75,6 +76,8 @@ struct Session {
     uint32_t saw_user_libc_writev_pass;
     uint32_t saw_user_libc_crt_pass;
     uint32_t saw_user_libc_uname_pass;
+    uint32_t saw_user_libc_tid_pass;
+    uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;

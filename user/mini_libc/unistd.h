@@ -19,4 +19,5 @@ int open(const char* path, int flags, mode_t mode);
 int close(int fd);
 void* brk(void* addr);
 void* sbrk(intptr_t increment);
+long set_tid_address(int* tidptr);
 void _exit(int status) __attribute__((noreturn));
