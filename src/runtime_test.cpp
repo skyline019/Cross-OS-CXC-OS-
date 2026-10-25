@@ -74,6 +74,7 @@ volatile uint32_t queue_wait_done = 0;
 volatile uint32_t queue_broadcast_done = 0;
 volatile uint32_t mutex_critical = 0;
 volatile bool mutex_fault = false;
+volatile uint32_t mutex_enter_ready = 0;
 uint64_t mutex_shared_counter = 0;
 constexpr uint32_t mutex_rounds = 16;
 volatile bool socket_fault = false;
@@ -340,6 +341,15 @@ void worker_entry(void* opaque) {
     }
 
     // M18: every worker contends on a blocking mutex around a shared counter.
+    // Barrier + held-lock sleep so UP (2 workers, 1 CPU) still produces waits.
+    __atomic_add_fetch(&mutex_enter_ready, 1, __ATOMIC_ACQ_REL);
+    while (__atomic_load_n(&mutex_enter_ready, __ATOMIC_ACQUIRE) <
+           expected_workers) {
+        if (__atomic_load_n(&worker_fault, __ATOMIC_ACQUIRE)) {
+            return;
+        }
+        cpu::wait_for_interrupt();
+    }
     for (uint32_t round = 0; round < mutex_rounds; ++round) {
         if (!scheduler::mutex_lock(lifecycle_mutex)) {
             __atomic_store_n(&mutex_fault, true, __ATOMIC_RELEASE);
@@ -353,8 +363,17 @@ void worker_entry(void* opaque) {
             return;
         }
         ++mutex_shared_counter;
-        for (uint32_t delay = 0; delay < 16; ++delay) {
-            cpu::relax();
+        if ((round & 1u) == 0) {
+            if (!scheduler::sleep(1)) {
+                __atomic_store_n(&mutex_fault, true, __ATOMIC_RELEASE);
+                set_worker_fault();
+                (void)scheduler::mutex_unlock(lifecycle_mutex);
+                return;
+            }
+        } else {
+            for (uint32_t delay = 0; delay < 16; ++delay) {
+                cpu::relax();
+            }
         }
         __atomic_sub_fetch(&mutex_critical, 1, __ATOMIC_ACQ_REL);
         if (!scheduler::mutex_unlock(lifecycle_mutex)) {
@@ -555,6 +574,7 @@ void run() {
     __atomic_store_n(&queue_broadcast_done, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&mutex_critical, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&mutex_fault, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&mutex_enter_ready, 0, __ATOMIC_RELAXED);
     mutex_shared_counter = 0;
     __atomic_store_n(&socket_fault, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_wait_ready, 0, __ATOMIC_RELAXED);

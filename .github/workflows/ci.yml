@@ -93,11 +93,12 @@ jobs:
 
       - name: SMP UP and 8-way
         run: |
+          # UP needs extra time: M18 held-lock sleeps force mutex waits.
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --cpus 1 --cpu "qemu64,+x2apic" \
+            --check --cpus 1 --cpu "qemu64,+x2apic" --timeout 120 \
             --work-dir build/qemu-up
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --cpus 8 --cpu "qemu64,+x2apic" \
+            --check --cpus 8 --cpu "qemu64,+x2apic" --timeout 120 \
             --work-dir build/qemu-smp-8
 
       - name: Negative — missing EDU
@@ -124,6 +125,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
+          import os
           roots = [
               Path("build/uefi/BOOTX64.efi"),
               Path("build/uefi/cxc-os.img"),
@@ -133,10 +135,21 @@ jobs:
               Path("build/uefi/qemu-test/network-peer.log"),
               Path("build/contract-full/CONTRACT_VALIDATION.txt"),
           ]
+          # Always required once earlier steps produced them.
+          required = {
+              Path("build/uefi/BOOTX64.efi"),
+              Path("build/uefi/cxc-os.img"),
+              Path("build/contract-host/CONTRACT_VALIDATION.txt"),
+              Path("build/uefi/qemu-test/serial.log"),
+              Path("build/uefi/qemu-test/network-peer.log"),
+          }
           lines = []
+          missing_required = False
           for path in roots:
               if not path.is_file():
                   lines.append(f"MISSING {path}")
+                  if path in required:
+                      missing_required = True
                   continue
               digest = hashlib.sha256(path.read_bytes()).hexdigest()
               lines.append(f"{digest}  {path}  ({path.stat().st_size} bytes)")
@@ -144,7 +157,9 @@ jobs:
               "\n".join(lines) + "\n", encoding="utf-8"
           )
           print("\n".join(lines))
-          if any(line.startswith("MISSING ") for line in lines):
+          # Only fail this step on required gaps; optional contract-full may be
+          # absent when an earlier matrix step already failed.
+          if missing_required:
               raise SystemExit("required evidence files missing")
           PY
 
