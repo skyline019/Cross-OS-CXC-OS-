@@ -1,6 +1,6 @@
 # musl 子集链接实验笔记
 
-基线：Milestone 72 / v0.73.0  
+基线：Milestone 73 / v0.74.0  
 宿主探针：Ubuntu `musl` / `musl-dev` / `musl-tools` 1.2.4（WSL / Linux CI）。
 
 ## 1. 已验证（链接）
@@ -25,10 +25,11 @@
 - **M70**：真 musl `printf`（`USER_MUSL_PRT_PASS` / `LIBMPR.ELF`）；brk 基址 `0x407000`。
 - **M71**：真 musl `fopen`（`USER_MUSL_FOP_PASS` / `LIBFOP.ELF`）；brk `0x409000`、栈 `0x420000`；`mprotect`/`ioctl`/`fcntl` stub；`readv`（stdio 读路径）。
 - **M72**：真 musl `opendir`/`readdir`（`USER_MUSL_ODR_PASS` / `LIBODR.ELF`）；复用 `mkdir` + `getdents64`。
+- **M73**：真 musl `unlink`（`USER_MUSL_UNL_PASS` / `LIBUNL.ELF`）；syscall 87；常规文件、fd 未打开时可删。
 - **不宣称**：机上编译器（A2）、完整 POSIX、SYSRET 快路径、持久块设备。
 
 ## 4. 下一刀优先级
 
-1. 评估块设备薄切片（A2 硬阻塞）或继续按 `ENOSYS` 补 musl 缺口号；  
+1. **M74 中场**：正式评估并裁定是否切 **virtio-blk** 薄切片（A2 硬阻塞；当前树无块设备代码）；  
 2. 可选：SYSCALL 返回改 SYSRET；  
 3. A2 机上工具链仍需独立合同。

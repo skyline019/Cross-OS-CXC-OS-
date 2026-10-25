@@ -135,7 +135,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M70** | musl-gcc `printf` + brk 抬升 | 串口 `USER_MUSL_PRT_PASS`；ESP `LIBMPR.ELF` |
 | **M71** | musl-gcc `fopen` + layout/stub | 串口 `USER_MUSL_FOP_PASS`；ESP `LIBFOP.ELF` |
 | **M72** | musl-gcc `opendir`/`readdir` | 串口 `USER_MUSL_ODR_PASS`；ESP `LIBODR.ELF` |
-| **M73+** | 加深真 musl API / A2 工具链准备 | 见 link notes |
+| **M73** | musl-gcc `unlink` | 串口 `USER_MUSL_UNL_PASS`；ESP `LIBUNL.ELF` |
+| **M74** | 第七次中场（计划） | 见 cadence；块设备主线裁定 |
 
 ## 6. 参考
 

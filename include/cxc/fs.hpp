@@ -67,6 +67,7 @@ struct Stats {
     uint32_t stats;
     uint32_t getdents;
     uint32_t mkdirs;
+    uint32_t unlinks;
     uint32_t files;
     uint32_t dirs;
 };
@@ -79,6 +80,8 @@ const Stats& stats();
 // Supports flat names and one-level nested paths after mkdir (M42).
 int64_t open_path(const char* path, uint64_t flags, uint64_t mode);
 int64_t mkdir_path(const char* path, uint64_t mode);
+// Regular files only (M73); busy if any fd still references the inode.
+int64_t unlink_path(const char* path);
 int64_t close_fd(uint32_t fd);
 int64_t read_fd(uint32_t fd, void* buffer, size_t length);
 int64_t write_fd(uint32_t fd, const void* buffer, size_t length);

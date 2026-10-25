@@ -214,6 +214,32 @@ int64_t mkdir_path(const char* path, uint64_t /*mode*/) {
     return 0;
 }
 
+int64_t unlink_path(const char* path) {
+    const char* name = nullptr;
+    size_t name_len = 0;
+    if (!normalize(path, name, name_len)) {
+        return -1;
+    }
+    const int32_t inode = find_inode(name, name_len);
+    if (inode < 0) {
+        return -2;  // -ENOENT
+    }
+    if (inodes[inode].is_dir) {
+        return -1;
+    }
+    for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
+        if (fds[fd].used && fds[fd].inode == static_cast<uint32_t>(inode)) {
+            return -1;
+        }
+    }
+    inodes[inode] = Inode{};
+    ++current_stats.unlinks;
+    if (current_stats.files > 0) {
+        --current_stats.files;
+    }
+    return 0;
+}
+
 int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
     const char* name = nullptr;
     size_t name_len = 0;
