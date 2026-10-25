@@ -39,6 +39,7 @@ constexpr char expected_libc_errno_pass[] = "USER_LIBC_ERRNO_PASS\n";
 constexpr char expected_libc_string_pass[] = "USER_LIBC_STRING_PASS\n";
 constexpr char expected_libc_writev_pass[] = "USER_LIBC_WRITEV_PASS\n";
 constexpr char expected_libc_crt_pass[] = "USER_LIBC_CRT_PASS\n";
+constexpr char expected_libc_uname_pass[] = "USER_LIBC_UNAME_PASS\n";
 constexpr int64_t mmap_error = -1;
 constexpr int64_t errno_inval = -22;
 constexpr int64_t errno_fault = -14;
@@ -357,6 +358,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_libc_crt_pass = 1;
         }
     }
+    if (length == sizeof(expected_libc_uname_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_libc_uname_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_libc_uname_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_libc_uname_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -518,6 +532,47 @@ cpu::InterruptFrame* handle_munmap(cpu::InterruptFrame* frame) {
         current.mmap_next = addr;
     }
     ++current.munmap_calls;
+    frame->rax = 0;
+    return frame;
+}
+
+constexpr size_t uts_field = 65;
+
+struct UtsName {
+    char sysname[uts_field];
+    char nodename[uts_field];
+    char release[uts_field];
+    char version[uts_field];
+    char machine[uts_field];
+    char domainname[uts_field];
+};
+
+void fill_uts_field(char* dest, const char* src) {
+    size_t index = 0;
+    while (src[index] != '\0' && index + 1 < uts_field) {
+        dest[index] = src[index];
+        ++index;
+    }
+    while (index < uts_field) {
+        dest[index++] = '\0';
+    }
+}
+
+cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
+    const uint64_t user_buf = frame->rdi;
+    if (!user_pages_ok(user_buf, sizeof(UtsName), true)) {
+        frame->rax = static_cast<uint64_t>(errno_fault);
+        return frame;
+    }
+    UtsName local{};
+    fill_uts_field(local.sysname, "CXC/OS");
+    fill_uts_field(local.nodename, "cxc");
+    fill_uts_field(local.release, "0.62.0");
+    fill_uts_field(local.version, "M61");
+    fill_uts_field(local.machine, "x86_64");
+    fill_uts_field(local.domainname, "");
+    memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
+           sizeof(local));
     frame->rax = 0;
     return frame;
 }
@@ -828,6 +883,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_getdents64(frame);
     case sys_exit:
         return handle_exit(frame);
+    case sys_uname:
+        return handle_uname(frame);
     default:
         frame->rax = static_cast<uint64_t>(-38);  // -ENOSYS
         return frame;

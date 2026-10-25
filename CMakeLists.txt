@@ -772,6 +772,48 @@ else()
     )
 endif()
 
+set(CXC_USER_LIBC_UNAME_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_libc_uname.elf")
+if(CXC_USER_CROSS_USES_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_LIBC_UNAME_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+            -o "${CXC_USER_LIBC_UNAME_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_uname_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_uname_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/unistd.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/utsname.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+        COMMENT "Building ESP LIBUNA.ELF via host gcc + mini_libc"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_LIBC_UNAME_ELF}"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_uname_elf.py"
+            --output "${CXC_USER_LIBC_UNAME_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_uname_elf.py"
+        COMMENT "Building ESP LIBUNA.ELF via handmade fallback"
+        VERBATIM
+    )
+endif()
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -793,6 +835,7 @@ add_custom_command(
         --extra "LIBSTR  ELF" "${CXC_USER_LIBC_STRING_ELF}"
         --extra "LIBWRV  ELF" "${CXC_USER_LIBC_WRITEV_ELF}"
         --extra "LIBCRT  ELF" "${CXC_USER_LIBC_CRT_ELF}"
+        --extra "LIBUNA  ELF" "${CXC_USER_LIBC_UNAME_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -811,6 +854,7 @@ add_custom_command(
         "${CXC_USER_LIBC_STRING_ELF}"
         "${CXC_USER_LIBC_WRITEV_ELF}"
         "${CXC_USER_LIBC_CRT_ELF}"
+        "${CXC_USER_LIBC_UNAME_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -827,6 +871,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_string_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_writev_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_crt_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_libc_uname_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/lseek_probe.c"
@@ -842,6 +887,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_string_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_writev_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_crt_probe.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/libc_uname_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
@@ -852,7 +898,8 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/stdlib.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/fcntl.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.h"
-    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBCRT.ELF)"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/utsname.h"
+    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBUNA.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")

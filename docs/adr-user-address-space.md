@@ -123,7 +123,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M58** | mini-libc string | 串口 `USER_LIBC_STRING_PASS` + `user libc string: …` |
 | **M59** | mini-libc `writev`（syscall 20） | 串口 `USER_LIBC_WRITEV_PASS` + `user libc writev: …` |
 | **M60** | mini-libc CRT `_start`→`main` | 串口 `USER_LIBC_CRT_PASS` + `user libc crt: …` |
-| **M61+** | 按链接缺口补 syscall / 极小 musl | 见第五次中场 §6 |
+| **M61** | mini-libc `uname`（syscall 63） | 串口 `USER_LIBC_UNAME_PASS` + `user libc uname: …` |
+| **M62+** | `set_tid_address` / 极小 musl | 见第五次中场 §6 |
 
 ## 6. 参考
 

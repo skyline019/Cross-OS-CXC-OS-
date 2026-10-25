@@ -1,6 +1,7 @@
 /* Freestanding mini-libc: Linux x86-64 numbers via int 0x80. */
 #include "mini_libc/errno.h"
 #include "mini_libc/unistd.h"
+#include "mini_libc/utsname.h"
 
 enum {
     SYS_READ = 0,
@@ -10,6 +11,7 @@ enum {
     SYS_BRK = 12,
     SYS_WRITEV = 20,
     SYS_EXIT = 60,
+    SYS_UNAME = 63,
 };
 
 enum { PAGE_SIZE = 4096 };
@@ -85,4 +87,8 @@ void _exit(int status) {
     syscall3(SYS_EXIT, status, 0, 0);
     for (;;) {
     }
+}
+
+int uname(struct utsname* buf) {
+    return (int)check_fd(syscall3(SYS_UNAME, (long)buf, 0, 0));
 }

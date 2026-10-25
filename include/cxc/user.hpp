@@ -266,6 +266,18 @@ struct LibcCrtProbeResult {
     uint64_t image_size;
 };
 
+struct LibcUnameProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -365,5 +377,10 @@ const LibcWritevProbeResult& libc_writev_probe_result();
 bool run_libc_crt_probe(const uint8_t* image, size_t image_size,
                         LibcCrtProbeResult& result);
 const LibcCrtProbeResult& libc_crt_probe_result();
+
+// BSP-only: mini-libc uname via ESP LIBUNA.ELF (M61).
+bool run_libc_uname_probe(const uint8_t* image, size_t image_size,
+                          LibcUnameProbeResult& result);
+const LibcUnameProbeResult& libc_uname_probe_result();
 
 }  // namespace cxc::user

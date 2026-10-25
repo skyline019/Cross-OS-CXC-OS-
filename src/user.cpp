@@ -44,6 +44,7 @@ LibcErrnoProbeResult libc_errno_probe{};
 LibcStringProbeResult libc_string_probe{};
 LibcWritevProbeResult libc_writev_probe{};
 LibcCrtProbeResult libc_crt_probe{};
+LibcUnameProbeResult libc_uname_probe{};
 /* Above brk window (0x405000 + 16 pages) and ELF .data at 0x402000. */
 constexpr uint64_t user_stack_base = 0x0000000000418000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -816,6 +817,38 @@ bool run_libc_crt_probe(const uint8_t* image, size_t image_size,
 
 const LibcCrtProbeResult& libc_crt_probe_result() {
     return libc_crt_probe;
+}
+
+bool run_libc_uname_probe(const uint8_t* image, size_t image_size,
+                          LibcUnameProbeResult& result) {
+    result = LibcUnameProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_libc_uname_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    libc_uname_probe = result;
+    return true;
+}
+
+const LibcUnameProbeResult& libc_uname_probe_result() {
+    return libc_uname_probe;
 }
 
 }  // namespace cxc::user
