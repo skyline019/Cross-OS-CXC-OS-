@@ -104,7 +104,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M39** | 内存 ramfs + `open`/`read`/`write`/`close` | 串口 `USER_FS_PASS` + `user FS: open: 2, …` |
 | **M40** | `brk` 用户堆扩展 | 串口 `USER_BRK_PASS` + `user brk: grow: 1, …` |
 | **M41** | anonymous `mmap` | 串口 `USER_MMAP_PASS` + `user mmap: calls: 1, …` |
-| M42+ | 目录 / `munmap` / 更多 POSIX（通向 A2） | 另立合同 |
+| **M42** | `mkdir` + 一层嵌套路径 | 串口 `USER_DIR_PASS` + `user dir: mkdir: 1, …` |
+| M43+ | `munmap` / 更多 POSIX（通向 A2） | 另立合同 |
 
 ## 6. 参考
 

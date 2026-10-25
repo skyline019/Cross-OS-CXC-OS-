@@ -65,6 +65,8 @@ USER_BRK_PASS = "USER_BRK_PASS"
 USER_BRK_PROBE_SUCCESS = "user brk: grow: 1, pages: 1, pass: 1"
 USER_MMAP_PASS = "USER_MMAP_PASS"
 USER_MMAP_PROBE_SUCCESS = "user mmap: calls: 1, pages: 1, pass: 1"
+USER_DIR_PASS = "USER_DIR_PASS"
+USER_DIR_PROBE_SUCCESS = "user dir: mkdir: 1, open: 2, dirs: 1, pass: 1"
 
 
 @dataclass
@@ -432,6 +434,8 @@ class ContractRunner:
         assert USER_BRK_PROBE_SUCCESS.encode() in serial
         assert USER_MMAP_PASS.encode() in serial
         assert USER_MMAP_PROBE_SUCCESS.encode() in serial
+        assert USER_DIR_PASS.encode() in serial
+        assert USER_DIR_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -440,7 +444,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M36–M41 user mmap"
+            "kernel PASS + net contracts + M36–M42 user dir"
         )
 
     def negative_evidence(self, work: Path) -> str:

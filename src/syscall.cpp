@@ -21,6 +21,7 @@ constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
 constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
 constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
 constexpr char expected_mmap_pass[] = "USER_MMAP_PASS\n";
+constexpr char expected_dir_pass[] = "USER_DIR_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -111,6 +112,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_mmap_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_dir_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_dir_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_dir_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_dir_pass = 1;
         }
     }
 }
@@ -302,6 +316,17 @@ cpu::InterruptFrame* handle_close(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    if (!copy_user_path(frame->rdi, path, sizeof(path))) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    const int64_t rc = fs::mkdir_path(path, frame->rsi);
+    frame->rax = static_cast<uint64_t>(rc);
+    return frame;
+}
+
 cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
     current.exit_code = frame->rdi;
     current.exited = 1;
@@ -355,6 +380,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_mmap(frame);
     case sys_brk:
         return handle_brk(frame);
+    case sys_mkdir:
+        return handle_mkdir(frame);
     case sys_exit:
         return handle_exit(frame);
     default:

@@ -697,6 +697,25 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(mmap.wrote_pass);
     log::write('\n');
 
+    user::DirProbeResult dir{};
+    if (!user::run_dir_probe(dir)) {
+        log::write("[debug] user dir probe stage: ");
+        log::decimal(dir.stage);
+        log::write(", failure: ");
+        log::decimal(dir.failure);
+        log::write('\n');
+        log::panic("M42 user dir probe failed");
+    }
+    log::write("[ok] user dir: mkdir: ");
+    log::decimal(dir.mkdirs);
+    log::write(", open: ");
+    log::decimal(dir.opens);
+    log::write(", dirs: ");
+    log::decimal(dir.dirs);
+    log::write(", pass: ");
+    log::decimal(dir.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -800,7 +819,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.42.0 - anonymous mmap (A2/M41)");
+    cxc::log::line("CXC/OS 0.43.0 - ramfs mkdir + nested path (A2/M42)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

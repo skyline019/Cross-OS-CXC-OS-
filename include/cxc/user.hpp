@@ -56,6 +56,20 @@ struct MmapProbeResult {
     uint64_t exit_code;
 };
 
+struct DirProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t mkdirs;
+    uint32_t opens;
+    uint32_t dirs;
+    uint64_t entry;
+    uint64_t exit_code;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -72,5 +86,9 @@ const BrkProbeResult& brk_probe_result();
 // BSP-only: anonymous mmap + touch via embedded ELF (M41).
 bool run_mmap_probe(MmapProbeResult& result);
 const MmapProbeResult& mmap_probe_result();
+
+// BSP-only: mkdir + nested path open/read/write (M42).
+bool run_dir_probe(DirProbeResult& result);
+const DirProbeResult& dir_probe_result();
 
 }  // namespace cxc::user

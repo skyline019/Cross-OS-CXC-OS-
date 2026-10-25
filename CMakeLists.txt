@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.42.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.43.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -142,6 +142,29 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_DIR_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_dir.elf")
+set(CXC_USER_DIR_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/user_dir_blob.cpp")
+add_custom_command(
+    OUTPUT "${CXC_USER_DIR_SOURCE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_dir_elf.py"
+        --output "${CXC_USER_DIR_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        --input "${CXC_USER_DIR_ELF}"
+        --output "${CXC_USER_DIR_SOURCE}"
+        --array dir_elf --size dir_elf_size
+        --namespace "cxc::user"
+        --header "cxc/user_dir_blob.hpp"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_dir_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/user_dir_blob.hpp"
+    BYPRODUCTS "${CXC_USER_DIR_ELF}"
+    COMMENT "Building embedded static user dir ELF"
+    VERBATIM
+)
+
 add_executable(cxc_kernel
     src/acpi.cpp
     src/apic.cpp
@@ -180,6 +203,7 @@ add_executable(cxc_kernel
     "${CXC_USER_FS_SOURCE}"
     "${CXC_USER_BRK_SOURCE}"
     "${CXC_USER_MMAP_SOURCE}"
+    "${CXC_USER_DIR_SOURCE}"
     src/stack.S
     src/uefi.cpp
     src/vmm.cpp

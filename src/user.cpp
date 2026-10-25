@@ -7,6 +7,7 @@
 #include <cxc/smp.hpp>
 #include <cxc/syscall.hpp>
 #include <cxc/user_brk_blob.hpp>
+#include <cxc/user_dir_blob.hpp>
 #include <cxc/user_fs_blob.hpp>
 #include <cxc/user_hello_blob.hpp>
 #include <cxc/user_mmap_blob.hpp>
@@ -25,6 +26,7 @@ ElfProbeResult elf_probe{};
 FsProbeResult fs_probe{};
 BrkProbeResult brk_probe{};
 MmapProbeResult mmap_probe{};
+DirProbeResult dir_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -232,6 +234,37 @@ bool run_mmap_probe(MmapProbeResult& result) {
 
 const MmapProbeResult& mmap_probe_result() {
     return mmap_probe;
+}
+
+bool run_dir_probe(DirProbeResult& result) {
+    result = DirProbeResult{};
+    if (!launch_user_elf(dir_elf, dir_elf_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_dir_pass;
+    const fs::Stats& st = fs::stats();
+    result.mkdirs = st.mkdirs;
+    result.opens = st.opens;
+    result.dirs = st.dirs;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 || result.mkdirs < 1 ||
+        result.opens < 2 || result.dirs < 1) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    dir_probe = result;
+    return true;
+}
+
+const DirProbeResult& dir_probe_result() {
+    return dir_probe;
 }
 
 }  // namespace cxc::user

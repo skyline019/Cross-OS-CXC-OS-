@@ -6,7 +6,7 @@
 
 namespace cxc::syscall {
 
-// Linux x86-64 numbers (file + brk + mmap).
+// Linux x86-64 numbers (file + brk + mmap + mkdir).
 constexpr uint64_t sys_read = 0;
 constexpr uint64_t sys_write = 1;
 constexpr uint64_t sys_open = 2;
@@ -14,6 +14,7 @@ constexpr uint64_t sys_close = 3;
 constexpr uint64_t sys_mmap = 9;
 constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_exit = 60;
+constexpr uint64_t sys_mkdir = 83;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
@@ -42,6 +43,7 @@ struct Session {
     uint32_t saw_user_fs_pass;
     uint32_t saw_user_brk_pass;
     uint32_t saw_user_mmap_pass;
+    uint32_t saw_user_dir_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
