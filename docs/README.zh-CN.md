@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 43 / v0.44.0：munmap 往返（A2 脊柱）**（M13–M42 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 44 / v0.45.0：第四次中场（M35–M44）**（M13–M43 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -70,6 +70,7 @@ CXC_OS_SELF_TEST_PASS
 | User mmap (M41) | anonymous `mmap`（`MAP_PRIVATE|ANONYMOUS`）；串口 `USER_MMAP_PASS` |
 | User dir (M42) | `mkdir` + `data/note.txt` 嵌套 open/read/write；串口 `USER_DIR_PASS` |
 | User munmap (M43) | `mmap`+`munmap` 一页往返并释放帧；串口 `USER_MUNMAP_PASS` |
+| Fourth midfield (M44) | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；A1 最小闭环收束；主线仍 A2 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -78,6 +79,7 @@ CXC_OS_SELF_TEST_PASS
 - [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
 - [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
 - [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步契约；
+- [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环、下一刀外部 ELF/libc）；
 - [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
 - [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24、债项刷新与下一步）；
 - [`docs/midpoint-assessment.md`](docs/midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13 基线）；
@@ -250,6 +252,6 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - 包测试使用 EtherType `0x88B5`、ARP/ICMP/UDP 和 QEMU 本机 dgram peer，未实测物理网卡；
 - EDU DMA 不含 AHCI/block IO、IOMMU 或用户缓冲区 pinning；
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
-- 尚无用户态、系统调用、ELF、按需分页和 GUI。
+- 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1 脊柱（下一刀 M44 中场 → libc）。须保持 M13–M43 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀外部静态 ELF + libc 缺口 syscall）。须保持 M13–M44 回归证据。

@@ -106,10 +106,12 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M41** | anonymous `mmap` | 串口 `USER_MMAP_PASS` + `user mmap: calls: 1, …` |
 | **M42** | `mkdir` + 一层嵌套路径 | 串口 `USER_DIR_PASS` + `user dir: mkdir: 1, …` |
 | **M43** | `munmap` 释放 anonymous 映射 | 串口 `USER_MUNMAP_PASS` + `user munmap: …` |
-| **M44** | 第四次中场（M35–M44） | `midpoint-assessment-4.md`；CI/合同统一 |
+| **M44** | 第四次中场（M35–M44） | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；CI/合同统一；v0.45.0 |
+| **M45+** | 外部静态 ELF / libc 缺口 syscall | 见第四次中场 §6 |
 
 ## 6. 参考
 
+- [`midpoint-assessment-4.md`](midpoint-assessment-4.md) §6 下一主线  
 - [`midpoint-assessment-3.md`](midpoint-assessment-3.md) §6 主线重选  
 - [`phase1-assessment-roadmap.md`](phase1-assessment-roadmap.md) 阶段 1  
 - [`smp-memory-migration.md`](smp-memory-migration.md) TLB / 锁域  

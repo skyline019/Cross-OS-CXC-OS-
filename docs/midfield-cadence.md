@@ -7,9 +7,10 @@
 | 第一次 | M0–M13 | [`midpoint-assessment.md`](midpoint-assessment.md) |
 | 第二次 | M14–M24 | [`midpoint-assessment-2.md`](midpoint-assessment-2.md) |
 | 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
-| 第四次（计划） | M35–M44 | `midpoint-assessment-4.md`（届时新建） |
+| 第四次 | M35–M44 | [`midpoint-assessment-4.md`](midpoint-assessment-4.md) |
+| 第五次（计划） | M45–M54 | `midpoint-assessment-5.md`（届时新建） |
 
-当前基线：**M43 / v0.44.0**（A2 脊柱：`munmap`）。下一正式中场目标：**M44**。
+当前基线：**M44 / v0.45.0**（第四次中场；A1 用户态最小闭环）。下一正式中场目标：**M54**。
 
 ## 中场窗口必做
 

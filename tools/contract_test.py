@@ -448,7 +448,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M36–M43 user munmap"
+            "kernel PASS + net contracts + M36–M43 user munmap (M44 midfield)"
         )
 
     def negative_evidence(self, work: Path) -> str:
