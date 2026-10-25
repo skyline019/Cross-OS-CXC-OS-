@@ -1,4 +1,4 @@
-/* M65: musl-subset static write → USER_MUSL_PASS (not mini_libc). */
+/* M65/M66: musl-subset write via `syscall` → USER_MUSL_PASS (not mini_libc). */
 #include "musl_subset/unistd.h"
 
 int main(int argc, char** argv) {

@@ -526,7 +526,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M65 musl subset"
+            "kernel PASS + net contracts + M66 SYSCALL/LSTAR"
         )
 
     def negative_evidence(self, work: Path) -> str:

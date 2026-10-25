@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.66.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.67.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -202,6 +202,7 @@ add_executable(cxc_kernel
     src/heap.cpp
     src/idt.cpp
     src/interrupts.S
+    src/syscall_entry.S
     src/ioapic.cpp
     src/irq.cpp
     src/kernel.cpp

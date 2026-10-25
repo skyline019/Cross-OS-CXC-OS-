@@ -35,11 +35,17 @@ alignas(8) uint64_t gdt[7] = {
     0x0000000000000000,
     0x00af9a000000ffff,  // 0x08: 64-bit code, ring 0.
     0x00cf92000000ffff,  // 0x10: data, ring 0.
-    0x00affa000000ffff,  // 0x18: 64-bit code, ring 3 (use CS=0x1b).
-    0x00cff2000000ffff,  // 0x20: data, ring 3 (use SS=0x23).
+    0x00cff2000000ffff,  // 0x18: data, ring 3 (SS=0x1b; STAR-compatible).
+    0x00affa000000ffff,  // 0x20: 64-bit code, ring 3 (CS=0x23).
     0x0000000000000000,  // 0x28: TSS low (filled by initialize_tss).
     0x0000000000000000,  // TSS high.
 };
+
+// Kernel stack top for SYSCALL entry (SYSCALL does not load TSS.RSP0).
+extern "C" {
+uint64_t syscall_kernel_rsp = 0;
+void syscall_entry();
+}
 
 alignas(16) Tss64 bsp_tss{};
 
@@ -79,6 +85,13 @@ bool initialize_tss(uint64_t privilege_stack_top) {
     // Reload GDTR so the CPU observes the new TSS descriptor limit/base.
     gdt_load(&gdtr);
     tss_load(tss_selector);
+
+    // M66: arm SYSCALL. STAR_USER=0x10 → SYSRET SS=0x1b, CS=0x23.
+    syscall_kernel_rsp = privilege_stack_top;
+    write_msr(ia32_efer, read_msr(ia32_efer) | efer_sce);
+    write_msr(ia32_star, (0x10ull << 48) | (static_cast<uint64_t>(kernel_cs) << 32));
+    write_msr(ia32_lstar, reinterpret_cast<uint64_t>(&syscall_entry));
+    write_msr(ia32_sfmask, sfmask_default);
     return true;
 }
 

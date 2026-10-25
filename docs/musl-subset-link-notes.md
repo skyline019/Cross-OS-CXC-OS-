@@ -1,6 +1,6 @@
-# M65 musl 子集链接实验笔记
+# musl 子集链接实验笔记
 
-基线：Milestone 65 / v0.66.0  
+基线：Milestone 66 / v0.67.0  
 宿主探针：Ubuntu `musl` / `musl-dev` / `musl-tools` 1.2.4（WSL）。
 
 ## 1. 已验证（链接）
@@ -10,22 +10,21 @@
 
 ## 2. 运行阻塞清单（驱动后续补号，禁止盲堆）
 
-| # | 阻塞 | 证据 | 建议切片 |
+| # | 阻塞 | 证据 | 状态 |
 |---|---|---|---|
-| 1 | musl 使用 `syscall`（`0f 05`），内核仅 `int 0x80` | `objdump` 于 `write`/`__init_libc` | **LSTAR / SYSCALL 入口** |
-| 2 | musl `_start` 期望栈上 `argc/argv/envp/auxv` | `_start`：`mov %rsp,%rdi` → 读 argc | 用户栈种子 / auxv |
-| 3 | CRT 启动路径调用 `set_tid_address` / `arch_prctl` / `exit_group` 等 | 反汇编 `eax=0xda/0x9e/0xe7` | 按失败清单补号（`exit_group` 等） |
-| 4 | 完整 `libc.a` + 非 musl-gcc 默认 CRT 易缺 `__init_array_*` / `__ehdr_start` | nostdlib 混链失败日志 | 坚持 musl CRT 或极小子集，不混 glibc |
+| 1 | musl 使用 `syscall`（`0f 05`），内核仅 `int 0x80` | `objdump` | **M66 已还**：LSTAR→同 `interrupt_dispatch`；GDT 用户段改为 data→code；`int 0x80` 仍保留 |
+| 2 | musl `_start` 期望栈上 `argc/argv/envp/auxv` | `_start`：`mov %rsp,%rdi` | **下一刀** |
+| 3 | CRT 启动路径调用 `set_tid_address` / `arch_prctl` / `exit_group` 等 | 反汇编 `eax=0xda/0x9e/0xe7` | 按失败清单补号 |
+| 4 | 完整 `libc.a` + 非 musl-gcc 默认 CRT 易缺 `__init_array_*` / `__ehdr_start` | nostdlib 混链失败 | 坚持 musl CRT 或极小子集 |
 
-## 3. 本里程碑交付（标注等价子集）
+## 3. 已交付
 
-- 路径：`user/musl_subset/`（**不是** `mini_libc` stub）。
-- 行为：静态链接 `write`/`_exit` + 薄 CRT → 串口 `USER_MUSL_PASS`；ESP `LIBMSL.ELF`。
-- **明确偏差**：syscall 传输仍为 `int $0x80`（与上游 musl x86_64 的 `syscall` 指令不同），直至 LSTAR 落地。
-- **不宣称**：完整 musl CRT 可跑、机上编译器（A2）、或与发行版 `libc.a` 无补丁 ABI 等价。
+- **M65**：`user/musl_subset/` + ESP `LIBMSL.ELF` + `USER_MUSL_PASS`（标注等价子集）。
+- **M66**：`syscall` 指令经 LSTAR 入核；`musl_subset` 改用 `syscall`；`mini_libc` 仍 `int $0x80`。
+- **不宣称**：完整 musl CRT、机上编译器（A2）、SYSRET 快路径（当前 SYSCALL 返回仍走 `iretq`）。
 
 ## 4. 下一刀优先级
 
-1. 内核 `SYSCALL`/`SYSRET`（或等价）入口，复用现有 syscall 分发；  
-2. 用户栈 `argc/argv/auxv` 种子，使真 musl `_start` 可进入；  
-3. 按 `__init_libc` 失败清单补 `exit_group` 等缺口号。
+1. 用户栈 `argc/argv/auxv` 种子，使真 musl `_start` 可进入；  
+2. 按 `__init_libc` 失败清单补 `exit_group` 等缺口号；  
+3. 可选：SYSCALL 返回改 SYSRET。

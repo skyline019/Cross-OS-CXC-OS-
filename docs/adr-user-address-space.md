@@ -128,7 +128,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M63** | mini-libc `getpid`/`getppid` | 串口 `USER_LIBC_PID_PASS` + `user libc pid: …` |
 | **M64** | 第六次中场（M55–M64） | [`midpoint-assessment-6.md`](midpoint-assessment-6.md)；v0.65.0 |
 | **M65** | musl 子集 `write`（标注等价） | 串口 `USER_MUSL_PASS`；ESP `LIBMSL.ELF`；[`musl-subset-link-notes.md`](musl-subset-link-notes.md) |
-| **M66+** | LSTAR / auxv / 真 musl CRT | 见 link notes §2–§4 |
+| **M66** | SYSCALL/LSTAR（GDT STAR 序） | musl_subset 改 `syscall`；`int 0x80` 合同不回退 |
+| **M67+** | 用户栈 auxv / 真 musl CRT | 见 link notes §2–§4 |
 
 ## 6. 参考
 

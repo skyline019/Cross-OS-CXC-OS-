@@ -55,10 +55,10 @@ ring3_enter_iretq:
     pushq %r14
     pushq %r15
     mov %rsp, ring3_saved_kernel_rsp(%rip)
-    pushq $0x23
+    pushq $0x1b
     pushq %rdx
     pushq $0x2
-    pushq $0x1b
+    pushq $0x23
     pushq %rcx
     iretq
 

@@ -1,5 +1,5 @@
-/* musl-subset syscall shim: Linux x86-64 numbers, int 0x80 transport.
- * Upstream musl uses the syscall instruction; see docs/musl-subset-link-notes.md. */
+/* musl-subset syscall shim: Linux x86-64 numbers via `syscall` (M66 LSTAR).
+ * mini_libc keeps int 0x80; see docs/musl-subset-link-notes.md. */
 #include "unistd.h"
 
 enum {
@@ -12,7 +12,7 @@ static long __syscall3(long number, long a, long b, long c) {
     register long rdi __asm__("rdi") = a;
     register long rsi __asm__("rsi") = b;
     register long rdx __asm__("rdx") = c;
-    __asm__ volatile("int $0x80"
+    __asm__ volatile("syscall"
                      : "+r"(rax)
                      : "r"(rdi), "r"(rsi), "r"(rdx)
                      : "memory", "rcx", "r11");

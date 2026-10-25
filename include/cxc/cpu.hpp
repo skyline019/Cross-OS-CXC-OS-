@@ -17,8 +17,10 @@ constexpr uint64_t spurious_vector = 255;
 
 constexpr uint16_t kernel_cs = 0x08;
 constexpr uint16_t kernel_ss = 0x10;
-constexpr uint16_t user_cs = 0x1b;
-constexpr uint16_t user_ss = 0x23;
+// M66: Linux-like order (user data then user code) so STAR/SYSRET match:
+// SS=0x1b, CS=0x23 with STAR_USER=0x10.
+constexpr uint16_t user_ss = 0x1b;
+constexpr uint16_t user_cs = 0x23;
 constexpr uint16_t tss_selector = 0x28;
 
 // Matches interrupts.S. In 64-bit mode the CPU saves/restores SS:RSP
@@ -52,7 +54,8 @@ static_assert(sizeof(InterruptFrame) == 176);
 
 void initialize_gdt();
 // BSP-only: install TSS descriptor, load TR, set RSP0 (M37). Safe to call
-// once after higher-half GDT is active. APs must not call this.
+// once after higher-half GDT is active. APs must not call this. Also arms
+// SYSCALL MSRs once RSP0 is known (M66).
 bool initialize_tss(uint64_t privilege_stack_top);
 void initialize_idt();
 // Loads the already initialized shared IDT on an application processor.
@@ -105,6 +108,14 @@ inline uint64_t read_tsc() {
 // the kernel owns IA32_GS_BASE for per-CPU data).
 constexpr uint32_t ia32_fs_base = 0xC0000100;
 constexpr uint32_t ia32_gs_base = 0xC0000101;
+// M66: SYSCALL/SYSRET MSRs (LSTAR path; int 0x80 remains supported).
+constexpr uint32_t ia32_efer = 0xC0000080;
+constexpr uint32_t ia32_star = 0xC0000081;
+constexpr uint32_t ia32_lstar = 0xC0000082;
+constexpr uint32_t ia32_sfmask = 0xC0000084;
+constexpr uint64_t efer_sce = 1ull;  // System Call Extensions
+// SFMASK clears IF|TF|DF on SYSCALL (parity with interrupt-gate IF clear).
+constexpr uint64_t sfmask_default = 0x700ull;
 
 inline uint64_t read_msr(uint32_t msr) {
     uint32_t low;
