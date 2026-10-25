@@ -2,6 +2,7 @@
 
 #include <cxc/e1000e.hpp>
 #include <cxc/net/proto.hpp>
+#include <cxc/net/socket.hpp>
 #include <cxc/scheduler.hpp>
 
 #include <stddef.h>
@@ -179,6 +180,10 @@ bool network_vector_errors();
 // Does not wait for DD. Returns false when full or arguments are invalid.
 bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                        uint16_t length);
+// M33: one completed RX DD → udp_deliver into table. No Echo, recycle, or
+// TestInfo. Returns false when the descriptor is not ready or deliver fails.
+bool try_submit_rx_dd(volatile LegacyRxDescriptor* rx_ring, uint32_t index,
+                      net::UdpSocketTable& table);
 // M28/M32: retry try_post until a free slot appears. Slot wait is Event-gated
 // (worker wait or sticky try_consume + WFI). Sets blocked/events on success path.
 bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,

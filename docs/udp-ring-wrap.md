@@ -186,3 +186,7 @@ Milestone 31 / v0.32.0：IRQ 在 deliver+Echo 后按 `udp_recycle_step` 移动�
 ## 20. M32 Event-backed TX wait
 
 Milestone 32 / v0.33.0：TXQ0 在 M28 相位 `signal(tx_space_gate)`；`post_tx_wait` 仅在 `event_try_consume`（或 worker `wait`）后重试 `try_post`。串口 `waits:1 posted:1 drained:1 events:1 heads/tails:5/5`。runtime Event 合同改为相对 initialize 的 delta（弱化绝对计数）。仍非通用 `udp_send_wait`。
+
+## 21. M33 generic RX submit
+
+Milestone 33 / v0.34.0：抽出 `try_submit_rx_dd`（DD→`udp_deliver`，不知 Echo/TestInfo）；`irq_try_demux_rx` 仍负责 Echo/recycle/pacing。独立串口 `UDP IRQ RX submit: 266`；`deliver/echo/recycle: 266/266/266` 与 M13 Echo 串口不变。仍非生产 RX 线程化路径。

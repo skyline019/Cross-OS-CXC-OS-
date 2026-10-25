@@ -18,9 +18,9 @@ namespace cxc::e1000e::detail {
 net::UdpSocketTable udp_rx_sockets{};
 int udp_rx_socket_slot = -1;
 
-// M29–M31: for each new RX DD, udp_deliver + Echo try_post + RDT recycle
+// M29–M33: for each new RX DD, Echo try_post + try_submit_rx_dd + RDT recycle
 // while TX ring is idle (one shared TX DMA page). Never demux ahead of BSP.
-// TXQ0 IRQs re-enter to continue.
+// TXQ0 IRQs re-enter to continue. M33 submit is TestInfo-agnostic.
 void irq_try_demux_rx() {
     if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE) ||
         live_rx_ring == nullptr || live_rx_buffers == nullptr ||
@@ -65,9 +65,11 @@ void irq_try_demux_rx() {
             !try_post_tx_frame(live_tx_ring, tdt, reply_length)) {
             break;
         }
-        if (!net::udp_deliver(udp_rx_sockets, frame, length)) {
+        // M33: DD→socket submit without TestInfo / Echo knowledge.
+        if (!try_submit_rx_dd(live_rx_ring, irq_rx_next, udp_rx_sockets)) {
             break;
         }
+        __atomic_add_fetch(&info.rx_submit.submitted, 1, __ATOMIC_RELAXED);
         // M31: payload is queued; recycle oldest page into prior RDT slot.
         const net::RingRecycleStep step =
             net::udp_recycle_step(static_cast<size_t>(delivered_now));
@@ -957,7 +959,8 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
 
     // M13 serial evidence stays frozen in info.udp; M14 uses info.stress;
     // M25 socket TX freezes info.socket_tx; M27 uses info.socket_tx_bp;
-    // M28 uses info.socket_tx_wait; M29–M31 irq_rx covers M13+M14.
+    // M28 uses info.socket_tx_wait; M29–M31 irq_rx covers M13+M14;
+    // M33 rx_submit.submitted tracks try_submit_rx_dd independently.
     if (!run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
                               first_tick)) {
         return false;
@@ -974,6 +977,13 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
         return false;
     }
     info.irq_rx.stage = 2;
+    info.rx_submit.stage = 1;
+    if (__atomic_load_n(&info.rx_submit.submitted, __ATOMIC_ACQUIRE) !=
+        irq_expected) {
+        info.rx_submit.failure = 1;
+        return false;
+    }
+    info.rx_submit.stage = 2;
 
     if (!run_socket_tx_phase(tx_ring, tx_buffer, first_tick)) {
         return false;

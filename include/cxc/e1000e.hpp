@@ -154,6 +154,14 @@ struct UdpIrqRxResult {
     uint32_t failure;
 };
 
+// M33: independent count of TestInfo-agnostic RX DD→udp_deliver submits.
+// Must equal irq_rx.delivered (266); does not replace Echo/recycle evidence.
+struct UdpRxSubmitResult {
+    uint32_t submitted;
+    uint32_t stage;
+    uint32_t failure;
+};
+
 struct TestInfo {
     uint64_t csr_physical;
     uint64_t msix_physical;
@@ -170,9 +178,10 @@ struct TestInfo {
     UdpSocketTxBpResult socket_tx_bp;
     UdpSocketTxWaitResult socket_tx_wait;
     UdpIrqRxResult irq_rx;
+    UdpRxSubmitResult rx_submit;
 };
 
-// Runs ICS/IVAR/PBA, M11–M14/M26/M29–M31, M25–M28 socket TX path.
+// Runs ICS/IVAR/PBA, M11–M14/M26/M29–M33, M25–M28 socket TX path.
 // run_qemu.py checks M11–M14 responses. DMA/IRQ state and packet pages cleaned.
 bool run_msix_test();
 const TestInfo& test_info();

@@ -10,6 +10,7 @@
 #include <cxc/net/checksum.hpp>
 #include <cxc/net/proto.hpp>
 #include <cxc/net/ring_model.hpp>
+#include <cxc/net/socket.hpp>
 #include <cxc/pci.hpp>
 #include <cxc/pmm.hpp>
 #include <cxc/scheduler.hpp>
@@ -570,6 +571,23 @@ bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
     mmio_write(reg_tdt0,
                static_cast<uint32_t>((index + 1) % descriptor_count));
     return true;
+}
+
+bool try_submit_rx_dd(volatile LegacyRxDescriptor* rx_ring, uint32_t index,
+                      net::UdpSocketTable& table) {
+    if (rx_ring == nullptr || index >= descriptor_count) {
+        return false;
+    }
+    volatile LegacyRxDescriptor& descriptor = rx_ring[index];
+    if ((descriptor.status & (descriptor_done | rx_descriptor_eop)) !=
+            (descriptor_done | rx_descriptor_eop) ||
+        descriptor.errors != 0 || descriptor.buffer_address == 0 ||
+        descriptor.length == 0) {
+        return false;
+    }
+    auto* frame = static_cast<uint8_t*>(
+        pmm::physical_to_virtual(descriptor.buffer_address));
+    return net::udp_deliver(table, frame, descriptor.length);
 }
 
 bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,

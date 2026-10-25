@@ -357,6 +357,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(msix_info.irq_rx.echoes);
         log::write('/');
         log::decimal(msix_info.irq_rx.recycled);
+        log::write("; rx_submit stage: ");
+        log::decimal(msix_info.rx_submit.stage);
+        log::write(", failure: ");
+        log::decimal(msix_info.rx_submit.failure);
+        log::write(", submitted: ");
+        log::decimal(msix_info.rx_submit.submitted);
         log::write('\n');
         for (const e1000e::VectorResult& result : msix_info.vectors) {
             log::write("[debug] entry ");
@@ -558,6 +564,9 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('/');
     log::decimal(msix_info.irq_rx.recycled);
     log::write('\n');
+    log::write("[ok] e1000e UDP IRQ RX submit: ");
+    log::decimal(msix_info.rx_submit.submitted);
+    log::write('\n');
 
     runtime_test::run();
 
@@ -676,7 +685,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.33.0 - e1000e Event-backed TX wait");
+    cxc::log::line("CXC/OS 0.34.0 - e1000e generic RX submit");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
