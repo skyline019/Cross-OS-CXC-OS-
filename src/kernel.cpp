@@ -55,6 +55,8 @@ uint64_t libc_malloc_elf_physical = 0;
 uint64_t libc_malloc_elf_size = 0;
 uint64_t libc_errno_elf_physical = 0;
 uint64_t libc_errno_elf_size = 0;
+uint64_t libc_string_elf_physical = 0;
+uint64_t libc_string_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1043,6 +1045,24 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(libc_errno.wrote_pass);
     log::write('\n');
 
+    user::LibcStringProbeResult libc_string{};
+    const auto* libc_string_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + libc_string_elf_physical);
+    if (libc_string_elf_physical == 0 || libc_string_elf_size == 0 ||
+        !user::run_libc_string_probe(libc_string_image,
+                                     static_cast<size_t>(libc_string_elf_size),
+                                     libc_string)) {
+        log::write("[debug] user libc string probe stage: ");
+        log::decimal(libc_string.stage);
+        log::write(", failure: ");
+        log::decimal(libc_string.failure);
+        log::write('\n');
+        log::panic("M58 user libc string probe failed");
+    }
+    log::write("[ok] user libc string: pass: ");
+    log::decimal(libc_string.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1182,6 +1202,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBERR.ELF")) {
         log::panic("cannot relocate ESP LIBERR.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(libc_string_elf_physical, libc_string_elf_size,
+                                 "ESP LIBSTR.ELF")) {
+        log::panic("cannot relocate ESP LIBSTR.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1198,7 +1222,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.58.0 - mini-libc errno (A2/M57)");
+    cxc::log::line("CXC/OS 0.59.0 - mini-libc string (A2/M58)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1413,6 +1437,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBERR.ELF bytes: ");
     cxc::log::decimal(cxc::libc_errno_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 libc_string_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'S', u'T',  u'R', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, libc_string_elf_path, 64 * 1024,
+        cxc::libc_string_elf_physical, cxc::libc_string_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBSTR.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBSTR.ELF bytes: ");
+    cxc::log::decimal(cxc::libc_string_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

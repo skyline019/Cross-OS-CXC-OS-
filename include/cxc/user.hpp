@@ -230,6 +230,18 @@ struct LibcErrnoProbeResult {
     uint64_t image_size;
 };
 
+struct LibcStringProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -314,5 +326,10 @@ const LibcMallocProbeResult& libc_malloc_probe_result();
 bool run_libc_errno_probe(const uint8_t* image, size_t image_size,
                           LibcErrnoProbeResult& result);
 const LibcErrnoProbeResult& libc_errno_probe_result();
+
+// BSP-only: mini-libc string via ESP LIBSTR.ELF (M58).
+bool run_libc_string_probe(const uint8_t* image, size_t image_size,
+                           LibcStringProbeResult& result);
+const LibcStringProbeResult& libc_string_probe_result();
 
 }  // namespace cxc::user

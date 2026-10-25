@@ -120,7 +120,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M55** | mini-libc `brk`/`sbrk` | 串口 `USER_LIBC_SBRK_PASS` + `user libc sbrk: …` |
 | **M56** | mini-libc sbrk-backed `malloc` | 串口 `USER_LIBC_MALLOC_PASS` + `user libc malloc: …` |
 | **M57** | mini-libc `errno` + BSS 布局 | 串口 `USER_LIBC_ERRNO_PASS` + `user libc errno: …` |
-| **M58+** | 更多 CRT / musl 缺口 | 见第五次中场 §6 |
+| **M58** | mini-libc string | 串口 `USER_LIBC_STRING_PASS` + `user libc string: …` |
+| **M59+** | `writev` / CRT / musl 缺口 | 见第五次中场 §6 |
 
 ## 6. 参考
 
