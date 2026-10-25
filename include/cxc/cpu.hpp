@@ -101,6 +101,26 @@ inline uint64_t read_tsc() {
     return (static_cast<uint64_t>(high) << 32) | low;
 }
 
+// x86-64 FS/GS base MSRs (used by arch_prctl for user TLS; do not SET_GS —
+// the kernel owns IA32_GS_BASE for per-CPU data).
+constexpr uint32_t ia32_fs_base = 0xC0000100;
+constexpr uint32_t ia32_gs_base = 0xC0000101;
+
+inline uint64_t read_msr(uint32_t msr) {
+    uint32_t low;
+    uint32_t high;
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return (static_cast<uint64_t>(high) << 32) | low;
+}
+
+inline void write_msr(uint32_t msr, uint64_t value) {
+    __asm__ volatile("wrmsr"
+                     :
+                     : "c"(msr), "a"(static_cast<uint32_t>(value)),
+                       "d"(static_cast<uint32_t>(value >> 32))
+                     : "memory");
+}
+
 [[noreturn]] inline void halt() {
     for (;;) {
         __asm__ volatile("cli; hlt" : : : "memory");

@@ -148,6 +148,19 @@ struct GetdentsProbeResult {
     uint64_t image_size;
 };
 
+struct ArchPrctlProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t arch_prctl_calls;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -202,5 +215,10 @@ const StatProbeResult& stat_probe_result();
 bool run_getdents_probe(const uint8_t* image, size_t image_size,
                         GetdentsProbeResult& result);
 const GetdentsProbeResult& getdents_probe_result();
+
+// BSP-only: arch_prctl SET/GET_FS via ESP PRCTL.ELF (M51).
+bool run_arch_prctl_probe(const uint8_t* image, size_t image_size,
+                         ArchPrctlProbeResult& result);
+const ArchPrctlProbeResult& arch_prctl_probe_result();
 
 }  // namespace cxc::user

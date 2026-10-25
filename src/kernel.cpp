@@ -43,6 +43,8 @@ uint64_t stat_elf_physical = 0;
 uint64_t stat_elf_size = 0;
 uint64_t getdents_elf_physical = 0;
 uint64_t getdents_elf_size = 0;
+uint64_t arch_prctl_elf_physical = 0;
+uint64_t arch_prctl_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -904,6 +906,28 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(dents.wrote_pass);
     log::write('\n');
 
+    user::ArchPrctlProbeResult prctl{};
+    const auto* prctl_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + arch_prctl_elf_physical);
+    if (arch_prctl_elf_physical == 0 || arch_prctl_elf_size == 0 ||
+        !user::run_arch_prctl_probe(prctl_image,
+                                    static_cast<size_t>(arch_prctl_elf_size),
+                                    prctl)) {
+        log::write("[debug] user arch_prctl probe stage: ");
+        log::decimal(prctl.stage);
+        log::write(", failure: ");
+        log::decimal(prctl.failure);
+        log::write(", arch_prctl: ");
+        log::decimal(prctl.arch_prctl_calls);
+        log::write('\n');
+        log::panic("M51 user arch_prctl probe failed");
+    }
+    log::write("[ok] user arch_prctl: calls: ");
+    log::decimal(prctl.arch_prctl_calls);
+    log::write(", pass: ");
+    log::decimal(prctl.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1019,6 +1043,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP DENTS.ELF")) {
         log::panic("cannot relocate ESP DENTS.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(arch_prctl_elf_physical, arch_prctl_elf_size,
+                                 "ESP PRCTL.ELF")) {
+        log::panic("cannot relocate ESP PRCTL.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1035,7 +1063,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.51.0 - getdents64 libc-gap (A2/M50)");
+    cxc::log::line("CXC/OS 0.52.0 - arch_prctl FS TLS (A2/M51)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1154,6 +1182,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP DENTS.ELF bytes: ");
     cxc::log::decimal(cxc::getdents_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 arch_prctl_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'P',  u'R', u'C', u'T', u'L', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, arch_prctl_elf_path, 64 * 1024,
+        cxc::arch_prctl_elf_physical, cxc::arch_prctl_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP PRCTL.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP PRCTL.ELF bytes: ");
+    cxc::log::decimal(cxc::arch_prctl_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

@@ -35,6 +35,7 @@ LseekProbeResult lseek_probe{};
 FstatProbeResult fstat_probe{};
 StatProbeResult stat_probe{};
 GetdentsProbeResult getdents_probe{};
+ArchPrctlProbeResult arch_prctl_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -502,6 +503,40 @@ bool run_getdents_probe(const uint8_t* image, size_t image_size,
 
 const GetdentsProbeResult& getdents_probe_result() {
     return getdents_probe;
+}
+
+bool run_arch_prctl_probe(const uint8_t* image, size_t image_size,
+                          ArchPrctlProbeResult& result) {
+    result = ArchPrctlProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_arch_prctl_pass;
+    result.arch_prctl_calls = syscall::session().arch_prctl_calls;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 ||
+        result.arch_prctl_calls < 2) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    arch_prctl_probe = result;
+    return true;
+}
+
+const ArchPrctlProbeResult& arch_prctl_probe_result() {
+    return arch_prctl_probe;
 }
 
 }  // namespace cxc::user

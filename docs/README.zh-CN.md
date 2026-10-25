@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 50 / v0.51.0：getdents64（libc 缺口）**（M13–M49 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 51 / v0.52.0：arch_prctl FS TLS（libc 缺口）**（M13–M50 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -77,6 +77,7 @@ CXC_OS_SELF_TEST_PASS
 | User fstat (M48) | Linux `struct stat` ABI；ESP `FSTAT.ELF`；串口 `USER_FSTAT_PASS` |
 | User path stat (M49) | 路径 `stat` 文件+目录；ESP `STAT.ELF`；串口 `USER_STAT_PASS` |
 | User getdents64 (M50) | 目录只读 open + `linux_dirent64`；ESP `DENTS.ELF`；串口 `USER_GETDENTS_PASS` |
+| User arch_prctl (M51) | `ARCH_SET_FS`/`GET_FS`（拒 GS）；ESP `PRCTL.ELF`；串口 `USER_ARCH_PRCTL_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -260,4 +261,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 `arch_prctl` / musl 子集）。须保持 M13–M50 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 musl 子集 / 更多 libc ABI）。须保持 M13–M51 回归证据。

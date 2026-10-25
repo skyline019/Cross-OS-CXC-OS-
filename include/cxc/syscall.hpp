@@ -18,8 +18,15 @@ constexpr uint64_t sys_mmap = 9;
 constexpr uint64_t sys_munmap = 11;
 constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_exit = 60;
+constexpr uint64_t sys_arch_prctl = 158;
 constexpr uint64_t sys_mkdir = 83;
 constexpr uint64_t sys_getdents64 = 217;
+
+// Linux arch_prctl codes (x86-64). Only FS is supported for user TLS.
+constexpr uint64_t arch_set_gs = 0x1001;
+constexpr uint64_t arch_set_fs = 0x1002;
+constexpr uint64_t arch_get_fs = 0x1003;
+constexpr uint64_t arch_get_gs = 0x1004;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
@@ -56,6 +63,7 @@ struct Session {
     uint32_t saw_user_fstat_pass;
     uint32_t saw_user_stat_pass;
     uint32_t saw_user_getdents_pass;
+    uint32_t saw_user_arch_prctl_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
@@ -65,6 +73,7 @@ struct Session {
     uint32_t fstat_calls;
     uint32_t stat_calls;
     uint32_t getdents_calls;
+    uint32_t arch_prctl_calls;
     uint32_t active;
 };
 

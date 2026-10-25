@@ -30,7 +30,9 @@ constexpr char expected_lseek_pass[] = "USER_LSEEK_PASS\n";
 constexpr char expected_fstat_pass[] = "USER_FSTAT_PASS\n";
 constexpr char expected_stat_pass[] = "USER_STAT_PASS\n";
 constexpr char expected_getdents_pass[] = "USER_GETDENTS_PASS\n";
+constexpr char expected_arch_prctl_pass[] = "USER_ARCH_PRCTL_PASS\n";
 constexpr int64_t mmap_error = -1;
+constexpr int64_t errno_inval = -22;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -226,6 +228,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_getdents_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_arch_prctl_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_arch_prctl_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_arch_prctl_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_arch_prctl_pass = 1;
         }
     }
 }
@@ -520,6 +535,38 @@ cpu::InterruptFrame* handle_getdents64(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_arch_prctl(cpu::InterruptFrame* frame) {
+    const uint64_t code = frame->rdi;
+    const uint64_t arg = frame->rsi;
+    constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
+
+    if (code == arch_set_fs) {
+        // Allow 0 (clear) or a canonical user address.
+        if (arg != 0 && arg >= user_canonical_limit) {
+            frame->rax = static_cast<uint64_t>(errno_inval);
+            return frame;
+        }
+        cpu::write_msr(cpu::ia32_fs_base, arg);
+        ++current.arch_prctl_calls;
+        frame->rax = 0;
+        return frame;
+    }
+    if (code == arch_get_fs) {
+        if (!user_pages_ok(arg, sizeof(uint64_t), true)) {
+            frame->rax = static_cast<uint64_t>(errno_inval);
+            return frame;
+        }
+        const uint64_t value = cpu::read_msr(cpu::ia32_fs_base);
+        *reinterpret_cast<uint64_t*>(static_cast<uintptr_t>(arg)) = value;
+        ++current.arch_prctl_calls;
+        frame->rax = 0;
+        return frame;
+    }
+    // SET/GET_GS rejected: kernel owns GS for per-CPU (P-40).
+    frame->rax = static_cast<uint64_t>(errno_inval);
+    return frame;
+}
+
 cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -592,6 +639,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_munmap(frame);
     case sys_brk:
         return handle_brk(frame);
+    case sys_arch_prctl:
+        return handle_arch_prctl(frame);
     case sys_mkdir:
         return handle_mkdir(frame);
     case sys_getdents64:
