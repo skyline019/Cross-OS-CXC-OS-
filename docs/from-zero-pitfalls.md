@@ -376,3 +376,11 @@ python3 tools/run_qemu.py --image build/from-zero/cxc-os.img --check
 - 最终 heads=5/5、tails=1/5，wrap=1/1/2/1，FIFO 回收=10；
 - 正常成功仍同时要求内核 PASS 和完整外部 peer；新增 no-UDP 与坏 UDP checksum 负对照；
 - 最终矩阵、正式镜像复验和哈希只取包含上述修复的全新构建，详见 `udp-ring-wrap.md` 与 `artifacts/VALIDATION.txt`；Windows 与远端 CI 仍未实际执行。
+
+## 37. Milestone 37：ring-3 / GDT 重装
+
+### P-40：`lgdt` 后重装 FS/GS 会清零 `IA32_GS_BASE`
+
+- **现象**：M37 在 `initialize_tss`→`gdt_load` 之后 `#PF`，RIP=`current_cpu_index`（`mov %gs:0x8`），CR2=`0x8`。
+- **根因**：对 FS/GS 执行 `mov %ax, %gs` 会按 GDT 描述符重写隐藏 base；平坦 data 段 base=0，覆盖此前 `wrmsr IA32_GS_BASE` 写入的 per-CPU 块。
+- **修复**：long-mode 重装 GDT 时只重载 DS/ES/SS/CS，保留 FS/GS（及 MSR base）；TSS 描述符更新后 `ltr` 即可。
