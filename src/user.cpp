@@ -31,6 +31,7 @@ DirProbeResult dir_probe{};
 MunmapProbeResult munmap_probe{};
 ExtElfProbeResult ext_elf_probe{};
 ExtElfProbeResult cross_elf_probe{};
+LseekProbeResult lseek_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -362,6 +363,40 @@ bool run_cross_elf_probe(const uint8_t* image, size_t image_size,
 
 const ExtElfProbeResult& cross_elf_probe_result() {
     return cross_elf_probe;
+}
+
+bool run_lseek_probe(const uint8_t* image, size_t image_size,
+                     LseekProbeResult& result) {
+    result = LseekProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_lseek_pass;
+    result.lseek_calls = syscall::session().lseek_calls;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 ||
+        result.lseek_calls < 2) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    lseek_probe = result;
+    return true;
+}
+
+const LseekProbeResult& lseek_probe_result() {
+    return lseek_probe;
 }
 
 }  // namespace cxc::user

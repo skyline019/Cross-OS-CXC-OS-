@@ -96,6 +96,19 @@ struct ExtElfProbeResult {
     uint64_t image_size;
 };
 
+struct LseekProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t lseek_calls;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -130,5 +143,10 @@ const ExtElfProbeResult& ext_elf_probe_result();
 bool run_cross_elf_probe(const uint8_t* image, size_t image_size,
                          ExtElfProbeResult& result);
 const ExtElfProbeResult& cross_elf_probe_result();
+
+// BSP-only: lseek round-trip via ESP LSEEK.ELF (M47).
+bool run_lseek_probe(const uint8_t* image, size_t image_size,
+                     LseekProbeResult& result);
+const LseekProbeResult& lseek_probe_result();
 
 }  // namespace cxc::user

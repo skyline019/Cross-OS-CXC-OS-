@@ -310,4 +310,33 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length) {
     return static_cast<int64_t>(copy);
 }
 
+int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
+    if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
+        return -1;
+    }
+    Inode& node = inodes[fds[fd].inode];
+    if (node.is_dir) {
+        return -1;
+    }
+
+    int64_t base = 0;
+    if (whence == seek_set) {
+        base = 0;
+    } else if (whence == seek_cur) {
+        base = static_cast<int64_t>(fds[fd].offset);
+    } else if (whence == seek_end) {
+        base = static_cast<int64_t>(node.size);
+    } else {
+        return -1;
+    }
+
+    const int64_t next = base + offset;
+    if (next < 0 || static_cast<uint64_t>(next) > max_file_bytes) {
+        return -1;
+    }
+    fds[fd].offset = static_cast<uint32_t>(next);
+    ++current_stats.lseeks;
+    return next;
+}
+
 }  // namespace cxc::fs

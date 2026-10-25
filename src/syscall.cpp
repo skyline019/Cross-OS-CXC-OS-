@@ -25,6 +25,7 @@ constexpr char expected_dir_pass[] = "USER_DIR_PASS\n";
 constexpr char expected_munmap_pass[] = "USER_MUNMAP_PASS\n";
 constexpr char expected_ext_elf_pass[] = "USER_EXT_ELF_PASS\n";
 constexpr char expected_cross_elf_pass[] = "USER_CROSS_ELF_PASS\n";
+constexpr char expected_lseek_pass[] = "USER_LSEEK_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -167,6 +168,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_cross_elf_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_lseek_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_lseek_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_lseek_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_lseek_pass = 1;
         }
     }
 }
@@ -389,6 +403,17 @@ cpu::InterruptFrame* handle_close(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_lseek(cpu::InterruptFrame* frame) {
+    const int64_t rc = fs::lseek_fd(static_cast<uint32_t>(frame->rdi),
+                                    static_cast<int64_t>(frame->rsi),
+                                    static_cast<int>(frame->rdx));
+    if (rc >= 0) {
+        ++current.lseek_calls;
+    }
+    frame->rax = static_cast<uint64_t>(rc);
+    return frame;
+}
+
 cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -449,6 +474,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_open(frame);
     case sys_close:
         return handle_close(frame);
+    case sys_lseek:
+        return handle_lseek(frame);
     case sys_mmap:
         return handle_mmap(frame);
     case sys_munmap:

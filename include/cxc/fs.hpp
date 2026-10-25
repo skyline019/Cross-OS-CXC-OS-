@@ -12,6 +12,10 @@ constexpr uint64_t o_rdwr = 2;
 constexpr uint64_t o_creat = 64;
 constexpr uint64_t o_trunc = 512;
 
+constexpr int seek_set = 0;
+constexpr int seek_cur = 1;
+constexpr int seek_end = 2;
+
 constexpr size_t max_path = 48;
 constexpr size_t max_file_bytes = 4096;
 constexpr size_t max_files = 16;
@@ -24,6 +28,7 @@ struct Stats {
     uint32_t closes;
     uint32_t reads;
     uint32_t writes;
+    uint32_t lseeks;
     uint32_t mkdirs;
     uint32_t files;
     uint32_t dirs;
@@ -40,5 +45,6 @@ int64_t mkdir_path(const char* path, uint64_t mode);
 int64_t close_fd(uint32_t fd);
 int64_t read_fd(uint32_t fd, void* buffer, size_t length);
 int64_t write_fd(uint32_t fd, const void* buffer, size_t length);
+int64_t lseek_fd(uint32_t fd, int64_t offset, int whence);
 
 }  // namespace cxc::fs
