@@ -14,6 +14,7 @@
 #include <cxc/serial.hpp>
 #include <cxc/smp.hpp>
 #include <cxc/uefi.hpp>
+#include <cxc/user.hpp>
 #include <cxc/vmm.hpp>
 
 extern "C" void switch_stack_and_call(
@@ -622,6 +623,25 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(ring3.rsp0);
     log::write('\n');
 
+    user::ElfProbeResult elf{};
+    if (!user::run_elf_probe(elf)) {
+        log::write("[debug] user ELF probe stage: ");
+        log::decimal(elf.stage);
+        log::write(", failure: ");
+        log::decimal(elf.failure);
+        log::write('\n');
+        log::panic("M38 user ELF probe failed");
+    }
+    log::write("[ok] user ELF: loaded: ");
+    log::decimal(elf.loaded);
+    log::write(", enter: ");
+    log::decimal(elf.entered);
+    log::write(", exit: ");
+    log::decimal(elf.exited);
+    log::write(", pass: ");
+    log::decimal(elf.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -725,7 +745,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.38.0 - ring-3 TSS/int80 probe (A2/M37)");
+    cxc::log::line("CXC/OS 0.39.0 - static ELF + syscall v0 (A2/M38)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.38.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.39.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -49,12 +49,37 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_HELLO_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_hello.elf")
+set(CXC_USER_HELLO_SOURCE
+    "${CMAKE_CURRENT_BINARY_DIR}/user_hello_blob.cpp")
+add_custom_command(
+    OUTPUT "${CXC_USER_HELLO_SOURCE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_hello_elf.py"
+        --output "${CXC_USER_HELLO_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        --input "${CXC_USER_HELLO_ELF}"
+        --output "${CXC_USER_HELLO_SOURCE}"
+        --array hello_elf --size hello_elf_size
+        --namespace "cxc::user"
+        --header "cxc/user_hello_blob.hpp"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_hello_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/user_hello_blob.hpp"
+    BYPRODUCTS "${CXC_USER_HELLO_ELF}"
+    COMMENT "Building embedded static user hello ELF"
+    VERBATIM
+)
+
 add_executable(cxc_kernel
     src/acpi.cpp
     src/apic.cpp
     src/e1000e.cpp
     src/e1000e_selftest.cpp
     src/edu.cpp
+    src/elf.cpp
     src/gdt.S
     src/gdt.cpp
     src/heap.cpp
@@ -78,7 +103,10 @@ add_executable(cxc_kernel
     src/self_test.cpp
     src/serial.cpp
     src/smp.cpp
+    src/syscall.cpp
+    src/user.cpp
     "${CXC_SMP_TRAMPOLINE_SOURCE}"
+    "${CXC_USER_HELLO_SOURCE}"
     src/stack.S
     src/uefi.cpp
     src/vmm.cpp

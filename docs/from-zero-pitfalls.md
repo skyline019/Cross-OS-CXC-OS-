@@ -384,3 +384,9 @@ python3 tools/run_qemu.py --image build/from-zero/cxc-os.img --check
 - **现象**：M37 在 `initialize_tss`→`gdt_load` 之后 `#PF`，RIP=`current_cpu_index`（`mov %gs:0x8`），CR2=`0x8`。
 - **根因**：对 FS/GS 执行 `mov %ax, %gs` 会按 GDT 描述符重写隐藏 base；平坦 data 段 base=0，覆盖此前 `wrmsr IA32_GS_BASE` 写入的 per-CPU 块。
 - **修复**：long-mode 重装 GDT 时只重载 DS/ES/SS/CS，保留 FS/GS（及 MSR base）；TSS 描述符更新后 `ltr` 即可。
+
+### P-41：`int 0x80` 返回内核时会弹出用户 GPR
+
+- **现象**：M38 已打印 `USER_PROGRAM_PASS`，随后 `#PF` error=0x3，CR2=`0x40002F`，RIP 在 `result.entered = 1`。
+- **根因**：syscall 退回 `ring3_after_user` 时，`isr_common` 先按中断帧弹出 GPR；帧里仍是用户寄存器（`rsi` 指向 msg）。内核继续用被污染的 `rsi` 写 `ElfProbeResult`。
+- **修复**：`ring3_enter_iretq` 在造 iretq 帧前 push Microsoft 非易失 GPR，把 `ring3_saved_kernel_rsp` 指到该保存区；`ring3_after_user` 先 pop 再 `ret`。

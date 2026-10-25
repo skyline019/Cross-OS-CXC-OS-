@@ -13,6 +13,16 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--array", required=True)
     parser.add_argument("--size", required=True)
+    parser.add_argument(
+        "--namespace",
+        default="cxc::smp",
+        help="C++ namespace for the array (default: cxc::smp)",
+    )
+    parser.add_argument(
+        "--header",
+        default="cxc/smp_trampoline_blob.hpp",
+        help="Header declaring the array/size symbols",
+    )
     arguments = parser.parse_args()
 
     data = arguments.input.read_bytes()
@@ -26,17 +36,18 @@ def main() -> int:
         chunk = data[offset : offset + 16]
         rows.append("    " + ", ".join(f"0x{byte:02x}" for byte in chunk) + ",")
     contents = "\n".join(rows)
+    ns = arguments.namespace
     source = f"""// Generated from {arguments.input.name}; do not edit.
-#include <cxc/smp_trampoline_blob.hpp>
+#include <{arguments.header}>
 
-namespace cxc::smp {{
+namespace {ns} {{
 
 alignas(16) const uint8_t {arguments.array}[] = {{
 {contents}
 }};
 const size_t {arguments.size} = sizeof({arguments.array});
 
-}}  // namespace cxc::smp
+}}  // namespace {ns}
 """
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(source, encoding="utf-8", newline="\n")

@@ -7,6 +7,7 @@
 #include <cxc/runtime_test.hpp>
 #include <cxc/scheduler.hpp>
 #include <cxc/smp.hpp>
+#include <cxc/syscall.hpp>
 #include <cxc/vmm.hpp>
 
 #include <stddef.h>
@@ -51,7 +52,6 @@ void set_gate(uint8_t vector, uint64_t handler) {
 
 volatile bool ring3_int80_seen = false;
 uint64_t ring3_resume_rip = 0;
-constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
 }  // namespace
 
@@ -73,17 +73,24 @@ extern "C" cxc::cpu::InterruptFrame* interrupt_dispatch(
         return frame;
     }
     if (frame->vector == cxc::cpu::ring3_syscall_vector) {
-        if ((frame->cs & 3u) != 3u || frame->rax != ring3_probe_magic ||
-            ring3_resume_rip == 0 || ring3_saved_kernel_rsp == 0) {
-            cxc::log::panic("unexpected int 0x80");
+        if ((frame->cs & 3u) != 3u) {
+            cxc::log::panic("int 0x80 from non-CPL3");
         }
-        ring3_int80_seen = true;
-        frame->rip = ring3_resume_rip;
-        frame->cs = cxc::cpu::kernel_cs;
-        frame->rflags = 0x2;
-        frame->rsp = ring3_saved_kernel_rsp;
-        frame->ss = cxc::cpu::kernel_ss;
-        return frame;
+        // M37 probe: private magic in rax, resume via ring3_set_resume.
+        if (frame->rax == cxc::syscall::ring3_probe_magic) {
+            if (ring3_resume_rip == 0 || ring3_saved_kernel_rsp == 0) {
+                cxc::log::panic("unexpected int 0x80 probe");
+            }
+            ring3_int80_seen = true;
+            frame->rip = ring3_resume_rip;
+            frame->cs = cxc::cpu::kernel_cs;
+            frame->rflags = 0x2;
+            frame->rsp = ring3_saved_kernel_rsp;
+            frame->ss = cxc::cpu::kernel_ss;
+            return frame;
+        }
+        // M38+: syscall v0 (write/exit) for the active user session.
+        return cxc::syscall::on_int80(frame);
     }
     if (frame->vector == cxc::cpu::timer_vector) {
         return cxc::scheduler::on_timer(frame);

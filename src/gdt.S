@@ -41,9 +41,19 @@ tss_load:
     .scl 2
     .type 32
     .endef
-    # RCX = user RIP, RDX = user RSP. Saves kernel RSP then iretq to CPL3.
+    # RCX = user RIP, RDX = user RSP. Saves Microsoft x64 non-volatiles so
+    # int 0x80 → kernel resume does not restore user RSI/RBX/… into the
+    # caller's frame (M38: PF writing result.entered via user RSI=msg).
 ring3_enter_iretq:
     cli
+    pushq %rbx
+    pushq %rbp
+    pushq %rdi
+    pushq %rsi
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
     mov %rsp, ring3_saved_kernel_rsp(%rip)
     pushq $0x23
     pushq %rdx
@@ -58,8 +68,16 @@ ring3_enter_iretq:
     .type 32
     .endef
 ring3_after_user:
-    # int 0x80 rewrites the interrupt frame to land here on the saved kernel
-    # stack (return address from ring3_enter_iretq's caller still in place).
+    # exit/probe rewrites the interrupt frame to land here with RSP equal to
+    # ring3_saved_kernel_rsp (non-volatiles still pushed).
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rsi
+    popq %rdi
+    popq %rbp
+    popq %rbx
     ret
 
     .data
