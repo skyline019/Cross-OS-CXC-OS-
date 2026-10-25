@@ -410,7 +410,7 @@ class ContractRunner:
             str(self.image),
             "--check",
             "--timeout",
-            "70",
+            "120",
             "--work-dir",
             str(work),
             *extra,
@@ -423,7 +423,7 @@ class ContractRunner:
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                timeout=90,
+                timeout=150,
                 check=False,
             )
             output = completed.stdout

@@ -363,7 +363,9 @@ void worker_entry(void* opaque) {
             return;
         }
         ++mutex_shared_counter;
-        if ((round & 1u) == 0) {
+        // Only the first two rounds sleep while holding the lock: enough for
+        // UP to observe waits without stretching 16-vCPU contract timeouts.
+        if (round < 2) {
             if (!scheduler::sleep(1)) {
                 __atomic_store_n(&mutex_fault, true, __ATOMIC_RELEASE);
                 set_worker_fault();
