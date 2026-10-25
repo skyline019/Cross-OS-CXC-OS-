@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 79 / v0.80.0：disk/ 目录树 + 容量**（A2 主靶；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 80 / v0.81.0：disk/ execve**（A2 主靶；见 [`product-goals.md`](product-goals.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -105,6 +105,7 @@ CXC_OS_SELF_TEST_PASS
 | CXCFS (M77) | 块上 CXCFS；`disk/` 前缀接入 open/read/write；format/mount/remount 持久；`CXCFS_PASS` |
 | musl disk (M78) | musl-gcc `fopen("disk/…")` 写回读；缺文件 ENOENT；remount 后内核复核；`USER_MUSL_BLK_PASS` |
 | disk dirs (M79) | `disk/bld` mkdir/opendir；12KiB 文件；64×16KiB/4MiB 盘；`USER_MUSL_DIR_PASS` |
+| disk exec (M80) | 写 `disk/run.elf`；stub `execve`；换地址空间；`DISK_EXEC_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

@@ -1,6 +1,7 @@
 #include <cxc/user.hpp>
 
 #include <cxc/cpu.hpp>
+#include <cxc/cxcfs.hpp>
 #include <cxc/elf.hpp>
 #include <cxc/fs.hpp>
 #include <cxc/pmm.hpp>
@@ -138,6 +139,7 @@ MuslOpendirProbeResult musl_opendir_probe{};
 MuslUnlinkProbeResult musl_unlink_probe{};
 MuslBlkfsProbeResult musl_blkfs_probe{};
 MuslBlkdirProbeResult musl_blkdir_probe{};
+DiskExecProbeResult disk_exec_probe{};
 /* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
 constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -196,6 +198,7 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
         stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
         loaded.at_phent, loaded.at_phnum);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
+    syscall::set_user_root(user_root);
 
     const uint64_t irq_flags = cpu::read_flags();
     cpu::disable_interrupts();
@@ -217,19 +220,25 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
     cpu::restore_interrupts(irq_flags);
     stage = 4;
 
+    // execve may have replaced the address space; tear down the live root.
+    const uint64_t live_root = syscall::session().user_root != 0
+                                   ? syscall::session().user_root
+                                   : user_root;
+
     if (syscall::session().exited == 0) {
         syscall::clear_session();
-        (void)vmm::destroy_user_address_space(user_root);
+        (void)vmm::destroy_user_address_space(live_root);
         failure = 7;
         return false;
     }
     stage = 5;
 
-    if (!vmm::destroy_user_address_space(user_root)) {
+    if (!vmm::destroy_user_address_space(live_root)) {
         syscall::clear_session();
         failure = 9;
         return false;
     }
+    syscall::set_user_root(0);
     stage = 6;
     return true;
 }
@@ -1330,6 +1339,171 @@ bool run_musl_blkdir_probe(const uint8_t* image, size_t image_size,
 
 const MuslBlkdirProbeResult& musl_blkdir_probe_result() {
     return musl_blkdir_probe;
+}
+
+bool exec_replace(const char* path, cpu::InterruptFrame* frame,
+                  uint32_t& failure) {
+    failure = 0;
+    if (path == nullptr || frame == nullptr) {
+        failure = 1;
+        return false;
+    }
+    const uint64_t old_root = syscall::session().user_root;
+    if (old_root == 0 || smp::current_cpu_index() != 0) {
+        failure = 2;
+        return false;
+    }
+
+    const int64_t fd = fs::open_path(path, fs::o_rdonly, 0);
+    if (fd < 0) {
+        failure = 3;
+        return false;
+    }
+    static uint8_t image[cxcfs::max_file_bytes];
+    memset(image, 0, sizeof(image));
+    const int64_t got =
+        fs::read_fd(static_cast<uint32_t>(fd), image, sizeof(image));
+    (void)fs::close_fd(static_cast<uint32_t>(fd));
+    if (got <= 0) {
+        failure = 4;
+        return false;
+    }
+    const size_t image_size = static_cast<size_t>(got);
+
+    const uint64_t kernel_root = vmm::kernel_address_space();
+    if (!vmm::activate_address_space(kernel_root)) {
+        failure = 5;
+        return false;
+    }
+
+    const uint64_t new_root = vmm::create_user_address_space();
+    if (new_root == 0) {
+        (void)vmm::activate_address_space(old_root);
+        failure = 6;
+        return false;
+    }
+
+    elf::LoadResult loaded{};
+    if (!elf::load_static_et_exec(new_root, image, image_size, loaded)) {
+        (void)vmm::destroy_user_address_space(new_root);
+        (void)vmm::activate_address_space(old_root);
+        failure = 10 + loaded.failure;
+        return false;
+    }
+
+    const uint64_t stack_physical = pmm::allocate_pages(1);
+    if (stack_physical == 0 ||
+        !vmm::map_user_page(new_root, user_stack_base, stack_physical,
+                            vmm::user_map_writable)) {
+        if (stack_physical != 0) {
+            pmm::free_pages(stack_physical, 1);
+        }
+        (void)vmm::destroy_user_address_space(new_root);
+        (void)vmm::activate_address_space(old_root);
+        failure = 7;
+        return false;
+    }
+
+    auto* const stack_page = reinterpret_cast<uint8_t*>(
+        vmm::direct_map_base + stack_physical);
+    const uint64_t user_rsp = seed_linux_user_stack(
+        stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
+        loaded.at_phent, loaded.at_phnum);
+
+    if (!vmm::destroy_user_address_space(old_root)) {
+        (void)vmm::destroy_user_address_space(new_root);
+        failure = 8;
+        return false;
+    }
+    if (!vmm::activate_address_space(new_root)) {
+        failure = 9;
+        return false;
+    }
+
+    syscall::set_user_root(new_root);
+    syscall::reset_heap_after_exec();
+
+    frame->rip = loaded.entry;
+    frame->rsp = user_rsp;
+    frame->cs = cpu::user_cs;
+    frame->ss = cpu::user_ss;
+    frame->rflags = (frame->rflags | 0x200ull) & ~uint64_t{0x100};  // IF, clear TF
+    frame->rax = 0;
+    frame->rdi = 0;
+    frame->rsi = 0;
+    frame->rdx = 0;
+    return true;
+}
+
+bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
+                         const uint8_t* payload_image, size_t payload_size,
+                         DiskExecProbeResult& result) {
+    result = DiskExecProbeResult{};
+    result.stage = 1;
+    if (stub_image == nullptr || stub_size == 0 || payload_image == nullptr ||
+        payload_size == 0 || !cxcfs::is_mounted()) {
+        result.failure = 1;
+        return false;
+    }
+    if (payload_size > cxcfs::max_file_bytes) {
+        result.failure = 2;
+        return false;
+    }
+
+    const int64_t wfd = fs::open_path(
+        "disk/run.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+    if (wfd < 0) {
+        result.failure = 3;
+        return false;
+    }
+    if (fs::write_fd(static_cast<uint32_t>(wfd), payload_image, payload_size) !=
+        static_cast<int64_t>(payload_size)) {
+        (void)fs::close_fd(static_cast<uint32_t>(wfd));
+        result.failure = 4;
+        return false;
+    }
+    if (fs::close_fd(static_cast<uint32_t>(wfd)) != 0) {
+        result.failure = 5;
+        return false;
+    }
+    result.wrote_elf = 1;
+    result.stage = 2;
+
+    cxcfs::MountResult remounted{};
+    if (!cxcfs::remount(remounted)) {
+        result.failure = 6;
+        return false;
+    }
+    result.remount_ok = 1;
+    result.stage = 3;
+
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(stub_image, stub_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 20 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_disk_exec_pass;
+    result.stage = 4;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    disk_exec_probe = result;
+    return true;
+}
+
+const DiskExecProbeResult& disk_exec_probe_result() {
+    return disk_exec_probe;
 }
 
 }  // namespace cxc::user

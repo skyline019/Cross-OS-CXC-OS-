@@ -91,6 +91,10 @@ uint64_t musl_blkfs_elf_physical = 0;
 uint64_t musl_blkfs_elf_size = 0;
 uint64_t musl_blkdir_elf_physical = 0;
 uint64_t musl_blkdir_elf_size = 0;
+uint64_t disk_exec_stub_elf_physical = 0;
+uint64_t disk_exec_stub_elf_size = 0;
+uint64_t disk_exec_payload_elf_physical = 0;
+uint64_t disk_exec_payload_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1575,6 +1579,42 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("USER_MUSL_DIR_PASS");
 
+    user::DiskExecProbeResult disk_exec{};
+    const auto* stub_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + disk_exec_stub_elf_physical);
+    const auto* payload_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + disk_exec_payload_elf_physical);
+    if (disk_exec_stub_elf_physical == 0 || disk_exec_stub_elf_size == 0 ||
+        disk_exec_payload_elf_physical == 0 ||
+        disk_exec_payload_elf_size == 0 ||
+        !user::run_disk_exec_probe(
+            stub_image, static_cast<size_t>(disk_exec_stub_elf_size),
+            payload_image, static_cast<size_t>(disk_exec_payload_elf_size),
+            disk_exec)) {
+        log::write("[debug] disk-exec stage: ");
+        log::decimal(disk_exec.stage);
+        log::write(", failure: ");
+        log::decimal(disk_exec.failure);
+        log::write(", wrote_elf: ");
+        log::decimal(disk_exec.wrote_elf);
+        log::write(", remount: ");
+        log::decimal(disk_exec.remount_ok);
+        log::write(", pass: ");
+        log::decimal(disk_exec.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(disk_exec.exit_code);
+        log::write('\n');
+        log::panic("M80 disk execve probe failed");
+    }
+    log::write("[ok] disk-exec: pass: ");
+    log::decimal(disk_exec.wrote_pass);
+    log::write(" wrote_elf: ");
+    log::decimal(disk_exec.wrote_elf);
+    log::write(" remount: ");
+    log::decimal(disk_exec.remount_ok);
+    log::write('\n');
+    log::line("DISK_EXEC_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1778,6 +1818,14 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBDIR.ELF")) {
         log::panic("cannot relocate ESP LIBDIR.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(disk_exec_stub_elf_physical,
+                                 disk_exec_stub_elf_size, "ESP EXSTB.ELF")) {
+        log::panic("cannot relocate ESP EXSTB.ELF into PMM");
+    }
+    if (!relocate_esp_elf_to_pmm(disk_exec_payload_elf_physical,
+                                 disk_exec_payload_elf_size, "ESP DEXEC.ELF")) {
+        log::panic("cannot relocate ESP DEXEC.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1794,7 +1842,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.80.0 - disk/ dirs + capacity (A2/M79)");
+    cxc::log::line("CXC/OS 0.81.0 - disk/ execve (A2/M80)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2265,6 +2313,38 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBDIR.ELF bytes: ");
     cxc::log::decimal(cxc::musl_blkdir_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 disk_exec_stub_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'E',  u'X', u'S', u'T', u'B',  u'.', u'E', u'L',  u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, disk_exec_stub_path, 64 * 1024,
+        cxc::disk_exec_stub_elf_physical, cxc::disk_exec_stub_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP EXSTB.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP EXSTB.ELF bytes: ");
+    cxc::log::decimal(cxc::disk_exec_stub_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 disk_exec_payload_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'D',  u'E', u'X', u'E', u'C',  u'.', u'E', u'L',  u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, disk_exec_payload_path, 64 * 1024,
+        cxc::disk_exec_payload_elf_physical, cxc::disk_exec_payload_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP DEXEC.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP DEXEC.ELF bytes: ");
+    cxc::log::decimal(cxc::disk_exec_payload_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

@@ -3,6 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+namespace cxc::cpu {
+struct InterruptFrame;
+}
+
 namespace cxc::user {
 
 struct ElfProbeResult {
@@ -584,5 +588,27 @@ struct MuslBlkdirProbeResult {
 bool run_musl_blkdir_probe(const uint8_t* image, size_t image_size,
                            MuslBlkdirProbeResult& result);
 const MuslBlkdirProbeResult& musl_blkdir_probe_result();
+
+struct DiskExecProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t wrote_elf;
+    uint32_t remount_ok;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t exit_code;
+};
+
+// M80: write payload ELF to disk/run.elf, launch stub that execve's it.
+bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
+                         const uint8_t* payload_image, size_t payload_size,
+                         DiskExecProbeResult& result);
+const DiskExecProbeResult& disk_exec_probe_result();
+
+// Replace the current user image (syscall execve). Updates `frame` for iret.
+bool exec_replace(const char* path, cpu::InterruptFrame* frame,
+                  uint32_t& failure);
 
 }  // namespace cxc::user

@@ -23,6 +23,7 @@ constexpr uint64_t sys_readv = 19;
 constexpr uint64_t sys_writev = 20;
 constexpr uint64_t sys_fcntl = 72;
 constexpr uint64_t sys_getpid = 39;
+constexpr uint64_t sys_execve = 59;
 constexpr uint64_t sys_exit = 60;
 constexpr uint64_t sys_exit_group = 231;
 constexpr uint64_t sys_uname = 63;
@@ -97,6 +98,8 @@ struct Session {
     uint32_t saw_user_musl_unlink_pass;
     uint32_t saw_user_musl_blk_pass;
     uint32_t saw_user_musl_dir_pass;
+    uint32_t saw_disk_exec_pass;
+    uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;
@@ -114,6 +117,8 @@ struct Session {
 void clear_session();
 void begin_session(uint64_t resume_rip,
                    uint64_t brk_base = default_brk_base);
+void set_user_root(uint64_t user_root);
+void reset_heap_after_exec();
 const Session& session();
 
 cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame);

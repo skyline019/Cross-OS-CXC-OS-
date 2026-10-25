@@ -3,6 +3,7 @@
 #include <cxc/fs.hpp>
 #include <cxc/log.hpp>
 #include <cxc/pmm.hpp>
+#include <cxc/user.hpp>
 #include <cxc/vmm.hpp>
 
 #include <stddef.h>
@@ -54,6 +55,7 @@ constexpr char expected_musl_opendir_pass[] = "USER_MUSL_ODR_PASS\n";
 constexpr char expected_musl_unlink_pass[] = "USER_MUSL_UNL_PASS\n";
 constexpr char expected_musl_blk_pass[] = "USER_MUSL_BLK_PASS\n";
 constexpr char expected_musl_dir_pass[] = "USER_MUSL_DIR_PASS\n";
+constexpr char expected_disk_exec_pass[] = "DISK_EXEC_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -549,6 +551,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_musl_dir_pass = 1;
         }
     }
+    if (length == sizeof(expected_disk_exec_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_disk_exec_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_disk_exec_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_disk_exec_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -745,8 +760,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.80.0");
-    fill_uts_field(local.version, "M79");
+    fill_uts_field(local.release, "0.81.0");
+    fill_uts_field(local.version, "M80");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -1101,6 +1116,23 @@ cpu::InterruptFrame* handle_unlink(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    if (!copy_user_path(frame->rdi, path, sizeof(path))) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    // argv/envp ignored for M80 (NULL from stub); path is enough.
+    uint32_t failure = 0;
+    if (!user::exec_replace(path, frame, failure)) {
+        frame->rax = static_cast<uint64_t>(-failure);
+        return frame;
+    }
+    // Success: frame already retargeted; do not touch rax as return value
+    // for the old image (never resumes).
+    return frame;
+}
+
 cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
     current.exit_code = frame->rdi;
     current.exited = 1;
@@ -1127,6 +1159,21 @@ void begin_session(uint64_t resume_rip, uint64_t brk_base) {
     current.brk_current = brk_base;
     current.mmap_next = default_mmap_base;
     current.active = 1;
+}
+
+void set_user_root(uint64_t user_root) {
+    current.user_root = user_root;
+}
+
+void reset_heap_after_exec() {
+    current.brk_base = default_brk_base;
+    current.brk_current = default_brk_base;
+    current.mmap_next = default_mmap_base;
+    current.brk_grows = 0;
+    current.brk_pages = 0;
+    current.mmap_calls = 0;
+    current.mmap_pages = 0;
+    current.clear_child_tid = 0;
 }
 
 const Session& session() {
@@ -1180,6 +1227,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_unlink(frame);
     case sys_getdents64:
         return handle_getdents64(frame);
+    case sys_execve:
+        return handle_execve(frame);
     case sys_exit:
     case sys_exit_group:
         return handle_exit(frame);
