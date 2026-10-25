@@ -1,5 +1,6 @@
 #include <cxc/syscall.hpp>
 
+#include <cxc/fs.hpp>
 #include <cxc/log.hpp>
 #include <cxc/vmm.hpp>
 
@@ -14,8 +15,9 @@ namespace {
 Session current{};
 constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
 constexpr uint64_t page_size = 4096;
-constexpr size_t max_write = 256;
-constexpr char expected_pass[] = "USER_PROGRAM_PASS\n";
+constexpr size_t max_io = 256;
+constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
+constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
     frame->rip = current.resume_rip;
@@ -31,18 +33,20 @@ uint64_t read_cr3() {
     return value;
 }
 
-bool user_range_readable(uint64_t address, size_t length) {
+bool user_pages_ok(uint64_t address, size_t length, bool need_write) {
     if (length == 0 || address == 0 || address >= user_canonical_limit ||
-        length > max_write || address + length > user_canonical_limit) {
+        length > max_io || address + length > user_canonical_limit) {
         return false;
     }
     const uint64_t root = read_cr3();
     uint64_t page = address & ~(page_size - 1);
     const uint64_t end = address + length;
     while (page < end) {
-        // Walk the active (user) root — inspect_mapping always uses kernel CR3.
         const vmm::MappingInfo info = vmm::inspect_mapping_in(root, page);
         if (!info.present || !info.user) {
+            return false;
+        }
+        if (need_write && !info.writable) {
             return false;
         }
         page += page_size;
@@ -50,23 +54,14 @@ bool user_range_readable(uint64_t address, size_t length) {
     return true;
 }
 
-cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
-    const uint64_t fd = frame->rdi;
-    const uint64_t buf = frame->rsi;
-    const uint64_t len = frame->rdx;
-    if (fd != 1 || len == 0 || len > max_write ||
-        !user_range_readable(buf, static_cast<size_t>(len))) {
-        frame->rax = static_cast<uint64_t>(-1);
-        return frame;
-    }
-    const auto* bytes = reinterpret_cast<const char*>(buf);
-    log::write(bytes, static_cast<size_t>(len));
+void note_stdout_pass(const char* bytes, size_t length) {
     ++current.write_calls;
-    current.write_bytes += static_cast<uint32_t>(len);
-    if (len == sizeof(expected_pass) - 1) {
+    current.write_bytes += static_cast<uint32_t>(length);
+    if (length == sizeof(expected_program_pass) - 1) {
         bool match = true;
-        for (size_t index = 0; index < sizeof(expected_pass) - 1; ++index) {
-            if (bytes[index] != expected_pass[index]) {
+        for (size_t index = 0; index < sizeof(expected_program_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_program_pass[index]) {
                 match = false;
                 break;
             }
@@ -75,7 +70,96 @@ cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
             current.saw_user_program_pass = 1;
         }
     }
-    frame->rax = len;
+    if (length == sizeof(expected_fs_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_fs_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_fs_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_fs_pass = 1;
+        }
+    }
+}
+
+bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
+    if (capacity == 0 || !user_pages_ok(user_path, 1, false)) {
+        return false;
+    }
+    size_t length = 0;
+    while (length + 1 < capacity) {
+        if (!user_pages_ok(user_path + length, 1, false)) {
+            return false;
+        }
+        const char value =
+            *reinterpret_cast<const char*>(user_path + length);
+        out[length] = value;
+        if (value == '\0') {
+            return true;
+        }
+        ++length;
+        if (length >= fs::max_path) {
+            return false;
+        }
+    }
+    return false;
+}
+
+cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
+    const uint64_t fd = frame->rdi;
+    const uint64_t buf = frame->rsi;
+    const uint64_t len = frame->rdx;
+    if (len == 0 || len > max_io ||
+        !user_pages_ok(buf, static_cast<size_t>(len), false)) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    const auto* bytes = reinterpret_cast<const char*>(buf);
+    if (fd == fs::fd_stdout) {
+        log::write(bytes, static_cast<size_t>(len));
+        note_stdout_pass(bytes, static_cast<size_t>(len));
+        frame->rax = len;
+        return frame;
+    }
+    const int64_t wrote =
+        fs::write_fd(static_cast<uint32_t>(fd), bytes, static_cast<size_t>(len));
+    frame->rax = static_cast<uint64_t>(wrote);
+    return frame;
+}
+
+cpu::InterruptFrame* handle_read(cpu::InterruptFrame* frame) {
+    const uint64_t fd = frame->rdi;
+    const uint64_t buf = frame->rsi;
+    const uint64_t len = frame->rdx;
+    if (len == 0 || len > max_io ||
+        !user_pages_ok(buf, static_cast<size_t>(len), true)) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    auto* bytes = reinterpret_cast<char*>(buf);
+    const int64_t got =
+        fs::read_fd(static_cast<uint32_t>(fd), bytes, static_cast<size_t>(len));
+    frame->rax = static_cast<uint64_t>(got);
+    return frame;
+}
+
+cpu::InterruptFrame* handle_open(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    if (!copy_user_path(frame->rdi, path, sizeof(path))) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    const int64_t fd = fs::open_path(path, frame->rsi, frame->rdx);
+    frame->rax = static_cast<uint64_t>(fd);
+    return frame;
+}
+
+cpu::InterruptFrame* handle_close(cpu::InterruptFrame* frame) {
+    const int64_t rc = fs::close_fd(static_cast<uint32_t>(frame->rdi));
+    frame->rax = static_cast<uint64_t>(rc);
     return frame;
 }
 
@@ -94,10 +178,12 @@ cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
 
 void clear_session() {
     current = Session{};
+    fs::reset();
 }
 
 void begin_session(uint64_t resume_rip) {
     current = Session{};
+    fs::reset();
     current.resume_rip = resume_rip;
     current.active = 1;
 }
@@ -115,8 +201,14 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
     }
 
     switch (frame->rax) {
+    case sys_read:
+        return handle_read(frame);
     case sys_write:
         return handle_write(frame);
+    case sys_open:
+        return handle_open(frame);
+    case sys_close:
+        return handle_close(frame);
     case sys_exit:
         return handle_exit(frame);
     default:

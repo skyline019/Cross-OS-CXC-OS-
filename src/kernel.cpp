@@ -642,6 +642,27 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(elf.wrote_pass);
     log::write('\n');
 
+    user::FsProbeResult fs{};
+    if (!user::run_fs_probe(fs)) {
+        log::write("[debug] user FS probe stage: ");
+        log::decimal(fs.stage);
+        log::write(", failure: ");
+        log::decimal(fs.failure);
+        log::write('\n');
+        log::panic("M39 user FS probe failed");
+    }
+    log::write("[ok] user FS: open: ");
+    log::decimal(fs.opens);
+    log::write(", read: ");
+    log::decimal(fs.reads);
+    log::write(", write: ");
+    log::decimal(fs.writes);
+    log::write(", close: ");
+    log::decimal(fs.closes);
+    log::write(", pass: ");
+    log::decimal(fs.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -745,7 +766,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.39.0 - static ELF + syscall v0 (A2/M38)");
+    cxc::log::line("CXC/OS 0.40.0 - ramfs open/read/write/close (A2/M39)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

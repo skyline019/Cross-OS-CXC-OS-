@@ -57,6 +57,10 @@ USER_ELF_PROBE_SUCCESS = (
     "user ELF: loaded: 1, enter: 1, exit: 1, pass: 1"
 )
 USER_PROGRAM_PASS = "USER_PROGRAM_PASS"
+USER_FS_PASS = "USER_FS_PASS"
+USER_FS_PROBE_SUCCESS = (
+    "user FS: open: 2, read: 1, write: 1, close: 2, pass: 1"
+)
 
 
 @dataclass
@@ -418,6 +422,8 @@ class ContractRunner:
         assert RING3_PROBE_SUCCESS.encode() in serial
         assert USER_PROGRAM_PASS.encode() in serial
         assert USER_ELF_PROBE_SUCCESS.encode() in serial
+        assert USER_FS_PASS.encode() in serial
+        assert USER_FS_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -426,7 +432,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M36–M38 user ELF"
+            "kernel PASS + net contracts + M36–M39 user FS"
         )
 
     def negative_evidence(self, work: Path) -> str:

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.39.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.40.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -73,6 +73,29 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_FS_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_fs.elf")
+set(CXC_USER_FS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/user_fs_blob.cpp")
+add_custom_command(
+    OUTPUT "${CXC_USER_FS_SOURCE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_fs_elf.py"
+        --output "${CXC_USER_FS_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        --input "${CXC_USER_FS_ELF}"
+        --output "${CXC_USER_FS_SOURCE}"
+        --array fs_elf --size fs_elf_size
+        --namespace "cxc::user"
+        --header "cxc/user_fs_blob.hpp"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_fs_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_binary.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/user_fs_blob.hpp"
+    BYPRODUCTS "${CXC_USER_FS_ELF}"
+    COMMENT "Building embedded static user FS ELF"
+    VERBATIM
+)
+
 add_executable(cxc_kernel
     src/acpi.cpp
     src/apic.cpp
@@ -80,6 +103,7 @@ add_executable(cxc_kernel
     src/e1000e_selftest.cpp
     src/edu.cpp
     src/elf.cpp
+    src/fs.cpp
     src/gdt.S
     src/gdt.cpp
     src/heap.cpp
@@ -107,6 +131,7 @@ add_executable(cxc_kernel
     src/user.cpp
     "${CXC_SMP_TRAMPOLINE_SOURCE}"
     "${CXC_USER_HELLO_SOURCE}"
+    "${CXC_USER_FS_SOURCE}"
     src/stack.S
     src/uefi.cpp
     src/vmm.cpp

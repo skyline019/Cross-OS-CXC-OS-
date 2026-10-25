@@ -2,12 +2,15 @@
 
 #include <cxc/cpu.hpp>
 #include <cxc/elf.hpp>
+#include <cxc/fs.hpp>
 #include <cxc/pmm.hpp>
 #include <cxc/smp.hpp>
 #include <cxc/syscall.hpp>
+#include <cxc/user_fs_blob.hpp>
 #include <cxc/user_hello_blob.hpp>
 #include <cxc/vmm.hpp>
 
+#include <stddef.h>
 #include <stdint.h>
 
 extern "C" void ring3_enter_iretq(uint64_t user_rip, uint64_t user_rsp);
@@ -16,7 +19,8 @@ extern "C" void ring3_after_user();
 namespace cxc::user {
 namespace {
 
-ElfProbeResult probe{};
+ElfProbeResult elf_probe{};
+FsProbeResult fs_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -24,41 +28,36 @@ constexpr uint64_t privilege_stack_pages = 8;
 bool ensure_tss() {
     const uint64_t stack_top =
         privilege_stack_base + privilege_stack_pages * pmm::page_size;
-    // M37 maps this stack once; re-loading TR/RSP0 is idempotent for the BSP.
     return cpu::initialize_tss(stack_top);
 }
 
-}  // namespace
-
-bool run_elf_probe(ElfProbeResult& result) {
-    result = ElfProbeResult{};
-    result.stage = 1;
+bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
+                     uint32_t& stage, uint32_t& failure) {
+    stage = 1;
     if (smp::current_cpu_index() != 0 || vmm::kernel_address_space() == 0) {
-        result.failure = 1;
+        failure = 1;
         return false;
     }
     if (!ensure_tss()) {
-        result.failure = 2;
+        failure = 2;
         return false;
     }
-    result.stage = 2;
+    stage = 2;
 
     const uint64_t user_root = vmm::create_user_address_space();
     if (user_root == 0) {
-        result.failure = 3;
+        failure = 3;
         return false;
     }
 
     elf::LoadResult loaded{};
-    if (!elf::load_static_et_exec(user_root, hello_elf, hello_elf_size,
-                                  loaded)) {
+    if (!elf::load_static_et_exec(user_root, image, image_size, loaded)) {
         (void)vmm::destroy_user_address_space(user_root);
-        result.failure = 10 + loaded.failure;
+        failure = 10 + loaded.failure;
         return false;
     }
-    result.loaded = 1;
-    result.entry = loaded.entry;
-    result.stage = 3;
+    entry = loaded.entry;
+    stage = 3;
 
     const uint64_t stack_physical = pmm::allocate_pages(1);
     if (stack_physical == 0 ||
@@ -68,7 +67,7 @@ bool run_elf_probe(ElfProbeResult& result) {
             pmm::free_pages(stack_physical, 1);
         }
         (void)vmm::destroy_user_address_space(user_root);
-        result.failure = 4;
+        failure = 4;
         return false;
     }
 
@@ -82,54 +81,95 @@ bool run_elf_probe(ElfProbeResult& result) {
         cpu::restore_interrupts(irq_flags);
         syscall::clear_session();
         (void)vmm::destroy_user_address_space(user_root);
-        result.failure = 5;
+        failure = 5;
         return false;
     }
 
     ring3_enter_iretq(loaded.entry, user_rsp);
-    result.entered = 1;
 
     if (!vmm::activate_address_space(kernel_root)) {
         cpu::restore_interrupts(irq_flags);
-        result.failure = 6;
+        failure = 6;
         return false;
     }
     cpu::restore_interrupts(irq_flags);
-    result.stage = 4;
+    stage = 4;
 
-    const syscall::Session& session = syscall::session();
-    if (session.exited == 0) {
+    if (syscall::session().exited == 0) {
         syscall::clear_session();
         (void)vmm::destroy_user_address_space(user_root);
-        result.failure = 7;
+        failure = 7;
         return false;
     }
-    result.exited = 1;
-    result.exit_code = session.exit_code;
-    result.wrote_pass = session.saw_user_program_pass;
-    result.stage = 5;
-
-    if (result.exit_code != 0 || result.wrote_pass == 0 ||
-        session.write_calls == 0) {
-        syscall::clear_session();
-        (void)vmm::destroy_user_address_space(user_root);
-        result.failure = 8;
-        return false;
-    }
+    stage = 5;
 
     if (!vmm::destroy_user_address_space(user_root)) {
         syscall::clear_session();
-        result.failure = 9;
+        failure = 9;
+        return false;
+    }
+    stage = 6;
+    return true;
+}
+
+}  // namespace
+
+bool run_elf_probe(ElfProbeResult& result) {
+    result = ElfProbeResult{};
+    if (!launch_user_elf(hello_elf, hello_elf_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_program_pass;
+    if (result.exit_code != 0 || result.wrote_pass == 0 ||
+        syscall::session().write_calls == 0) {
+        syscall::clear_session();
+        result.failure = 8;
         return false;
     }
     syscall::clear_session();
-    result.stage = 6;
-    probe = result;
+    elf_probe = result;
     return true;
 }
 
 const ElfProbeResult& elf_probe_result() {
-    return probe;
+    return elf_probe;
+}
+
+bool run_fs_probe(FsProbeResult& result) {
+    result = FsProbeResult{};
+    if (!launch_user_elf(fs_elf, fs_elf_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_fs_pass;
+    const fs::Stats& st = fs::stats();
+    result.opens = st.opens;
+    result.reads = st.reads;
+    result.writes = st.writes;
+    result.closes = st.closes;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 || result.opens < 2 ||
+        result.reads < 1 || result.writes < 1 || result.closes < 2) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    fs_probe = result;
+    return true;
+}
+
+const FsProbeResult& fs_probe_result() {
+    return fs_probe;
 }
 
 }  // namespace cxc::user

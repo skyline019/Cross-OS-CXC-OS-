@@ -9,7 +9,7 @@
 | 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
 | 第四次（计划） | M35–M44 | `midpoint-assessment-4.md`（届时新建） |
 
-当前基线：**M38 / v0.39.0**（A2 脊柱：静态 ELF + syscall v0）。下一正式中场目标：**M44**。
+当前基线：**M39 / v0.40.0**（A2 脊柱：ramfs open/read/write/close）。下一正式中场目标：**M44**。
 
 ## 中场窗口必做
 

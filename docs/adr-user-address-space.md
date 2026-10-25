@@ -101,7 +101,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M36** | BSP `create` + map 一页 + CR3 往返 + 读写探针 | 串口 `user AS probe: cr3_switch: 1, …`；`SELF_TEST_PASS` |
 | **M37** | ring-3 选择子 + TSS.RSP0 + `int 0x80` 往返 | 串口 `ring3 probe: enter: 1, int80: 1, cpl: 3, rsp0: 1` |
 | **M38** | 静态 ELF + syscall v0（`write`/`exit`） | 串口 `USER_PROGRAM_PASS` + `user ELF: loaded: 1, …` |
-| M39+ | 可写 FS / 更多 syscall（通向 A2） | 另立合同 |
+| **M39** | 内存 ramfs + `open`/`read`/`write`/`close` | 串口 `USER_FS_PASS` + `user FS: open: 2, …` |
+| M40+ | 目录 / `brk`/`mmap` / 更多 POSIX（通向 A2） | 另立合同 |
 
 ## 6. 参考
 
