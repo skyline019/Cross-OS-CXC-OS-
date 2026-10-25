@@ -115,7 +115,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M50** | `getdents64` + 目录只读 open | 串口 `USER_GETDENTS_PASS` + `user getdents: …` |
 | **M51** | `arch_prctl` SET/GET_FS（拒 GS） | 串口 `USER_ARCH_PRCTL_PASS` + `user arch_prctl: …` |
 | **M52** | mini-libc `write`/`_exit` 链接烟测 | 串口 `USER_LIBC_PASS` + `user libc: …` |
-| **M53+** | 更多 mini-libc / musl 缺口 | 见第四次中场 §6 |
+| **M53** | mini-libc `open`/`read`/`write`/`close` | 串口 `USER_LIBC_FS_PASS` + `user libc fs: …` |
+| **M54** | 第五次中场（M45–M54） | [`midpoint-assessment-5.md`](midpoint-assessment-5.md)（届时） |
 
 ## 6. 参考
 
