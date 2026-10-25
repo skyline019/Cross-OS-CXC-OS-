@@ -9,7 +9,7 @@
 | 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
 | 第四次（计划） | M35–M44 | `midpoint-assessment-4.md`（届时新建） |
 
-当前基线：**M34 / v0.35.0**（第三次中场已完成；主线切换至 A1 用户态）。下一正式中场目标：**M44**。
+当前基线：**M35 / v0.36.0**（A1：用户地址空间 ADR Accepted）。下一正式中场目标：**M44**。
 
 ## 中场窗口必做
 

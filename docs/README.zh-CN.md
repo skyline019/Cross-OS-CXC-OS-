@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 34 / v0.35.0：第三次中场；下一主线 A1 用户态**（M13–M33 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 35 / v0.36.0：用户地址空间 ADR（A1）**（M13–M34 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -61,12 +61,14 @@ CXC_OS_SELF_TEST_PASS
 | Event TX wait (M32) | TXQ0→Event sticky；`post_tx_wait` 经 `event_try_consume`；`events:1`；Event 合同改 delta |
 | Generic RX submit (M33) | `try_submit_rx_dd`（无 Echo/TestInfo）；独立 `submitted:266`；不改 M13/`266/266/266` |
 | Third midfield (M34) | [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；阶段 0 收束；主线改 A1 |
+| User AS ADR (M35) | [`adr-user-address-space.md`](adr-user-address-space.md)；共享内核高半；每线程内核栈；M36 起 BSP CR3 探针 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
 文档：
 
 - [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
+- [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
 - [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步契约；
 - [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
 - [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24、债项刷新与下一步）；
@@ -242,4 +244,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-下一阶段为 A1 用户地址空间 ADR → ELF → syscall v0；仍必须保持实际中断、外部数据完整性和 M13–M34 回归证据。
+下一阶段为 M36 BSP 用户 CR3 切换探针，再接 ELF / syscall v0；仍必须保持实际中断、外部数据完整性和 M13–M35 回归证据。

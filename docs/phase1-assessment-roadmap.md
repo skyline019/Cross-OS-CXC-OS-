@@ -1,6 +1,6 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 34 / v0.35.0（2026-10；阶段 0 收束完成，见 [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；下文差距表仍以 M31 收口叙述）。  
+**基线**：Milestone 35 / v0.36.0（2026-10；用户 AS ADR Accepted，见 [`adr-user-address-space.md`](adr-user-address-space.md)；阶段 0 见 [`midpoint-assessment-3.md`](midpoint-assessment-3.md)）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint（正确/失败/掉电/事务/循环/高压/混沌）绿；host `ctest` + ASan/UBSan/TSan（Linux CI）。  
 **中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第三次正式中场目标 **M34**。
 

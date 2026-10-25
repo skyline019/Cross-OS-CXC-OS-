@@ -127,7 +127,7 @@
 #### P0（切换主线后立即面对）
 
 - **TD-08**：无用户 CR3 / 用户页表 — **A1 阻塞项**。
-- **地址空间 ADR 缺失**：未书面冻结内核映射策略与 syscall 入口栈约定。
+- **地址空间 ADR**：M35 已 Accepted（[`adr-user-address-space.md`](adr-user-address-space.md)）；实现从 M36 BSP 探针起。
 
 #### P1（架构/验证）
 
