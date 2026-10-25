@@ -118,10 +118,15 @@ extern volatile bool udp_stress_active;
 extern volatile bool socket_tx_active;
 extern volatile bool socket_tx_bp_active;
 extern volatile bool socket_tx_wait_active;
+extern volatile bool socket_irq_rx_active;
+extern volatile LegacyRxDescriptor* live_rx_ring;
+extern uint32_t irq_rx_next;
 extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;
 extern bool packet_allocation_attempted;
+// M29: RXQ0 MSI-X path delivers validated UDP into the bound socket.
+void irq_try_demux_rx();
 
 enum class NetworkPhase {
     Raw,

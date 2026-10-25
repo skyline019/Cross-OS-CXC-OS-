@@ -6,6 +6,7 @@
 #include <cxc/net/proto.hpp>
 #include <cxc/net/ring_model.hpp>
 #include <cxc/net/socket.hpp>
+#include <cxc/pmm.hpp>
 #include <cxc/scheduler.hpp>
 
 #include <stddef.h>
@@ -13,21 +14,64 @@
 extern "C" void* memset(void*, int, size_t);
 
 namespace cxc::e1000e::detail {
-namespace {
 
 net::UdpSocketTable udp_rx_sockets{};
 int udp_rx_socket_slot = -1;
 
-// M24/M26: deliver a validated Echo request into the bound nic_udp_port socket
-// and immediately drain it. Callers own delivered/received counters.
+// M29: scan newly completed RX descriptors and udp_deliver into the bound
+// socket. Uses descriptor buffer_address (recycle may move pages). Does not
+// clear DD or advance RDT — BSP Echo/recycle owns that.
+void irq_try_demux_rx() {
+    if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE) ||
+        live_rx_ring == nullptr || udp_rx_socket_slot < 0) {
+        return;
+    }
+    const bool stress =
+        __atomic_load_n(&udp_stress_active, __ATOMIC_ACQUIRE);
+    const uint32_t rdh = mmio_read(reg_rdh0);
+    while (irq_rx_next != rdh) {
+        volatile LegacyRxDescriptor& descriptor = live_rx_ring[irq_rx_next];
+        const uint8_t status = descriptor.status;
+        const uint16_t length = descriptor.length;
+        if ((status & (descriptor_done | rx_descriptor_eop)) !=
+                (descriptor_done | rx_descriptor_eop) ||
+            descriptor.errors != 0 || descriptor.buffer_address == 0) {
+            break;
+        }
+        auto* frame = static_cast<uint8_t*>(
+            pmm::physical_to_virtual(descriptor.buffer_address));
+        if (valid_udp_request(frame, length) &&
+            net::udp_deliver(udp_rx_sockets, frame, length)) {
+            if (stress) {
+                __atomic_add_fetch(&info.stress.socket_delivered, 1,
+                                   __ATOMIC_RELAXED);
+            } else {
+                __atomic_add_fetch(&info.udp.socket_delivered, 1,
+                                   __ATOMIC_RELAXED);
+            }
+            __atomic_add_fetch(&info.irq_rx.delivered, 1, __ATOMIC_RELAXED);
+        }
+        irq_rx_next =
+            static_cast<uint32_t>((irq_rx_next + 1u) % descriptor_count);
+    }
+}
+
+namespace {
+
+// M24/M26/M29: when IRQ demux is active, deliver already ran in RXQ0 MSI-X;
+// BSP only drains. Otherwise (should not happen after M29) deliver here.
 bool demux_validated_udp_rx(const uint8_t* frame, uint16_t frame_length,
                             uint16_t payload_length, uint32_t& delivered,
                             uint32_t& received) {
-    if (udp_rx_socket_slot < 0 ||
-        !net::udp_deliver(udp_rx_sockets, frame, frame_length)) {
+    if (udp_rx_socket_slot < 0) {
         return false;
     }
-    ++delivered;
+    if (!__atomic_load_n(&socket_irq_rx_active, __ATOMIC_ACQUIRE)) {
+        if (!net::udp_deliver(udp_rx_sockets, frame, frame_length)) {
+            return false;
+        }
+        ++delivered;
+    }
     net::UdpQueuedDatagram queued{};
     if (!net::udp_recv(udp_rx_sockets, static_cast<size_t>(udp_rx_socket_slot),
                        queued) ||
@@ -675,10 +719,14 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     }
     info.udp.socket_delivered = 0;
     info.udp.socket_received = 0;
+    info.irq_rx = {};
+    info.irq_rx.stage = 1;
+    irq_rx_next = info.udp.rx_head;
 
     cpu::disable_interrupts();
     __atomic_store_n(&protocol_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&udp_active, true, __ATOMIC_RELEASE);
+    __atomic_store_n(&socket_irq_rx_active, true, __ATOMIC_RELEASE);
     log::line("[net] e1000e udp-ready");
     cpu::enable_interrupts();
     info.udp.stage = 2;
@@ -711,11 +759,20 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
 
     // M13 serial evidence stays frozen in info.udp; M14 uses info.stress;
     // M25 socket TX freezes info.socket_tx; M27 uses info.socket_tx_bp;
-    // M28 uses info.socket_tx_wait.
+    // M28 uses info.socket_tx_wait; M29 irq_rx covers M13+M14 delivers.
     if (!run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
                               first_tick)) {
         return false;
     }
+    const uint32_t irq_expected =
+        static_cast<uint32_t>(udp_test_datagrams + udp_stress_datagrams);
+    if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) !=
+        irq_expected) {
+        info.irq_rx.failure = 1;
+        return false;
+    }
+    info.irq_rx.stage = 2;
+
     if (!run_socket_tx_phase(tx_ring, tx_buffer, first_tick)) {
         return false;
     }
@@ -813,6 +870,7 @@ bool run_packet_phase() {
     }
 
     cpu::disable_interrupts();
+    __atomic_store_n(&socket_irq_rx_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_wait_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_bp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_active, false, __ATOMIC_RELEASE);

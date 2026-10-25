@@ -170,3 +170,7 @@ Milestone 27 / v0.28.0：`tx_ring_free`/`tx_ring_full`（leave-one-empty）；`t
 ## 16. M28 TX wait
 
 Milestone 28 / v0.29.0：`post_tx_wait` 在满环时 BSP `wait_for_interrupt` 重试直到 `try_post` 成功。M27 后再次 TCTL 冻结填满、同步 reject 记 `waits:1`、开 TCTL 后 `post_tx_wait` 提交 1 帧并 TDH==TDT 排空；串口 `waits:1 posted:1 drained:1 heads/tails:5/5`。不改写 M25/M27 串口；仍非 Event/`udp_send_wait` 通用阻塞 IO。
+
+## 17. M29 IRQ RX demux
+
+Milestone 29 / v0.30.0：M13/M14 的 `udp_deliver` 改在 RXQ0 MSI-X 中完成（按 `buffer_address` 扫 DD 描述符）；BSP 仅 `udp_recv` 排空。`irq_rx.delivered` 须为 266（10+256）；M24/M26 `deliver/recv` 串口合同不变。仍非通用生产 RX 线程化路径。

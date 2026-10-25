@@ -128,6 +128,9 @@ void interrupt_handler(void* opaque) {
                 __atomic_add_fetch(&detail::info.packet.rx_interrupts, 1,
                                    __ATOMIC_RELAXED);
             }
+            if (udp_phase || udp_stress_phase) {
+                detail::irq_try_demux_rx();
+            }
         } else if (result->expected_cause == detail::cause_txq0) {
             if (udp_stress_phase) {
                 __atomic_add_fetch(&detail::info.stress.tx_interrupts, 1,
@@ -214,6 +217,9 @@ volatile bool packet_active = false;
 volatile bool socket_tx_active = false;
 volatile bool socket_tx_bp_active = false;
 volatile bool socket_tx_wait_active = false;
+volatile bool socket_irq_rx_active = false;
+volatile LegacyRxDescriptor* live_rx_ring = nullptr;
+uint32_t irq_rx_next = 0;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
 volatile bool udp_stress_active = false;
@@ -287,6 +293,7 @@ bool prepare_packet_rings(volatile LegacyRxDescriptor*& rx_ring,
         pmm::physical_to_virtual(rx_ring_physical));
     tx_ring = static_cast<volatile LegacyTxDescriptor*>(
         pmm::physical_to_virtual(tx_ring_physical));
+    live_rx_ring = rx_ring;
 
     for (size_t index = 0; index < rx_buffer_count; ++index) {
         const uint64_t physical = allocate_packet_page();
@@ -581,6 +588,9 @@ bool run_msix_test() {
     __atomic_store_n(&detail::socket_tx_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_tx_bp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_tx_wait_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&detail::socket_irq_rx_active, false, __ATOMIC_RELEASE);
+    detail::live_rx_ring = nullptr;
+    detail::irq_rx_next = 0;
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
     detail::packet_free_before = 0;

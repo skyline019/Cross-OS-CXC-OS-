@@ -66,7 +66,7 @@ jobs:
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
-      - name: Assert serial PASS, M13–M28 markers, peer_ok=1
+      - name: Assert serial PASS, M13–M29 markers, peer_ok=1
         run: |
           set -euo pipefail
           test -f build/uefi/qemu-test/serial.log
@@ -83,6 +83,7 @@ jobs:
             build/uefi/qemu-test/serial.log
           grep -F 'UDP socket TX wait: waits: 1, posted: 1, drained: 1, heads/tails: 5/5' \
             build/uefi/qemu-test/serial.log
+          grep -F 'UDP IRQ RX demux deliver: 266' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log
