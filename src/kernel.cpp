@@ -86,6 +86,8 @@ uint64_t musl_opendir_elf_physical = 0;
 uint64_t musl_opendir_elf_size = 0;
 uint64_t musl_unlink_elf_physical = 0;
 uint64_t musl_unlink_elf_size = 0;
+uint64_t musl_blkfs_elf_physical = 0;
+uint64_t musl_blkfs_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1459,6 +1461,47 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("CXCFS_PASS");
 
+    user::MuslBlkfsProbeResult musl_blkfs{};
+    const auto* musl_blkfs_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + musl_blkfs_elf_physical);
+    if (musl_blkfs_elf_physical == 0 || musl_blkfs_elf_size == 0 ||
+        !user::run_musl_blkfs_probe(
+            musl_blkfs_image, static_cast<size_t>(musl_blkfs_elf_size),
+            musl_blkfs)) {
+        log::write("[debug] user musl blkfs probe stage: ");
+        log::decimal(musl_blkfs.stage);
+        log::write(", failure: ");
+        log::decimal(musl_blkfs.failure);
+        log::write(", exit: ");
+        log::decimal(musl_blkfs.exit_code);
+        log::write(", pass: ");
+        log::decimal(musl_blkfs.wrote_pass);
+        log::write('\n');
+        log::panic("M78 user musl blkfs probe failed");
+    }
+    // Persist userspace write across remount.
+    cxcfs::MountResult after_user = remount_check;
+    if (!cxcfs::remount(after_user)) {
+        log::panic("M78 remount after musl blkfs failed");
+    }
+    const int64_t check_fd = fs::open_path("disk/muslblk.txt", fs::o_rdonly, 0);
+    if (check_fd < 0) {
+        log::panic("M78 disk/muslblk.txt missing after remount");
+    }
+    char check_buf[8]{};
+    if (fs::read_fd(static_cast<uint32_t>(check_fd), check_buf, 4) != 4 ||
+        check_buf[0] != 'M' || check_buf[1] != 'B' || check_buf[2] != 'L' ||
+        check_buf[3] != 'K') {
+        log::panic("M78 disk/muslblk.txt content mismatch after remount");
+    }
+    (void)fs::close_fd(static_cast<uint32_t>(check_fd));
+
+    log::write("[ok] user musl blkfs: pass: ");
+    log::decimal(musl_blkfs.wrote_pass);
+    log::write(" remount: 1");
+    log::write('\n');
+    log::line("USER_MUSL_BLK_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1654,6 +1697,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBUNL.ELF")) {
         log::panic("cannot relocate ESP LIBUNL.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(musl_blkfs_elf_physical, musl_blkfs_elf_size,
+                                 "ESP LIBBLK.ELF")) {
+        log::panic("cannot relocate ESP LIBBLK.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1670,7 +1717,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.78.0 - CXCFS durable root (A2/M77)");
+    cxc::log::line("CXC/OS 0.79.0 - musl disk/ blkfs (A2/M78)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2109,6 +2156,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBUNL.ELF bytes: ");
     cxc::log::decimal(cxc::musl_unlink_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 musl_blkfs_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'B', u'L',  u'K', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, musl_blkfs_elf_path, 64 * 1024,
+        cxc::musl_blkfs_elf_physical, cxc::musl_blkfs_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBBLK.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBBLK.ELF bytes: ");
+    cxc::log::decimal(cxc::musl_blkfs_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

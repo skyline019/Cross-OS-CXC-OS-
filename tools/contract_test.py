@@ -129,6 +129,8 @@ VIRTIO_BLK_RW_PASS = "VIRTIO_BLK_RW_PASS"
 VIRTIO_BLK_RW_PROBE_SUCCESS = "virtio-blk-rw: pass: 1"
 CXCFS_PASS = "CXCFS_PASS"
 CXCFS_PROBE_SUCCESS = "cxcfs: pass: 1"
+USER_MUSL_BLK_PASS = "USER_MUSL_BLK_PASS"
+USER_MUSL_BLK_PROBE_SUCCESS = "user musl blkfs: pass: 1"
 
 
 @dataclass
@@ -564,6 +566,8 @@ class ContractRunner:
         assert CXCFS_PROBE_SUCCESS.encode() in serial
         assert b"persist: 1" in serial
         assert b"disk_user: 1" in serial
+        assert USER_MUSL_BLK_PASS.encode() in serial
+        assert USER_MUSL_BLK_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -572,7 +576,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75/M76 blk + M77 CXCFS"
+            "kernel PASS + net + M75–M78 blk/CXCFS/musl disk"
         )
 
     def negative_evidence(self, work: Path) -> str:

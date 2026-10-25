@@ -136,6 +136,7 @@ MuslPrintfProbeResult musl_printf_probe{};
 MuslFopenProbeResult musl_fopen_probe{};
 MuslOpendirProbeResult musl_opendir_probe{};
 MuslUnlinkProbeResult musl_unlink_probe{};
+MuslBlkfsProbeResult musl_blkfs_probe{};
 /* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
 constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1264,6 +1265,38 @@ bool run_musl_unlink_probe(const uint8_t* image, size_t image_size,
 
 const MuslUnlinkProbeResult& musl_unlink_probe_result() {
     return musl_unlink_probe;
+}
+
+bool run_musl_blkfs_probe(const uint8_t* image, size_t image_size,
+                          MuslBlkfsProbeResult& result) {
+    result = MuslBlkfsProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_musl_blk_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    musl_blkfs_probe = result;
+    return true;
+}
+
+const MuslBlkfsProbeResult& musl_blkfs_probe_result() {
+    return musl_blkfs_probe;
 }
 
 }  // namespace cxc::user

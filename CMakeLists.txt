@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.78.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.79.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1146,6 +1146,37 @@ else()
     )
 endif()
 
+set(CXC_USER_MUSL_BLKFS_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_musl_blkfs.elf")
+set(CXC_USER_MUSL_BLKFS_PREBUILT
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_blkfs.elf")
+if(CXC_MUSL_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_MUSL_BLKFS_ELF}"
+        COMMAND "${CXC_MUSL_GCC}"
+            -static -fno-pie -no-pie -fno-stack-protector
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
+            -o "${CXC_USER_MUSL_BLKFS_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_blkfs_probe.c"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_blkfs_probe.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
+        COMMENT "Building ESP LIBBLK.ELF via musl-gcc blkfs"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_MUSL_BLKFS_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_MUSL_BLKFS_PREBUILT}"
+            "${CXC_USER_MUSL_BLKFS_ELF}"
+        DEPENDS "${CXC_USER_MUSL_BLKFS_PREBUILT}"
+        COMMENT "Copying prebuilt musl blkfs ESP LIBBLK.ELF"
+        VERBATIM
+    )
+endif()
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -1178,6 +1209,7 @@ add_custom_command(
         --extra "LIBFOP  ELF" "${CXC_USER_MUSL_FOPEN_ELF}"
         --extra "LIBODR  ELF" "${CXC_USER_MUSL_OPENDIR_ELF}"
         --extra "LIBUNL  ELF" "${CXC_USER_MUSL_UNLINK_ELF}"
+        --extra "LIBBLK  ELF" "${CXC_USER_MUSL_BLKFS_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -1207,6 +1239,7 @@ add_custom_command(
         "${CXC_USER_MUSL_FOPEN_ELF}"
         "${CXC_USER_MUSL_OPENDIR_ELF}"
         "${CXC_USER_MUSL_UNLINK_ELF}"
+        "${CXC_USER_MUSL_BLKFS_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -1234,6 +1267,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_fopen_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_opendir_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_unlink_probe.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_blkfs_probe.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"
@@ -1241,6 +1275,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_fopen.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_opendir.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_unlink.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_blkfs.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/lseek_probe.c"
@@ -1275,7 +1310,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/crt0.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/syscall.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_subset/unistd.h"
-    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBUNL.ELF)"
+    COMMENT "Creating FAT32 UEFI ESP (+ user ELFs incl. LIBBLK.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")

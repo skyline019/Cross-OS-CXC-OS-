@@ -1,6 +1,6 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 77 / v0.78.0（2026-10；CXCFS 持久根；主靶 A2 / 次靶 B；产品目标见 [`product-goals.md`](product-goals.md)；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
+**基线**：Milestone 78 / v0.79.0（2026-10；musl disk/ 落盘；主靶 A2 / 次靶 B；产品目标见 [`product-goals.md`](product-goals.md)；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint 绿；host `ctest` + sanitizer；**M74 起边缘纳入范围**（[`test-contract.md`](test-contract.md) §8）。  
 **中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第七次中场已完成（M74）；下一正式中场约 **M84**；**大跨步 + 完整功能**（非薄烟测、非 PASS 后拆除）。  
 **一阶段主靶（重申）**：不依赖宿主机，在 CXC/OS 上跑通 **g++/gcc** 编译并运行任意（合理范围内）代码（A2）。
