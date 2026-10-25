@@ -1,4 +1,5 @@
 /* Freestanding mini-libc: Linux x86-64 numbers via int 0x80. */
+#include "mini_libc/errno.h"
 #include "mini_libc/unistd.h"
 
 enum {
@@ -24,20 +25,29 @@ static long syscall3(long number, long a, long b, long c) {
     return rax;
 }
 
+static long check_fd(long result) {
+    if (result < 0) {
+        errno = (int)(-result);
+        return -1;
+    }
+    return result;
+}
+
 ssize_t read(int fd, void* buf, size_t count) {
-    return (ssize_t)syscall3(SYS_READ, fd, (long)buf, (long)count);
+    return (ssize_t)check_fd(syscall3(SYS_READ, fd, (long)buf, (long)count));
 }
 
 ssize_t write(int fd, const void* buf, size_t count) {
-    return (ssize_t)syscall3(SYS_WRITE, fd, (long)buf, (long)count);
+    return (ssize_t)check_fd(
+        syscall3(SYS_WRITE, fd, (long)buf, (long)count));
 }
 
 int open(const char* path, int flags, mode_t mode) {
-    return (int)syscall3(SYS_OPEN, (long)path, flags, mode);
+    return (int)check_fd(syscall3(SYS_OPEN, (long)path, flags, mode));
 }
 
 int close(int fd) {
-    return (int)syscall3(SYS_CLOSE, fd, 0, 0);
+    return (int)check_fd(syscall3(SYS_CLOSE, fd, 0, 0));
 }
 
 void* brk(void* addr) {
@@ -50,7 +60,7 @@ void* sbrk(intptr_t increment) {
         return cur;
     }
     if (increment < 0) {
-        /* Thin slice: no shrink. */
+        errno = EINVAL;
         return (void*)(intptr_t)-1;
     }
     const uintptr_t want =
@@ -59,6 +69,7 @@ void* sbrk(intptr_t increment) {
         (want + (PAGE_SIZE - 1)) & ~(uintptr_t)(PAGE_SIZE - 1);
     void* const got = brk((void*)aligned);
     if ((uintptr_t)got < aligned) {
+        errno = ENOMEM;
         return (void*)(intptr_t)-1;
     }
     return cur;

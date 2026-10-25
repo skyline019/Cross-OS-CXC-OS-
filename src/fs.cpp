@@ -243,7 +243,7 @@ int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
         }
     } else {
         if (!creat) {
-            return -1;
+            return -2;  // -ENOENT (mini_libc errno)
         }
         if (!parent_dir_ready(name, name_len)) {
             return -1;

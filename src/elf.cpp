@@ -120,8 +120,13 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
         if (ph.type != pt_load) {
             continue;
         }
-        if (ph.memsz == 0 || ph.filesz > ph.memsz ||
-            ph.vaddr == 0 || ph.vaddr >= user_canonical_limit ||
+        // Linker PHDRS may emit an empty data PT_LOAD (vaddr 0, memsz 0)
+        // when .data/.bss are unused; skip rather than reject.
+        if (ph.memsz == 0) {
+            continue;
+        }
+        if (ph.filesz > ph.memsz || ph.vaddr == 0 ||
+            ph.vaddr >= user_canonical_limit ||
             ph.vaddr + ph.memsz > user_canonical_limit ||
             (ph.vaddr & (pmm::page_size - 1)) != 0 ||
             ph.offset > image_size ||
