@@ -28,6 +28,7 @@ constexpr uint64_t sys_exit = 60;
 constexpr uint64_t sys_exit_group = 231;
 constexpr uint64_t sys_uname = 63;
 constexpr uint64_t sys_arch_prctl = 158;
+constexpr uint64_t sys_rename = 82;
 constexpr uint64_t sys_mkdir = 83;
 constexpr uint64_t sys_unlink = 87;
 constexpr uint64_t sys_getppid = 110;
@@ -100,6 +101,7 @@ struct Session {
     uint32_t saw_user_musl_dir_pass;
     uint32_t saw_disk_exec_pass;
     uint32_t saw_disk_argv_pass;
+    uint32_t saw_disk_env_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t brk_grows;

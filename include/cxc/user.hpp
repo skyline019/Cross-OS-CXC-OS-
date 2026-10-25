@@ -599,23 +599,27 @@ struct DiskExecProbeResult {
     uint32_t exited;
     uint32_t wrote_pass;
     uint32_t argv_pass;
+    uint32_t env_pass;
     uint32_t elf_bytes;
     uint64_t exit_code;
 };
 
-// M80/M81: write payload ELF to disk/run.elf; stub execve's with argv.
+// M80–M82: write payload ELF to disk/run.elf; stub execve's with argv/envp.
 bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
                          const uint8_t* payload_image, size_t payload_size,
                          DiskExecProbeResult& result);
 const DiskExecProbeResult& disk_exec_probe_result();
 
 constexpr uint32_t max_exec_argc = 8;
+constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;
 
 // Replace the current user image (syscall execve). Updates `frame` for iret.
 // `argv` may be null/empty → seed argc=1 argv[0]="musl" (launch default).
+// `envp` may be null/empty → empty environment (NULL terminator only).
 bool exec_replace(const char* path, cpu::InterruptFrame* frame,
                   uint32_t& failure, const char* const* argv = nullptr,
-                  uint32_t argc = 0);
+                  uint32_t argc = 0, const char* const* envp = nullptr,
+                  uint32_t envc = 0);
 
 }  // namespace cxc::user

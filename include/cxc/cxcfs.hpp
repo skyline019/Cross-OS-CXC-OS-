@@ -43,6 +43,9 @@ bool remount(MountResult& result);
 int32_t find_inode(const char* name, size_t length);
 int64_t mkdir_name(const char* name, size_t length);
 int64_t unlink_name(const char* name, size_t length);
+// Rename within CXCFS; replaces existing regular dest. Dirs not renamed.
+int64_t rename_name(const char* old_name, size_t old_len, const char* new_name,
+                    size_t new_len);
 int32_t open_or_create(const char* name, size_t length, bool creat, bool trunc,
                        bool want_write, bool is_dir_open);
 int64_t read_inode(uint32_t inode, uint32_t offset, void* buffer, size_t length);

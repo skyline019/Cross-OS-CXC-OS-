@@ -41,12 +41,13 @@ constexpr uint64_t at_egid = 14;
 constexpr uint64_t at_secure = 23;
 constexpr uint64_t at_random = 25;
 
-// M67/M81: seed argc/argv/envp/auxv at the top of the user stack page so musl
-// `_start` (`mov %rsp,%rdi`) can read a Linux-shaped process image.
+// M67/M81/M82: seed argc/argv/envp/auxv at the top of the user stack page so
+// musl `_start` (`mov %rsp,%rdi`) can read a Linux-shaped process image.
 uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
                                uint64_t entry, uint64_t phdr_va,
                                uint64_t phent, uint64_t phnum,
-                               const char* const* argv, uint32_t argc) {
+                               const char* const* argv, uint32_t argc,
+                               const char* const* envp, uint32_t envc) {
     memset(page, 0, pmm::page_size);
     uint8_t* cursor = page + pmm::page_size;
 
@@ -65,6 +66,12 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
     if (argc > max_exec_argc) {
         argc = max_exec_argc;
     }
+    if (envp == nullptr) {
+        envc = 0;
+    }
+    if (envc > max_exec_envc) {
+        envc = max_exec_envc;
+    }
 
     uint64_t arg_vas[max_exec_argc]{};
     for (uint32_t index = 0; index < argc; ++index) {
@@ -74,6 +81,16 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
             ++length;
         }
         arg_vas[index] = push_bytes(text, length + 1);
+    }
+
+    uint64_t env_vas[max_exec_envc]{};
+    for (uint32_t index = 0; index < envc; ++index) {
+        const char* text = envp[index] != nullptr ? envp[index] : "";
+        size_t length = 0;
+        while (length < max_exec_arg_bytes - 1 && text[length] != '\0') {
+            ++length;
+        }
+        env_vas[index] = push_bytes(text, length + 1);
     }
 
     uint8_t random[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
@@ -88,7 +105,7 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
         memcpy(cursor, &value, 8);
     };
 
-    // Highest: auxv pairs (AT_NULL last), then envp NULL, argv, argc.
+    // Highest: auxv pairs (AT_NULL last), then envp, argv, argc.
     push_u64(0);
     push_u64(at_null);
     push_u64(random_va);
@@ -117,6 +134,9 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
     push_u64(at_phdr);
 
     push_u64(0);  // envp terminator
+    for (uint32_t index = envc; index > 0; --index) {
+        push_u64(env_vas[index - 1]);
+    }
     push_u64(0);  // argv terminator
     for (uint32_t index = argc; index > 0; --index) {
         push_u64(arg_vas[index - 1]);
@@ -217,7 +237,7 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
         vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
         stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum, nullptr, 0);
+        loaded.at_phent, loaded.at_phnum, nullptr, 0, nullptr, 0);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
     syscall::set_user_root(user_root);
 
@@ -1363,7 +1383,8 @@ const MuslBlkdirProbeResult& musl_blkdir_probe_result() {
 }
 
 bool exec_replace(const char* path, cpu::InterruptFrame* frame,
-                  uint32_t& failure, const char* const* argv, uint32_t argc) {
+                  uint32_t& failure, const char* const* argv, uint32_t argc,
+                  const char* const* envp, uint32_t envc) {
     failure = 0;
     if (path == nullptr || frame == nullptr) {
         failure = 1;
@@ -1429,7 +1450,7 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
         vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
         stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum, argv, argc);
+        loaded.at_phent, loaded.at_phnum, argv, argc, envp, envc);
 
     if (!vmm::destroy_user_address_space(old_root)) {
         (void)vmm::destroy_user_address_space(new_root);
@@ -1512,11 +1533,12 @@ bool run_disk_exec_probe(const uint8_t* stub_image, size_t stub_size,
     result.exit_code = syscall::session().exit_code;
     result.wrote_pass = syscall::session().saw_disk_exec_pass;
     result.argv_pass = syscall::session().saw_disk_argv_pass;
+    result.env_pass = syscall::session().saw_disk_env_pass;
     result.elf_bytes = static_cast<uint32_t>(payload_size);
     result.stage = 4;
 
     if (result.exit_code != 0 || result.wrote_pass == 0 ||
-        result.argv_pass == 0) {
+        result.argv_pass == 0 || result.env_pass == 0) {
         syscall::clear_session();
         result.failure = 8;
         return false;

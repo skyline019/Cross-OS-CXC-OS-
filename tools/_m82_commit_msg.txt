@@ -1,0 +1,5 @@
+feat: M82 execve envp + durable rename (v0.83.0)
+
+Forward execve envp into the replacement process image; add rename(2) for
+ramfs and CXCFS with missing-source and cross-backend edges. Keeps
+DISK_EXEC/ARGV contracts; lasting A2-shaped env and atomic replace path.

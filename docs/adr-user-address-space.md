@@ -144,7 +144,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M79** | `disk/` mkdir/opendir；64×16KiB；4MiB 盘 | 串口 `USER_MUSL_DIR_PASS`；ESP `LIBDIR.ELF` |
 | **M80** | `execve` + 从 `disk/run.elf` 换映像 | 串口 `DISK_EXEC_PASS`；ESP `EXSTB`/`DEXEC` |
 | **M81** | `execve` argv + 32 KiB CXCFS + 更大盘上 ELF | 串口 `DISK_ARGV_PASS`；argc/argv 边缘 |
-| **M82+** | 更多 POSIX → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M82** | `execve` envp + `rename`（持久根） | 串口 `DISK_ENV_PASS`/`DISK_RENAME_PASS` |
+| **M83+** | 进程模型（fork/wait…）→ 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

@@ -1605,10 +1605,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(disk_exec.exit_code);
         log::write(", argv: ");
         log::decimal(disk_exec.argv_pass);
+        log::write(", env: ");
+        log::decimal(disk_exec.env_pass);
         log::write(", elf_bytes: ");
         log::decimal(disk_exec.elf_bytes);
         log::write('\n');
-        log::panic("M81 disk execve argv probe failed");
+        log::panic("M82 disk execve envp probe failed");
     }
     log::write("[ok] disk-exec: pass: ");
     log::decimal(disk_exec.wrote_pass);
@@ -1624,6 +1626,61 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(disk_exec.elf_bytes);
     log::write('\n');
     log::line("DISK_ARGV_PASS");
+    log::write("[ok] disk-env: pass: ");
+    log::decimal(disk_exec.env_pass);
+    log::write(" envc: 2\n");
+    log::line("DISK_ENV_PASS");
+
+    // M82: durable rename (toolchain atomic replace shape).
+    constexpr char rename_payload[] = "RENAME_OK";
+    const int64_t ren_fd = fs::open_path(
+        "disk/ren.tmp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+    if (ren_fd < 0) {
+        log::panic("M82 disk/ren.tmp create failed");
+    }
+    if (fs::write_fd(static_cast<uint32_t>(ren_fd), rename_payload,
+                     sizeof(rename_payload) - 1) !=
+        static_cast<int64_t>(sizeof(rename_payload) - 1)) {
+        log::panic("M82 disk/ren.tmp write failed");
+    }
+    if (fs::close_fd(static_cast<uint32_t>(ren_fd)) != 0) {
+        log::panic("M82 disk/ren.tmp close failed");
+    }
+    if (fs::rename_path("disk/ren.tmp", "disk/ren.ok") != 0) {
+        log::panic("M82 rename disk/ren.tmp -> disk/ren.ok failed");
+    }
+    // Edge: missing source rejected.
+    if (fs::rename_path("disk/ren.missing", "disk/ren.x") != -2) {
+        log::panic("M82 rename missing-source edge failed");
+    }
+    // Edge: cross-backend rejected.
+    if (fs::rename_path("disk/ren.ok", "ram-ren.ok") != -1) {
+        log::panic("M82 rename cross-backend edge failed");
+    }
+    cxcfs::MountResult after_ren{};
+    if (!cxcfs::remount(after_ren)) {
+        log::panic("M82 remount after rename failed");
+    }
+    if (fs::open_path("disk/ren.tmp", fs::o_rdonly, 0) >= 0) {
+        log::panic("M82 old name still visible after rename");
+    }
+    const int64_t ok_fd = fs::open_path("disk/ren.ok", fs::o_rdonly, 0);
+    if (ok_fd < 0) {
+        log::panic("M82 disk/ren.ok missing after remount");
+    }
+    char ren_buf[16]{};
+    if (fs::read_fd(static_cast<uint32_t>(ok_fd), ren_buf, sizeof(ren_buf)) !=
+        static_cast<int64_t>(sizeof(rename_payload) - 1)) {
+        log::panic("M82 disk/ren.ok read size failed");
+    }
+    (void)fs::close_fd(static_cast<uint32_t>(ok_fd));
+    for (size_t i = 0; i < sizeof(rename_payload) - 1; ++i) {
+        if (ren_buf[i] != rename_payload[i]) {
+            log::panic("M82 disk/ren.ok content mismatch");
+        }
+    }
+    log::write("[ok] disk-rename: pass: 1 edge_miss: 1 edge_xdev: 1\n");
+    log::line("DISK_RENAME_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -1852,7 +1909,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.82.0 - disk/ execve argv (A2/M81)");
+    cxc::log::line("CXC/OS 0.83.0 - disk/ execve envp + rename (A2/M82)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

@@ -434,6 +434,53 @@ int64_t unlink_name(const char* name, size_t length) {
     return 0;
 }
 
+int64_t rename_name(const char* old_name, size_t old_len, const char* new_name,
+                    size_t new_len) {
+    if (!mounted || old_name == nullptr || new_name == nullptr || old_len == 0 ||
+        new_len == 0 || old_len >= fs::max_path || new_len >= fs::max_path) {
+        return -1;
+    }
+    for (size_t index = 0; index < old_len; ++index) {
+        if (old_name[index] == '/') {
+            return -1;
+        }
+    }
+    for (size_t index = 0; index < new_len; ++index) {
+        if (new_name[index] == '/') {
+            return -1;
+        }
+    }
+    const int32_t old_inode = find_inode(old_name, old_len);
+    if (old_inode < 0) {
+        return -2;
+    }
+    if (inodes[old_inode].is_dir) {
+        return -1;
+    }
+    if (old_len == new_len && names_match(old_name, new_name, new_len)) {
+        return 0;
+    }
+    const int32_t dest = find_inode(new_name, new_len);
+    if (dest >= 0) {
+        if (inodes[dest].is_dir) {
+            return -1;
+        }
+        if (dest == old_inode) {
+            return 0;
+        }
+        if (unlink_name(new_name, new_len) != 0) {
+            return -1;
+        }
+    }
+    memcpy(inodes[old_inode].name, new_name, new_len);
+    inodes[old_inode].name[new_len] = '\0';
+    inodes[old_inode].dirty = true;
+    if (!flush_inode_meta(static_cast<uint32_t>(old_inode))) {
+        return -1;
+    }
+    return 0;
+}
+
 int32_t open_or_create(const char* name, size_t length, bool creat, bool trunc,
                        bool want_write, bool is_dir_open) {
     if (!mounted || name == nullptr || length == 0 || length >= fs::max_path) {

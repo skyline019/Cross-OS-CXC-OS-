@@ -292,6 +292,77 @@ int64_t unlink_path(const char* path) {
     return 0;
 }
 
+int64_t rename_path(const char* old_path, const char* new_path) {
+    const char* old_name = nullptr;
+    size_t old_len = 0;
+    const char* new_name = nullptr;
+    size_t new_len = 0;
+    if (!normalize(old_path, old_name, old_len) ||
+        !normalize(new_path, new_name, new_len)) {
+        return -1;
+    }
+    const char* old_rest = nullptr;
+    size_t old_rest_len = 0;
+    const char* new_rest = nullptr;
+    size_t new_rest_len = 0;
+    const bool old_disk = disk_rest(old_name, old_len, old_rest, old_rest_len);
+    const bool new_disk = disk_rest(new_name, new_len, new_rest, new_rest_len);
+    if (old_disk != new_disk) {
+        return -1;  // no cross-backend rename
+    }
+    if (old_disk) {
+        for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
+            if (fds[fd].used && fds[fd].backend == backend_disk) {
+                const int32_t inode = cxcfs::find_inode(old_rest, old_rest_len);
+                if (inode >= 0 &&
+                    fds[fd].inode == static_cast<uint32_t>(inode)) {
+                    return -1;
+                }
+            }
+        }
+        const int64_t rc =
+            cxcfs::rename_name(old_rest, old_rest_len, new_rest, new_rest_len);
+        if (rc == 0) {
+            ++current_stats.renames;
+        }
+        return rc;
+    }
+    const int32_t old_inode = find_inode(old_name, old_len);
+    if (old_inode < 0) {
+        return -2;
+    }
+    if (inodes[old_inode].is_dir) {
+        return -1;
+    }
+    for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
+        if (fds[fd].used && fds[fd].backend == backend_ram &&
+            fds[fd].inode == static_cast<uint32_t>(old_inode)) {
+            return -1;
+        }
+    }
+    if (old_len == new_len && names_match(old_name, new_name, new_len)) {
+        ++current_stats.renames;
+        return 0;
+    }
+    const int32_t dest = find_inode(new_name, new_len);
+    if (dest >= 0) {
+        if (inodes[dest].is_dir) {
+            return -1;
+        }
+        if (dest != old_inode) {
+            char dest_path[max_path]{};
+            memcpy(dest_path, new_name, new_len);
+            if (unlink_path(dest_path) != 0) {
+                return -1;
+            }
+        }
+    }
+    memcpy(inodes[old_inode].name, new_name, new_len);
+    inodes[old_inode].name[new_len] = '\0';
+    ++current_stats.renames;
+    return 0;
+}
+
 int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
     const char* name = nullptr;
     size_t name_len = 0;
