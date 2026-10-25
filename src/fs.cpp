@@ -233,9 +233,11 @@ int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
     int32_t inode = find_inode(name, name_len);
     if (inode >= 0) {
         if (inodes[inode].is_dir) {
-            return -1;
-        }
-        if (trunc && want_write) {
+            // Directory open: read-only (M50 getdents).
+            if (want_write || creat || trunc) {
+                return -1;
+            }
+        } else if (trunc && want_write) {
             inodes[inode].size = 0;
             memset(inodes[inode].data, 0, max_file_bytes);
         }
@@ -378,6 +380,115 @@ int64_t stat_path(const char* path, StatBuf& out) {
     fill_stat(static_cast<uint32_t>(inode), out);
     ++current_stats.stats;
     return 0;
+}
+
+int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length) {
+    if (buffer == nullptr || length == 0 || length > max_getdents ||
+        fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
+        return -1;
+    }
+    const Inode& dir = inodes[fds[fd].inode];
+    if (!dir.is_dir || fds[fd].readable == 0) {
+        return -1;
+    }
+
+    const char* dir_name = dir.name;
+    const size_t dir_len = name_length(dir_name);
+
+    // Cookie layout: 0=".", 1="..", 2+ = child index among matching inodes.
+    uint32_t cookie = fds[fd].offset;
+    size_t written = 0;
+    auto* out = static_cast<uint8_t*>(buffer);
+
+    auto emit = [&](uint64_t ino, uint8_t dtype, const char* name,
+                    size_t name_len, uint32_t next_cookie) -> bool {
+        const size_t base = 19 + name_len + 1;  // header + name + NUL
+        const size_t reclen = (base + 7) & ~size_t{7};
+        if (written + reclen > length) {
+            return false;
+        }
+        // linux_dirent64 packed fields.
+        *reinterpret_cast<uint64_t*>(out + written) = ino;
+        *reinterpret_cast<int64_t*>(out + written + 8) =
+            static_cast<int64_t>(next_cookie);
+        *reinterpret_cast<uint16_t*>(out + written + 16) =
+            static_cast<uint16_t>(reclen);
+        out[written + 18] = dtype;
+        memcpy(out + written + 19, name, name_len);
+        out[written + 19 + name_len] = '\0';
+        for (size_t pad = 19 + name_len + 1; pad < reclen; ++pad) {
+            out[written + pad] = 0;
+        }
+        written += reclen;
+        return true;
+    };
+
+    if (cookie == 0) {
+        if (!emit(fds[fd].inode + 1, dt_dir, ".", 1, 1)) {
+            return written == 0 ? -1 : static_cast<int64_t>(written);
+        }
+        cookie = 1;
+    }
+    if (cookie == 1) {
+        if (!emit(1, dt_dir, "..", 2, 2)) {
+            fds[fd].offset = 1;
+            ++current_stats.getdents;
+            return static_cast<int64_t>(written);
+        }
+        cookie = 2;
+    }
+
+    uint32_t child_ord = 0;
+    for (uint32_t index = 0; index < max_files; ++index) {
+        if (!inodes[index].used) {
+            continue;
+        }
+        const char* child = inodes[index].name;
+        const size_t child_len = name_length(child);
+        if (child_len <= dir_len + 1) {
+            continue;
+        }
+        bool prefix = true;
+        for (size_t i = 0; i < dir_len; ++i) {
+            if (child[i] != dir_name[i]) {
+                prefix = false;
+                break;
+            }
+        }
+        if (!prefix || child[dir_len] != '/') {
+            continue;
+        }
+        bool nested = false;
+        for (size_t i = dir_len + 1; i < child_len; ++i) {
+            if (child[i] == '/') {
+                nested = true;
+                break;
+            }
+        }
+        if (nested) {
+            continue;
+        }
+
+        const uint32_t this_cookie = 2 + child_ord;
+        ++child_ord;
+        if (this_cookie < cookie) {
+            continue;
+        }
+
+        const char* base_name = child + dir_len + 1;
+        const size_t base_len = child_len - (dir_len + 1);
+        const uint8_t dtype = inodes[index].is_dir ? dt_dir : dt_reg;
+        if (!emit(index + 1, dtype, base_name, base_len, this_cookie + 1)) {
+            fds[fd].offset = this_cookie;
+            ++current_stats.getdents;
+            return static_cast<int64_t>(written);
+        }
+        cookie = this_cookie + 1;
+    }
+
+    fds[fd].offset = cookie;
+    ++current_stats.getdents;
+    return static_cast<int64_t>(written);
 }
 
 }  // namespace cxc::fs

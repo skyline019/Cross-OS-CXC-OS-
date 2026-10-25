@@ -19,6 +19,7 @@ constexpr uint64_t sys_munmap = 11;
 constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_exit = 60;
 constexpr uint64_t sys_mkdir = 83;
+constexpr uint64_t sys_getdents64 = 217;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
@@ -54,6 +55,7 @@ struct Session {
     uint32_t saw_user_lseek_pass;
     uint32_t saw_user_fstat_pass;
     uint32_t saw_user_stat_pass;
+    uint32_t saw_user_getdents_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
@@ -62,6 +64,7 @@ struct Session {
     uint32_t lseek_calls;
     uint32_t fstat_calls;
     uint32_t stat_calls;
+    uint32_t getdents_calls;
     uint32_t active;
 };
 

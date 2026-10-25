@@ -21,9 +21,15 @@ constexpr uint32_t s_ifmt = 0170000;
 constexpr uint32_t s_ifreg = 0100000;
 constexpr uint32_t s_ifdir = 0040000;
 
+// linux_dirent64.d_type values.
+constexpr uint8_t dt_unknown = 0;
+constexpr uint8_t dt_dir = 4;
+constexpr uint8_t dt_reg = 8;
+
 constexpr size_t max_path = 48;
 constexpr size_t max_file_bytes = 4096;
 constexpr size_t max_files = 16;
+constexpr size_t max_getdents = 4096;
 constexpr uint32_t fd_stdout = 1;
 constexpr uint32_t fd_table_begin = 3;
 constexpr uint32_t fd_table_end = 16;
@@ -59,6 +65,7 @@ struct Stats {
     uint32_t lseeks;
     uint32_t fstats;
     uint32_t stats;
+    uint32_t getdents;
     uint32_t mkdirs;
     uint32_t files;
     uint32_t dirs;
@@ -78,5 +85,7 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length);
 int64_t lseek_fd(uint32_t fd, int64_t offset, int whence);
 int64_t fstat_fd(uint32_t fd, StatBuf& out);
 int64_t stat_path(const char* path, StatBuf& out);
+// Directory fd only. Writes packed linux_dirent64 records; returns bytes.
+int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length);
 
 }  // namespace cxc::fs

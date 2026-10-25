@@ -41,6 +41,8 @@ uint64_t fstat_elf_physical = 0;
 uint64_t fstat_elf_size = 0;
 uint64_t stat_elf_physical = 0;
 uint64_t stat_elf_size = 0;
+uint64_t getdents_elf_physical = 0;
+uint64_t getdents_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -880,6 +882,28 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(path_stat.wrote_pass);
     log::write('\n');
 
+    user::GetdentsProbeResult dents{};
+    const auto* dents_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + getdents_elf_physical);
+    if (getdents_elf_physical == 0 || getdents_elf_size == 0 ||
+        !user::run_getdents_probe(dents_image,
+                                  static_cast<size_t>(getdents_elf_size),
+                                  dents)) {
+        log::write("[debug] user getdents probe stage: ");
+        log::decimal(dents.stage);
+        log::write(", failure: ");
+        log::decimal(dents.failure);
+        log::write(", getdents: ");
+        log::decimal(dents.getdents_calls);
+        log::write('\n');
+        log::panic("M50 user getdents probe failed");
+    }
+    log::write("[ok] user getdents: calls: ");
+    log::decimal(dents.getdents_calls);
+    log::write(", pass: ");
+    log::decimal(dents.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -991,6 +1015,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP STAT.ELF")) {
         log::panic("cannot relocate ESP STAT.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(getdents_elf_physical, getdents_elf_size,
+                                 "ESP DENTS.ELF")) {
+        log::panic("cannot relocate ESP DENTS.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1007,7 +1035,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.50.0 - path stat libc-gap (A2/M49)");
+    cxc::log::line("CXC/OS 0.51.0 - getdents64 libc-gap (A2/M50)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1110,6 +1138,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP STAT.ELF bytes: ");
     cxc::log::decimal(cxc::stat_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 getdents_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'D',  u'E', u'N', u'T', u'S',  u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, getdents_elf_path, 64 * 1024,
+        cxc::getdents_elf_physical, cxc::getdents_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP DENTS.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP DENTS.ELF bytes: ");
+    cxc::log::decimal(cxc::getdents_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

@@ -10,7 +10,7 @@
 | 第四次 | M35–M44 | [`midpoint-assessment-4.md`](midpoint-assessment-4.md) |
 | 第五次（计划） | M45–M54 | `midpoint-assessment-5.md`（届时新建） |
 
-当前基线：**M49 / v0.50.0**（path stat libc-gap）。下一正式中场目标：**M54**。
+当前基线：**M50 / v0.51.0**（getdents64 libc-gap）。下一正式中场目标：**M54**。
 
 ## 中场窗口必做
 

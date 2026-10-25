@@ -29,6 +29,7 @@ constexpr char expected_cross_elf_pass[] = "USER_CROSS_ELF_PASS\n";
 constexpr char expected_lseek_pass[] = "USER_LSEEK_PASS\n";
 constexpr char expected_fstat_pass[] = "USER_FSTAT_PASS\n";
 constexpr char expected_stat_pass[] = "USER_STAT_PASS\n";
+constexpr char expected_getdents_pass[] = "USER_GETDENTS_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -46,8 +47,10 @@ uint64_t read_cr3() {
 }
 
 bool user_pages_ok(uint64_t address, size_t length, bool need_write) {
+    // Cap at getdents max (largest user buffer we copy); callers still apply
+    // their own tighter limits (e.g. max_io for read/write).
     if (length == 0 || address == 0 || address >= user_canonical_limit ||
-        length > max_io || address + length > user_canonical_limit) {
+        length > fs::max_getdents || address + length > user_canonical_limit) {
         return false;
     }
     const uint64_t root = read_cr3();
@@ -210,6 +213,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_stat_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_getdents_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_getdents_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_getdents_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_getdents_pass = 1;
         }
     }
 }
@@ -484,6 +500,26 @@ cpu::InterruptFrame* handle_stat(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_getdents64(cpu::InterruptFrame* frame) {
+    const uint64_t fd = frame->rdi;
+    const uint64_t buf = frame->rsi;
+    const uint64_t len = frame->rdx;
+    if (len == 0 || len > fs::max_getdents ||
+        !user_pages_ok(buf, static_cast<size_t>(len), true)) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    const int64_t rc = fs::getdents64_fd(
+        static_cast<uint32_t>(fd),
+        reinterpret_cast<void*>(static_cast<uintptr_t>(buf)),
+        static_cast<size_t>(len));
+    if (rc >= 0) {
+        ++current.getdents_calls;
+    }
+    frame->rax = static_cast<uint64_t>(rc);
+    return frame;
+}
+
 cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -558,6 +594,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_brk(frame);
     case sys_mkdir:
         return handle_mkdir(frame);
+    case sys_getdents64:
+        return handle_getdents64(frame);
     case sys_exit:
         return handle_exit(frame);
     default:

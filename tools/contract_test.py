@@ -81,6 +81,8 @@ USER_FSTAT_PASS = "USER_FSTAT_PASS"
 USER_FSTAT_PROBE_SUCCESS = "user fstat: calls: 1, pass: 1"
 USER_STAT_PASS = "USER_STAT_PASS"
 USER_STAT_PROBE_SUCCESS = "user stat: calls: 2, pass: 1"
+USER_GETDENTS_PASS = "USER_GETDENTS_PASS"
+USER_GETDENTS_PROBE_SUCCESS = "user getdents: calls: 2, pass: 1"
 
 
 @dataclass
@@ -462,6 +464,8 @@ class ContractRunner:
         assert USER_FSTAT_PROBE_SUCCESS.encode() in serial
         assert USER_STAT_PASS.encode() in serial
         assert USER_STAT_PROBE_SUCCESS.encode() in serial
+        assert USER_GETDENTS_PASS.encode() in serial
+        assert USER_GETDENTS_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -470,7 +474,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M36–M49 path stat"
+            "kernel PASS + net contracts + M36–M50 getdents64"
         )
 
     def negative_evidence(self, work: Path) -> str:
