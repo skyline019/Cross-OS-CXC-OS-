@@ -81,6 +81,7 @@ struct UdpResult {
 
 // M14: post-M13 long-stability / wrap pressure. Does not replace the M13
 // ten-datagram contract; counters stay separate so serial evidence stays 10/10.
+// M26: stress also demuxes into the M13-bound socket (independent of udp.*).
 struct UdpStressResult {
     uint64_t rx_interrupts;
     uint64_t tx_interrupts;
@@ -101,6 +102,8 @@ struct UdpStressResult {
     uint32_t datagram;
     uint32_t stage;
     uint32_t failure;
+    uint32_t socket_delivered;
+    uint32_t socket_received;
 };
 
 // M25: post-stress socket→e1000e TX submit. Independent of M13 Echo / M14
@@ -131,8 +134,8 @@ struct TestInfo {
 };
 
 // Runs ICS/IVAR/PBA, M11 raw, M12 ARP/ICMP, M13 ten UDP Echo + ring wrap,
-// M14 256-datagram UDP ring stress, then M25 socket TX submit. run_qemu.py
-// checks M11–M14 responses. Device DMA/IRQ state and packet pages are cleaned.
+// M14/M26 256-datagram stress (+ socket demux), then M25 socket TX submit.
+// run_qemu.py checks M11–M14 responses. DMA/IRQ state and packet pages cleaned.
 bool run_msix_test();
 const TestInfo& test_info();
 

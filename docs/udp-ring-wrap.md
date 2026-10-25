@@ -158,3 +158,7 @@ Milestone 24 / v0.25.0 在 M13 UDP selftest 中 bind `nic_udp_port`，每帧校�
 ## 13. M25 socket TX submit
 
 Milestone 25 / v0.26.0 在 M14 stress 冻结后：bind `0x4D25`，`udp_send` 写入 TX DMA 页，经既有 `submit_tx_frame` 提交；`UdpSocketTxResult` 独立计数 frames/IRQs/bytes/head/tail。不改写 M13 Echo 热路径与 peer 合同；仍无通用生产 TX 背压或非 selftest RX 路径。
+
+## 14. M26 stress RX demux
+
+Milestone 26 / v0.27.0 将 M24 的 `udp_deliver`+`udp_recv` 延伸到 M14 stress：复用 `nic_udp_port` 绑定与文件内 `demux_validated_udp_rx`；`UdpStressResult.socket_delivered/received` 须为 256/256。M13 demux 10/10、Echo/peer、M25 TX 串口保持不变；仍非通用 IRQ RX 路径。

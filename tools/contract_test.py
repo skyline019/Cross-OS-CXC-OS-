@@ -35,6 +35,9 @@ STRESS_SUCCESS = (
     "UDP stress request/reply: 256/256, payload bytes: 3736, "
     "frame RX/TX bytes: 16410/16410, IRQs: 256/256"
 )
+STRESS_SOCKET_DEMUX_SUCCESS = (
+    "UDP stress socket demux deliver/recv: 256/256"
+)
 
 
 @dataclass
@@ -386,6 +389,7 @@ class ContractRunner:
         assert UDP_SUCCESS.encode() in serial and RING_SUCCESS.encode() in serial
         assert SOCKET_DEMUX_SUCCESS.encode() in serial
         assert STRESS_SUCCESS.encode() in serial
+        assert STRESS_SOCKET_DEMUX_SUCCESS.encode() in serial
         assert SOCKET_TX_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
@@ -395,7 +399,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + M13 peer + M14 stress + M24 demux + M25 socket TX"
+            "kernel PASS + M13 peer + M14/M26 stress demux + M24/M25 socket"
         )
 
     def negative_evidence(self, work: Path) -> str:

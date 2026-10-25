@@ -18,6 +18,27 @@ namespace {
 net::UdpSocketTable udp_rx_sockets{};
 int udp_rx_socket_slot = -1;
 
+// M24/M26: deliver a validated Echo request into the bound nic_udp_port socket
+// and immediately drain it. Callers own delivered/received counters.
+bool demux_validated_udp_rx(const uint8_t* frame, uint16_t frame_length,
+                            uint16_t payload_length, uint32_t& delivered,
+                            uint32_t& received) {
+    if (udp_rx_socket_slot < 0 ||
+        !net::udp_deliver(udp_rx_sockets, frame, frame_length)) {
+        return false;
+    }
+    ++delivered;
+    net::UdpQueuedDatagram queued{};
+    if (!net::udp_recv(udp_rx_sockets, static_cast<size_t>(udp_rx_socket_slot),
+                       queued) ||
+        queued.dst_port != net::nic_udp_port ||
+        queued.payload_length != payload_length) {
+        return false;
+    }
+    ++received;
+    return true;
+}
+
 bool run_protocol_phase(volatile LegacyRxDescriptor* rx_ring,
                         uint8_t** rx_buffers,
                         volatile LegacyTxDescriptor* tx_ring,
@@ -195,6 +216,14 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             if (expected_head == 0) {
                 ++info.stress.rx_head_wraps;
             }
+            // M26: demux on the stress path; counters stay on info.stress.
+            if (!demux_validated_udp_rx(
+                    rx_buffers[rx_index], rx_length,
+                    static_cast<uint16_t>(payload_length),
+                    info.stress.socket_delivered, info.stress.socket_received)) {
+                info.stress.failure = 9;
+                break;
+            }
         } else {
             ++info.udp.requests;
             info.udp.payload_bytes += payload_length;
@@ -203,24 +232,13 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                 ++info.udp.rx_head_wraps;
             }
             // M24: demux validated request into the bound socket, then drain.
-            if (udp_rx_socket_slot < 0 ||
-                !net::udp_deliver(udp_rx_sockets, rx_buffers[rx_index],
-                                  rx_length)) {
+            if (!demux_validated_udp_rx(
+                    rx_buffers[rx_index], rx_length,
+                    static_cast<uint16_t>(payload_length),
+                    info.udp.socket_delivered, info.udp.socket_received)) {
                 info.udp.failure = 9;
                 break;
             }
-            ++info.udp.socket_delivered;
-            net::UdpQueuedDatagram queued{};
-            if (!net::udp_recv(udp_rx_sockets,
-                               static_cast<size_t>(udp_rx_socket_slot),
-                               queued) ||
-                queued.dst_port != net::nic_udp_port ||
-                queued.payload_length !=
-                    static_cast<uint16_t>(payload_length)) {
-                info.udp.failure = 9;
-                break;
-            }
-            ++info.udp.socket_received;
         }
 
         const uint16_t reply_length =
@@ -329,6 +347,8 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
                           volatile LegacyTxDescriptor* tx_ring,
                           uint8_t* tx_buffer, uint64_t first_tick) {
     info.stress.stage = 1;
+    info.stress.socket_delivered = 0;
+    info.stress.socket_received = 0;
     cpu::disable_interrupts();
     __atomic_store_n(&udp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&udp_stress_active, true, __ATOMIC_RELEASE);
@@ -352,6 +372,8 @@ bool run_udp_stress_phase(volatile LegacyRxDescriptor* rx_ring,
     if (info.stress.requests != udp_stress_datagrams ||
         info.stress.replies != udp_stress_datagrams ||
         info.stress.recycled_buffers != udp_stress_datagrams ||
+        info.stress.socket_delivered != udp_stress_datagrams ||
+        info.stress.socket_received != udp_stress_datagrams ||
         info.stress.rx_head != expected_head ||
         info.stress.tx_head != expected_head ||
         info.stress.rx_tail != expected_rx_tail ||

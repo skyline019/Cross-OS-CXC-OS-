@@ -480,6 +480,11 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(", recycled RX buffers: ");
     log::decimal(msix_info.stress.recycled_buffers);
     log::write('\n');
+    log::write("[ok] e1000e UDP stress socket demux deliver/recv: ");
+    log::decimal(msix_info.stress.socket_delivered);
+    log::write('/');
+    log::decimal(msix_info.stress.socket_received);
+    log::write('\n');
     log::write("[ok] e1000e UDP socket TX submit: ");
     log::decimal(msix_info.socket_tx.frames);
     log::write('/');
@@ -609,7 +614,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.26.0 - e1000e UDP socket TX submit");
+    cxc::log::line("CXC/OS 0.27.0 - e1000e UDP stress socket RX demux");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
