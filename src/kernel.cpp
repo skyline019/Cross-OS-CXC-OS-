@@ -51,6 +51,8 @@ uint64_t libc_fs_elf_physical = 0;
 uint64_t libc_fs_elf_size = 0;
 uint64_t libc_sbrk_elf_physical = 0;
 uint64_t libc_sbrk_elf_size = 0;
+uint64_t libc_malloc_elf_physical = 0;
+uint64_t libc_malloc_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -999,6 +1001,28 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(libc_sbrk.wrote_pass);
     log::write('\n');
 
+    user::LibcMallocProbeResult libc_malloc{};
+    const auto* libc_malloc_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + libc_malloc_elf_physical);
+    if (libc_malloc_elf_physical == 0 || libc_malloc_elf_size == 0 ||
+        !user::run_libc_malloc_probe(
+            libc_malloc_image, static_cast<size_t>(libc_malloc_elf_size),
+            libc_malloc)) {
+        log::write("[debug] user libc malloc probe stage: ");
+        log::decimal(libc_malloc.stage);
+        log::write(", failure: ");
+        log::decimal(libc_malloc.failure);
+        log::write(", grow: ");
+        log::decimal(libc_malloc.grows);
+        log::write('\n');
+        log::panic("M56 user libc malloc probe failed");
+    }
+    log::write("[ok] user libc malloc: grow: ");
+    log::decimal(libc_malloc.grows);
+    log::write(", pass: ");
+    log::decimal(libc_malloc.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1130,6 +1154,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBBRK.ELF")) {
         log::panic("cannot relocate ESP LIBBRK.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(libc_malloc_elf_physical, libc_malloc_elf_size,
+                                 "ESP LIBMAL.ELF")) {
+        log::panic("cannot relocate ESP LIBMAL.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1146,7 +1174,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.56.0 - mini-libc brk/sbrk (A2/M55)");
+    cxc::log::line("CXC/OS 0.57.0 - mini-libc malloc (A2/M56)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1329,6 +1357,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBBRK.ELF bytes: ");
     cxc::log::decimal(cxc::libc_sbrk_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 libc_malloc_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'M', u'A',  u'L', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, libc_malloc_elf_path, 64 * 1024,
+        cxc::libc_malloc_elf_physical, cxc::libc_malloc_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBMAL.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBMAL.ELF bytes: ");
+    cxc::log::decimal(cxc::libc_malloc_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

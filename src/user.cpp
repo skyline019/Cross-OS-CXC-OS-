@@ -39,6 +39,7 @@ ArchPrctlProbeResult arch_prctl_probe{};
 LibcProbeResult libc_probe{};
 LibcFsProbeResult libc_fs_probe{};
 LibcSbrkProbeResult libc_sbrk_probe{};
+LibcMallocProbeResult libc_malloc_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -647,6 +648,41 @@ bool run_libc_sbrk_probe(const uint8_t* image, size_t image_size,
 
 const LibcSbrkProbeResult& libc_sbrk_probe_result() {
     return libc_sbrk_probe;
+}
+
+bool run_libc_malloc_probe(const uint8_t* image, size_t image_size,
+                           LibcMallocProbeResult& result) {
+    result = LibcMallocProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_libc_malloc_pass;
+    result.grows = syscall::session().brk_grows;
+    result.pages = syscall::session().brk_pages;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0 || result.grows < 2 ||
+        result.pages < 2) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    libc_malloc_probe = result;
+    return true;
+}
+
+const LibcMallocProbeResult& libc_malloc_probe_result() {
+    return libc_malloc_probe;
 }
 
 }  // namespace cxc::user
