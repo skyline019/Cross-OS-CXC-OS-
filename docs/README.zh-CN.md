@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 27 / v0.28.0：e1000e UDP socket TX backpressure**（M13–M26 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 28 / v0.29.0：e1000e UDP socket TX wait**（M13–M27 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -54,6 +54,7 @@ CXC_OS_SELF_TEST_PASS
 | UDP socket TX (M25) | stress 后 `udp_send`→e1000e TX；独立 `socket_tx` 计数；不改 Echo/peer |
 | UDP stress demux (M26) | M14 256 帧 `deliver`+`recv`；独立 `stress.socket_*` 256/256 |
 | UDP TX backpressure (M27) | leave-one-empty 满环拒绝；`posted:7 rejects:1 drained:1`；不改 M25 串口 |
+| UDP TX wait (M28) | 满环后 `post_tx_wait`；`waits:1 posted:1 drained:1`；不改 M25/M27 串口 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -227,10 +228,10 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - IRQ 注册固定容量，不支持 shared IRQ 或中断线程化；
 - MSI/MSI-X 设备测试仍使用 BSP 物理目标，APIC ID 不超过 255；
 - e1000e 仅限 queue 0 legacy ring、七页 FIFO 回收和测试所需 MAC/link/RCTL/TCTL 初始化；没有完整 reset/PHY 管理、多队列、offload 或生产级异常恢复；
-- M20–M26：datagram/socket/recv_wait/send + M13/M14 RX demux + stress 后 socket TX 提交；无 ephemeral 端口；协议仍为固定地址 ARP/ICMP/UDP Echo；
+- M20–M28：datagram/socket/recv_wait/send + M13/M14 RX demux + socket TX 提交/背压/wait；无 ephemeral 端口；协议仍为固定地址 ARP/ICMP/UDP Echo；
 - 包测试使用 EtherType `0x88B5`、ARP/ICMP/UDP 和 QEMU 本机 dgram peer，未实测物理网卡；
 - EDU DMA 不含 AHCI/block IO、IOMMU 或用户缓冲区 pinning；
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-下一阶段可接通用/IRQ RX 路径、TX 背压或存储；仍必须保持实际中断、外部数据完整性和 M13–M26 回归证据。
+下一阶段可接通用/IRQ RX 路径、Event 版 TX wait，或存储；仍必须保持实际中断、外部数据完整性和 M13–M28 回归证据。

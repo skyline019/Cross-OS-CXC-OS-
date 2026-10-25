@@ -11,7 +11,7 @@
 
 | Item | Value |
 |---|---|
-| Baseline | Milestone 27 / v0.28.0 |
+| Baseline | Milestone 28 / v0.29.0 |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
 | Evidence | QEMU + OVMF, EDU + e1000e, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
@@ -21,7 +21,7 @@
 - **Boot / memory** — UEFI, MBR+FAT32 ESP, inline-extent PMM, heap, NX stacks, runtime TLB shootdown
 - **SMP** — INIT-SIPI-SIPI, per-CPU run queues, migration, Event/Mutex, stack reclaim
 - **Devices** — PCI, IOAPIC, UART IRQ, EDU MSI+DMA, e1000e MSI-X multi-vector
-- **Network** — ARP/ICMP/UDP Echo, 256-frame ring stress (+ demux), socket `recv_wait`/`send`, M25 TX submit, M27 TX back-pressure
+- **Network** — ARP/ICMP/UDP Echo, 256-frame ring stress (+ demux), socket `recv_wait`/`send`, M25–M28 TX submit/back-pressure/wait
 - **Contracts** — positive path + negative controls (no device / bad checksum / no peer)
 
 ## Quick start (Linux)

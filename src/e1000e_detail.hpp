@@ -117,6 +117,7 @@ extern volatile bool udp_active;
 extern volatile bool udp_stress_active;
 extern volatile bool socket_tx_active;
 extern volatile bool socket_tx_bp_active;
+extern volatile bool socket_tx_wait_active;
 extern uint64_t packet_pages[descriptor_count + 2];
 extern size_t packet_page_count;
 extern uint64_t packet_free_before;
@@ -129,6 +130,7 @@ enum class NetworkPhase {
     UdpStress,
     UdpSocketTx,
     UdpSocketTxBp,
+    UdpSocketTxWait,
 };
 
 uint32_t mmio_read(uint32_t offset);
@@ -166,6 +168,10 @@ bool network_vector_errors();
 // Does not wait for DD. Returns false when full or arguments are invalid.
 bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                        uint16_t length);
+// M28: retry try_post until a free slot appears (BSP wait_for_interrupt) or
+// timeout. Sets blocked=1 if at least one failed attempt preceded success.
+bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,
+                  uint64_t first_tick, uint32_t& blocked);
 bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                      uint16_t length, uint64_t first_tick, NetworkPhase phase,
                      uint64_t expected_interrupts);

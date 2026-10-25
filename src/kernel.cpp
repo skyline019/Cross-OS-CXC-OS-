@@ -339,6 +339,14 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(msix_info.socket_tx_bp.posted);
         log::write('/');
         log::decimal(msix_info.socket_tx_bp.rejects);
+        log::write("; socket_tx_wait stage: ");
+        log::decimal(msix_info.socket_tx_wait.stage);
+        log::write(", failure: ");
+        log::decimal(msix_info.socket_tx_wait.failure);
+        log::write(", waits/posted: ");
+        log::decimal(msix_info.socket_tx_wait.waits);
+        log::write('/');
+        log::decimal(msix_info.socket_tx_wait.posted);
         log::write('\n');
         for (const e1000e::VectorResult& result : msix_info.vectors) {
             log::write("[debug] entry ");
@@ -528,6 +536,15 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('/');
     log::decimal(msix_info.socket_tx_bp.tx_tail);
     log::write('\n');
+    log::write("[ok] e1000e UDP socket TX wait: waits: ");
+    log::decimal(msix_info.socket_tx_wait.waits);
+    log::write(", posted: ");
+    log::decimal(msix_info.socket_tx_wait.posted);
+    log::write(", drained: 1, heads/tails: ");
+    log::decimal(msix_info.socket_tx_wait.tx_head);
+    log::write('/');
+    log::decimal(msix_info.socket_tx_wait.tx_tail);
+    log::write('\n');
 
     runtime_test::run();
 
@@ -646,7 +663,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.28.0 - e1000e UDP socket TX backpressure");
+    cxc::log::line("CXC/OS 0.29.0 - e1000e UDP socket TX wait");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

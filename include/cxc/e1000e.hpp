@@ -130,6 +130,18 @@ struct UdpSocketTxBpResult {
     uint32_t failure;
 };
 
+// M28: after M27 freeze, refill leave-one-empty full, then post_tx_wait blocks
+// until TDH frees a slot (BSP poll; TX IRQs may coalesce). Peer ignores frames.
+struct UdpSocketTxWaitResult {
+    uint64_t tx_interrupts;
+    uint32_t waits;
+    uint32_t posted;
+    uint32_t tx_head;
+    uint32_t tx_tail;
+    uint32_t stage;
+    uint32_t failure;
+};
+
 struct TestInfo {
     uint64_t csr_physical;
     uint64_t msix_physical;
@@ -144,9 +156,10 @@ struct TestInfo {
     UdpStressResult stress;
     UdpSocketTxResult socket_tx;
     UdpSocketTxBpResult socket_tx_bp;
+    UdpSocketTxWaitResult socket_tx_wait;
 };
 
-// Runs ICS/IVAR/PBA, M11–M14/M26, M25 socket TX, then M27 TX back-pressure.
+// Runs ICS/IVAR/PBA, M11–M14/M26, M25–M28 socket TX path.
 // run_qemu.py checks M11–M14 responses. DMA/IRQ state and packet pages cleaned.
 bool run_msix_test();
 const TestInfo& test_info();

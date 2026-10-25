@@ -113,6 +113,8 @@ void interrupt_handler(void* opaque) {
             __atomic_load_n(&detail::socket_tx_active, __ATOMIC_ACQUIRE);
         const bool socket_tx_bp_phase =
             __atomic_load_n(&detail::socket_tx_bp_active, __ATOMIC_ACQUIRE);
+        const bool socket_tx_wait_phase =
+            __atomic_load_n(&detail::socket_tx_wait_active, __ATOMIC_ACQUIRE);
         if (result->expected_cause == detail::cause_rxq0) {
             if (udp_stress_phase) {
                 __atomic_add_fetch(&detail::info.stress.rx_interrupts, 1,
@@ -132,6 +134,9 @@ void interrupt_handler(void* opaque) {
                                    __ATOMIC_RELAXED);
             } else if (udp_phase) {
                 __atomic_add_fetch(&detail::info.udp.tx_interrupts, 1, __ATOMIC_RELAXED);
+            } else if (socket_tx_wait_phase) {
+                __atomic_add_fetch(&detail::info.socket_tx_wait.tx_interrupts, 1,
+                                   __ATOMIC_RELAXED);
             } else if (socket_tx_bp_phase) {
                 __atomic_add_fetch(&detail::info.socket_tx_bp.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
@@ -208,6 +213,7 @@ TestInfo info;
 volatile bool packet_active = false;
 volatile bool socket_tx_active = false;
 volatile bool socket_tx_bp_active = false;
+volatile bool socket_tx_wait_active = false;
 volatile bool protocol_active = false;
 volatile bool udp_active = false;
 volatile bool udp_stress_active = false;
@@ -464,6 +470,9 @@ uint64_t network_tx_interrupts(NetworkPhase phase) {
     if (phase == NetworkPhase::UdpSocketTxBp) {
         return __atomic_load_n(&info.socket_tx_bp.tx_interrupts, __ATOMIC_ACQUIRE);
     }
+    if (phase == NetworkPhase::UdpSocketTxWait) {
+        return __atomic_load_n(&info.socket_tx_wait.tx_interrupts, __ATOMIC_ACQUIRE);
+    }
     return phase == NetworkPhase::Protocol
                ? __atomic_load_n(&info.protocol.tx_interrupts, __ATOMIC_ACQUIRE)
                : __atomic_load_n(&info.packet.tx_interrupts, __ATOMIC_ACQUIRE);
@@ -530,6 +539,22 @@ bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
     return true;
 }
 
+bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,
+                  uint64_t first_tick, uint32_t& blocked) {
+    blocked = 0;
+    while (true) {
+        const uint32_t tdt = mmio_read(reg_tdt0);
+        if (try_post_tx_frame(tx_ring, tdt, length)) {
+            return true;
+        }
+        blocked = 1;
+        if (scheduler::ticks() - first_tick > wait_ticks) {
+            return false;
+        }
+        cpu::wait_for_interrupt();
+    }
+}
+
 bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                      uint16_t length, uint64_t first_tick, NetworkPhase phase,
                      uint64_t expected_interrupts) {
@@ -555,6 +580,7 @@ bool run_msix_test() {
     __atomic_store_n(&detail::udp_stress_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_tx_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&detail::socket_tx_bp_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&detail::socket_tx_wait_active, false, __ATOMIC_RELEASE);
     detail::packet_allocation_attempted = false;
     detail::packet_page_count = 0;
     detail::packet_free_before = 0;

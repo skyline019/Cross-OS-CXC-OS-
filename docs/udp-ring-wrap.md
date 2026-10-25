@@ -166,3 +166,7 @@ Milestone 26 / v0.27.0 将 M24 的 `udp_deliver`+`udp_recv` 延伸到 M14 stress
 ## 15. M27 TX back-pressure
 
 Milestone 27 / v0.28.0：`tx_ring_free`/`tx_ring_full`（leave-one-empty）；`try_post_tx_frame` 满环拒绝推进 TDT。M25 后短暂关闭 TCTL 填满 7 槽、第 8 次 reject、再开 TCTL 按 TDH==TDT 排空（TX IRQ 可能合并，不以 IRQ 数=7 为合同）；串口 `posted:7 rejects:1 drained:1 heads/tails:5/5`。不改写 M25 `1/1` 串口。
+
+## 16. M28 TX wait
+
+Milestone 28 / v0.29.0：`post_tx_wait` 在满环时 BSP `wait_for_interrupt` 重试直到 `try_post` 成功。M27 后再次 TCTL 冻结填满、同步 reject 记 `waits:1`、开 TCTL 后 `post_tx_wait` 提交 1 帧并 TDH==TDT 排空；串口 `waits:1 posted:1 drained:1 heads/tails:5/5`。不改写 M25/M27 串口；仍非 Event/`udp_send_wait` 通用阻塞 IO。

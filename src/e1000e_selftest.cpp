@@ -555,6 +555,104 @@ bool run_socket_tx_bp_phase(volatile LegacyTxDescriptor* tx_ring,
     return true;
 }
 
+// M28: after M27 freezes socket_tx_bp.*, refill leave-one-empty full under
+// TCTL freeze, enable TX, then post_tx_wait must block once and succeed.
+bool run_socket_tx_wait_phase(volatile LegacyTxDescriptor* tx_ring,
+                              uint8_t* tx_buffer, uint64_t first_tick) {
+    constexpr uint8_t wait_payload[] = {0x4D, 0x32, 0x38};
+    constexpr size_t max_outstanding = descriptor_count - 1;
+
+    info.socket_tx_wait.stage = 1;
+    cpu::disable_interrupts();
+    __atomic_store_n(&socket_tx_bp_active, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&socket_tx_wait_active, true, __ATOMIC_RELEASE);
+    cpu::enable_interrupts();
+
+    int tx_slot = -1;
+    for (size_t index = 0; index < net::udp_socket_slots; ++index) {
+        if (udp_rx_sockets.sockets[index].used &&
+            udp_rx_sockets.sockets[index].local_port == 0x4D25) {
+            tx_slot = static_cast<int>(index);
+            break;
+        }
+    }
+    if (tx_slot < 0) {
+        info.socket_tx_wait.failure = 1;
+        return false;
+    }
+
+    const net::UdpWireEndpoints endpoints{info.packet.mac, peer_mac, nic_ipv4,
+                                          peer_ipv4};
+    const uint16_t frame_length = net::udp_send(
+        udp_rx_sockets, static_cast<size_t>(tx_slot), tx_buffer, 2048, endpoints,
+        net::peer_udp_port, 0x4D28, wait_payload,
+        static_cast<uint16_t>(sizeof(wait_payload)));
+    if (frame_length < net::udp_min_frame_bytes) {
+        info.socket_tx_wait.failure = 2;
+        return false;
+    }
+
+    uint32_t tdh = mmio_read(reg_tdh0);
+    uint32_t tdt = mmio_read(reg_tdt0);
+    if (tdh != tdt || net::tx_ring_free(tdh, tdt) != max_outstanding) {
+        info.socket_tx_wait.failure = 3;
+        return false;
+    }
+
+    const uint32_t tctl_saved = mmio_read(reg_tctl);
+    mmio_write(reg_tctl, tctl_saved & ~tctl_enable);
+
+    info.socket_tx_wait.stage = 2;
+    for (size_t step = 0; step < max_outstanding; ++step) {
+        tdt = mmio_read(reg_tdt0);
+        if (!try_post_tx_frame(tx_ring, tdt, frame_length)) {
+            mmio_write(reg_tctl, tctl_saved);
+            info.socket_tx_wait.failure = 4;
+            return false;
+        }
+    }
+    tdh = mmio_read(reg_tdh0);
+    tdt = mmio_read(reg_tdt0);
+    // Freeze-path reject proves the wait path starts from a full ring (TCTL
+    // may free a slot before the first post_tx_wait attempt after unfreeze).
+    if (!net::tx_ring_full(tdh, tdt) ||
+        try_post_tx_frame(tx_ring, tdt, frame_length)) {
+        mmio_write(reg_tctl, tctl_saved);
+        info.socket_tx_wait.failure = 5;
+        return false;
+    }
+    info.socket_tx_wait.waits = 1;
+
+    info.socket_tx_wait.stage = 3;
+    mmio_write(reg_tctl, tctl_saved);
+    uint32_t blocked = 0;
+    if (!post_tx_wait(tx_ring, frame_length, first_tick, blocked)) {
+        info.socket_tx_wait.failure = 6;
+        return false;
+    }
+    (void)blocked;
+    info.socket_tx_wait.posted = 1;
+
+    while (mmio_read(reg_tdh0) != mmio_read(reg_tdt0)) {
+        if (scheduler::ticks() - first_tick > wait_ticks) {
+            info.socket_tx_wait.failure = 7;
+            return false;
+        }
+        cpu::wait_for_interrupt();
+    }
+    info.socket_tx_wait.tx_head = mmio_read(reg_tdh0);
+    info.socket_tx_wait.tx_tail = mmio_read(reg_tdt0);
+    if (info.socket_tx_wait.tx_head != info.socket_tx_wait.tx_tail ||
+        network_tx_interrupts(NetworkPhase::UdpSocketTxWait) == 0 ||
+        network_vector_errors()) {
+        info.socket_tx_wait.failure = 8;
+        return false;
+    }
+
+    info.socket_tx_wait.stage = 4;
+    return true;
+}
+
 bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
                    volatile LegacyTxDescriptor* tx_ring, uint8_t* tx_buffer,
                    uint64_t first_tick) {
@@ -612,7 +710,8 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     info.udp.stage = 3;
 
     // M13 serial evidence stays frozen in info.udp; M14 uses info.stress;
-    // M25 socket TX freezes info.socket_tx; M27 uses info.socket_tx_bp.
+    // M25 socket TX freezes info.socket_tx; M27 uses info.socket_tx_bp;
+    // M28 uses info.socket_tx_wait.
     if (!run_udp_stress_phase(rx_ring, rx_buffers, tx_ring, tx_buffer,
                               first_tick)) {
         return false;
@@ -620,7 +719,10 @@ bool run_udp_phase(volatile LegacyRxDescriptor* rx_ring, uint8_t** rx_buffers,
     if (!run_socket_tx_phase(tx_ring, tx_buffer, first_tick)) {
         return false;
     }
-    return run_socket_tx_bp_phase(tx_ring, tx_buffer, first_tick);
+    if (!run_socket_tx_bp_phase(tx_ring, tx_buffer, first_tick)) {
+        return false;
+    }
+    return run_socket_tx_wait_phase(tx_ring, tx_buffer, first_tick);
 }
 
 }  // namespace
@@ -711,6 +813,7 @@ bool run_packet_phase() {
     }
 
     cpu::disable_interrupts();
+    __atomic_store_n(&socket_tx_wait_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_bp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&udp_stress_active, false, __ATOMIC_RELEASE);
