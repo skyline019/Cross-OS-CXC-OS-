@@ -190,3 +190,7 @@ Milestone 32 / v0.33.0：TXQ0 在 M28 相位 `signal(tx_space_gate)`；`post_tx_
 ## 21. M33 generic RX submit
 
 Milestone 33 / v0.34.0：抽出 `try_submit_rx_dd`（DD→`udp_deliver`，不知 Echo/TestInfo）；`irq_try_demux_rx` 仍负责 Echo/recycle/pacing。独立串口 `UDP IRQ RX submit: 266`；`deliver/echo/recycle: 266/266/266` 与 M13 Echo 串口不变。仍非生产 RX 线程化路径。
+
+## 22. M34 third midfield
+
+Milestone 34 / v0.35.0：阶段 0（M25–M33 网络 IRQ/阻塞 IO 收束）正式停手；见 [`midpoint-assessment-3.md`](midpoint-assessment-3.md)。网络串口合同冻结；下一主线为 A1 用户态（非本文件范围）。

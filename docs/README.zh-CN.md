@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 33 / v0.34.0：e1000e generic RX submit**（M13–M32 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 34 / v0.35.0：第三次中场；下一主线 A1 用户态**（M13–M33 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -60,6 +60,7 @@ CXC_OS_SELF_TEST_PASS
 | UDP IRQ RDT recycle (M31) | IRQ 内 FIFO 页回收+RDT；BSP 仅确认；`deliver/echo/recycle:266/266/266` |
 | Event TX wait (M32) | TXQ0→Event sticky；`post_tx_wait` 经 `event_try_consume`；`events:1`；Event 合同改 delta |
 | Generic RX submit (M33) | `try_submit_rx_dd`（无 Echo/TestInfo）；独立 `submitted:266`；不改 M13/`266/266/266` |
+| Third midfield (M34) | [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；阶段 0 收束；主线改 A1 |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -67,6 +68,7 @@ CXC_OS_SELF_TEST_PASS
 
 - [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
 - [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步契约；
+- [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
 - [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24、债项刷新与下一步）；
 - [`docs/midpoint-assessment.md`](docs/midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13 基线）；
 - [`docs/from-zero-pitfalls.md`](docs/from-zero-pitfalls.md)：从零重建与持续踩坑记录；
@@ -234,10 +236,10 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - IRQ 注册固定容量，不支持 shared IRQ 或中断线程化；
 - MSI/MSI-X 设备测试仍使用 BSP 物理目标，APIC ID 不超过 255；
 - e1000e 仅限 queue 0 legacy ring、七页 FIFO 回收和测试所需 MAC/link/RCTL/TCTL 初始化；没有完整 reset/PHY 管理、多队列、offload 或生产级异常恢复；
-- M20–M33：datagram/socket/recv_wait/send + M13/M14 IRQ demux/Echo/RDT recycle + generic RX submit + socket TX 提交/背压/Event wait；无 ephemeral 端口；协议仍为固定地址 ARP/ICMP/UDP Echo；
+- M20–M34：datagram/socket/recv_wait/send + M13/M14 IRQ demux/Echo/RDT recycle + generic RX submit + socket TX 提交/背压/Event wait；第三次中场裁定下一主线为 A1 用户态；无 ephemeral 端口；协议仍为固定地址 ARP/ICMP/UDP Echo；
 - 包测试使用 EtherType `0x88B5`、ARP/ICMP/UDP 和 QEMU 本机 dgram peer，未实测物理网卡；
 - EDU DMA 不含 AHCI/block IO、IOMMU 或用户缓冲区 pinning；
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 尚无用户态、系统调用、ELF、按需分页和 GUI。
 
-下一阶段为第三次中场（M34）；仍必须保持实际中断、外部数据完整性和 M13–M33 回归证据。
+下一阶段为 A1 用户地址空间 ADR → ELF → syscall v0；仍必须保持实际中断、外部数据完整性和 M13–M34 回归证据。

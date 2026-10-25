@@ -6,9 +6,10 @@
 |---|---|---|
 | 第一次 | M0–M13 | [`midpoint-assessment.md`](midpoint-assessment.md) |
 | 第二次 | M14–M24 | [`midpoint-assessment-2.md`](midpoint-assessment-2.md) |
-| 第三次（计划） | M25–M34 | `midpoint-assessment-3.md`（届时新建） |
+| 第三次 | M25–M34 | [`midpoint-assessment-3.md`](midpoint-assessment-3.md) |
+| 第四次（计划） | M35–M44 | `midpoint-assessment-4.md`（届时新建） |
 
-当前基线：**M33 / v0.34.0**（第三次中场周期内）。下一正式中场目标：**M34**。
+当前基线：**M34 / v0.35.0**（第三次中场已完成；主线切换至 A1 用户态）。下一正式中场目标：**M44**。
 
 ## 中场窗口必做
 

@@ -1,6 +1,6 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 33 / v0.34.0（2026-10；下文差距表仍以 M31 收口叙述；M32–M33 为阶段 0 网络收束）。  
+**基线**：Milestone 34 / v0.35.0（2026-10；阶段 0 收束完成，见 [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；下文差距表仍以 M31 收口叙述）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint（正确/失败/掉电/事务/循环/高压/混沌）绿；host `ctest` + ASan/UBSan/TSan（Linux CI）。  
 **中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第三次正式中场目标 **M34**。
 
@@ -180,7 +180,7 @@ B 的工期以 **人年** 计；不能用 M32–M40 的薄切片假装到达。
 |---|---|
 | 与生产级 OS 差多远？ | **子系统级鸿沟**（用户态/存储/通用网络/驱动模型）；机制层已超过多数入门内核。 |
 | 能否很快「编译器机上可用」？ | **不能很快到 A2**；**可以规划到 A1**（交叉编译 + 用户 ELF），前提是把主线从网络薄切片转向地址空间/ELF/syscall。 |
-| 下一刀切哪？ | 完成 M32–M34 网络/阻塞 IO 收束与第三次中场后，**切换主线到用户地址空间 ADR → ELF → syscall v0**；存储以「只读加载用户程序」为最小切口进入。 |
+| 下一刀切哪？ | **已裁定（M34）**：切换主线到用户地址空间 ADR → ELF → syscall v0；存储以「只读加载用户程序」为最小切口进入。 |
 | 成功标准怎么变？ | 里程碑数字次要；**双合同**：内核自检不回退 + 新增 `USER_PROGRAM_PASS`（或等价）才算朝 A1 前进。 |
 
 ---
@@ -190,4 +190,4 @@ B 的工期以 **人年** 计；不能用 M32–M40 的薄切片假装到达。
 - 第一次/第二次中场：[`midpoint-assessment.md`](midpoint-assessment.md)、[`midpoint-assessment-2.md`](midpoint-assessment-2.md)  
 - 节奏：[`midfield-cadence.md`](midfield-cadence.md)  
 - 能力与边界清单：[`README.zh-CN.md`](README.zh-CN.md)  
-- 第三次中场（M25–M34）应引用本文的 A1/B 分叉，并在 `midpoint-assessment-3.md` 中裁定是否正式切换主线。
+- 第三次中场（M25–M34）：[`midpoint-assessment-3.md`](midpoint-assessment-3.md) 已裁定正式切换主线到 A1。
