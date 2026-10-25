@@ -28,6 +28,7 @@ constexpr char expected_ext_elf_pass[] = "USER_EXT_ELF_PASS\n";
 constexpr char expected_cross_elf_pass[] = "USER_CROSS_ELF_PASS\n";
 constexpr char expected_lseek_pass[] = "USER_LSEEK_PASS\n";
 constexpr char expected_fstat_pass[] = "USER_FSTAT_PASS\n";
+constexpr char expected_stat_pass[] = "USER_STAT_PASS\n";
 constexpr int64_t mmap_error = -1;
 
 void finish_to_kernel(cpu::InterruptFrame* frame) {
@@ -196,6 +197,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
         }
         if (match) {
             current.saw_user_fstat_pass = 1;
+        }
+    }
+    if (length == sizeof(expected_stat_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_stat_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_stat_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_stat_pass = 1;
         }
     }
 }
@@ -449,6 +463,27 @@ cpu::InterruptFrame* handle_fstat(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_stat(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    const uint64_t user_buf = frame->rsi;
+    if (!copy_user_path(frame->rdi, path, sizeof(path)) ||
+        !user_pages_ok(user_buf, sizeof(fs::StatBuf), true)) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    fs::StatBuf local{};
+    const int64_t rc = fs::stat_path(path, local);
+    if (rc != 0) {
+        frame->rax = static_cast<uint64_t>(rc);
+        return frame;
+    }
+    memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
+           sizeof(local));
+    ++current.stat_calls;
+    frame->rax = 0;
+    return frame;
+}
+
 cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -509,6 +544,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_open(frame);
     case sys_close:
         return handle_close(frame);
+    case sys_stat:
+        return handle_stat(frame);
     case sys_fstat:
         return handle_fstat(frame);
     case sys_lseek:

@@ -111,7 +111,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M46** | host gcc 产出 `CROSS.ELF`（无 libc） | 串口 `USER_CROSS_ELF_PASS` + `user cross ELF: …` |
 | **M47** | `lseek`（SEEK_SET/CUR/END） | 串口 `USER_LSEEK_PASS` + `user lseek: …` |
 | **M48** | `fstat`（Linux x86-64 `struct stat`） | 串口 `USER_FSTAT_PASS` + `user fstat: …` |
-| **M49+** | `stat`/`getdents`/`arch_prctl` 等 | 见第四次中场 §6 |
+| **M49** | 路径 `stat`（文件+目录） | 串口 `USER_STAT_PASS` + `user stat: …` |
+| **M50+** | `getdents`/`arch_prctl` 等 | 见第四次中场 §6 |
 
 ## 6. 参考
 

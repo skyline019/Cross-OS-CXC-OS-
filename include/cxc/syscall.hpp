@@ -11,6 +11,7 @@ constexpr uint64_t sys_read = 0;
 constexpr uint64_t sys_write = 1;
 constexpr uint64_t sys_open = 2;
 constexpr uint64_t sys_close = 3;
+constexpr uint64_t sys_stat = 4;
 constexpr uint64_t sys_fstat = 5;
 constexpr uint64_t sys_lseek = 8;
 constexpr uint64_t sys_mmap = 9;
@@ -52,6 +53,7 @@ struct Session {
     uint32_t saw_user_cross_elf_pass;
     uint32_t saw_user_lseek_pass;
     uint32_t saw_user_fstat_pass;
+    uint32_t saw_user_stat_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;
@@ -59,6 +61,7 @@ struct Session {
     uint32_t munmap_calls;
     uint32_t lseek_calls;
     uint32_t fstat_calls;
+    uint32_t stat_calls;
     uint32_t active;
 };
 

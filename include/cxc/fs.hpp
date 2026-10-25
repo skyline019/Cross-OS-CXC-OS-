@@ -58,6 +58,7 @@ struct Stats {
     uint32_t writes;
     uint32_t lseeks;
     uint32_t fstats;
+    uint32_t stats;
     uint32_t mkdirs;
     uint32_t files;
     uint32_t dirs;
@@ -76,5 +77,6 @@ int64_t read_fd(uint32_t fd, void* buffer, size_t length);
 int64_t write_fd(uint32_t fd, const void* buffer, size_t length);
 int64_t lseek_fd(uint32_t fd, int64_t offset, int whence);
 int64_t fstat_fd(uint32_t fd, StatBuf& out);
+int64_t stat_path(const char* path, StatBuf& out);
 
 }  // namespace cxc::fs

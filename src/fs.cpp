@@ -154,6 +154,23 @@ bool parent_dir_ready(const char* name, size_t length) {
     return inode >= 0 && inodes[inode].is_dir;
 }
 
+void fill_stat(uint32_t inode_index, StatBuf& out) {
+    const Inode& node = inodes[inode_index];
+    out = StatBuf{};
+    out.st_dev = 1;
+    out.st_ino = inode_index + 1;
+    out.st_nlink = 1;
+    if (node.is_dir) {
+        out.st_mode = s_ifdir | 0755;
+        out.st_size = 0;
+    } else {
+        out.st_mode = s_ifreg | 0644;
+        out.st_size = static_cast<int64_t>(node.size);
+    }
+    out.st_blksize = static_cast<int64_t>(max_file_bytes);
+    out.st_blocks = (out.st_size + 511) / 512;
+}
+
 }  // namespace
 
 void reset() {
@@ -343,22 +360,23 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
-    const Inode& node = inodes[fds[fd].inode];
-    out = StatBuf{};
-    out.st_dev = 1;
-    out.st_ino = fds[fd].inode + 1;
-    out.st_nlink = 1;
-    if (node.is_dir) {
-        out.st_mode = s_ifdir | 0755;
-        out.st_size = 0;
-    } else {
-        out.st_mode = s_ifreg | 0644;
-        out.st_size = static_cast<int64_t>(node.size);
-    }
-    out.st_blksize = static_cast<int64_t>(max_file_bytes);
-    out.st_blocks =
-        (out.st_size + 511) / 512;  // 512-byte units, Linux convention.
+    fill_stat(fds[fd].inode, out);
     ++current_stats.fstats;
+    return 0;
+}
+
+int64_t stat_path(const char* path, StatBuf& out) {
+    const char* name = nullptr;
+    size_t name_len = 0;
+    if (!normalize(path, name, name_len)) {
+        return -1;
+    }
+    const int32_t inode = find_inode(name, name_len);
+    if (inode < 0) {
+        return -1;
+    }
+    fill_stat(static_cast<uint32_t>(inode), out);
+    ++current_stats.stats;
     return 0;
 }
 
