@@ -92,6 +92,7 @@ struct Session {
     uint32_t saw_user_musl_malloc_pass;
     uint32_t saw_user_musl_printf_pass;
     uint32_t saw_user_musl_fopen_pass;
+    uint32_t saw_user_musl_opendir_pass;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;

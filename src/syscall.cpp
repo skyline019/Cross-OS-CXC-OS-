@@ -50,6 +50,7 @@ constexpr char expected_musl_crt_pass[] = "USER_MUSL_CRT_PASS\n";
 constexpr char expected_musl_malloc_pass[] = "USER_MUSL_MAL_PASS\n";
 constexpr char expected_musl_printf_pass[] = "USER_MUSL_PRT_PASS\n";
 constexpr char expected_musl_fopen_pass[] = "USER_MUSL_FOP_PASS\n";
+constexpr char expected_musl_opendir_pass[] = "USER_MUSL_ODR_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -493,6 +494,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_musl_fopen_pass = 1;
         }
     }
+    if (length == sizeof(expected_musl_opendir_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_musl_opendir_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_musl_opendir_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_musl_opendir_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -689,8 +703,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.72.0");
-    fill_uts_field(local.version, "M71");
+    fill_uts_field(local.release, "0.73.0");
+    fill_uts_field(local.version, "M72");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,

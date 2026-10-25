@@ -12,7 +12,7 @@
 | 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
 | 第七次（计划） | M65–M74 | `midpoint-assessment-7.md`（届时新建） |
 
-当前基线：**M71 / v0.72.0**（musl-gcc fopen；第六次中场之后）。下一正式中场目标：**M74**。
+当前基线：**M72 / v0.73.0**（musl-gcc opendir；第六次中场之后）。下一正式中场目标：**M74**。
 
 ## 中场窗口必做
 
