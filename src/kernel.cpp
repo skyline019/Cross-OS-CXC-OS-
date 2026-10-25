@@ -67,6 +67,8 @@ uint64_t libc_tid_elf_physical = 0;
 uint64_t libc_tid_elf_size = 0;
 uint64_t libc_pid_elf_physical = 0;
 uint64_t libc_pid_elf_size = 0;
+uint64_t musl_write_elf_physical = 0;
+uint64_t musl_write_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1163,6 +1165,24 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(libc_pid.wrote_pass);
     log::write('\n');
 
+    user::MuslWriteProbeResult musl_write{};
+    const auto* musl_write_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + musl_write_elf_physical);
+    if (musl_write_elf_physical == 0 || musl_write_elf_size == 0 ||
+        !user::run_musl_write_probe(musl_write_image,
+                                    static_cast<size_t>(musl_write_elf_size),
+                                    musl_write)) {
+        log::write("[debug] user musl write probe stage: ");
+        log::decimal(musl_write.stage);
+        log::write(", failure: ");
+        log::decimal(musl_write.failure);
+        log::write('\n');
+        log::panic("M65 user musl write probe failed");
+    }
+    log::write("[ok] user musl write: pass: ");
+    log::decimal(musl_write.wrote_pass);
+    log::write('\n');
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1326,6 +1346,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP LIBPID.ELF")) {
         log::panic("cannot relocate ESP LIBPID.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(musl_write_elf_physical, musl_write_elf_size,
+                                 "ESP LIBMSL.ELF")) {
+        log::panic("cannot relocate ESP LIBMSL.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1342,7 +1366,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.65.0 - sixth midfield (A2/M64)");
+    cxc::log::line("CXC/OS 0.66.0 - musl subset write (A2/M65)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -1653,6 +1677,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP LIBPID.ELF bytes: ");
     cxc::log::decimal(cxc::libc_pid_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 musl_write_elf_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'I', u'B', u'M', u'S',  u'L', u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, musl_write_elf_path, 64 * 1024,
+        cxc::musl_write_elf_physical, cxc::musl_write_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP LIBMSL.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP LIBMSL.ELF bytes: ");
+    cxc::log::decimal(cxc::musl_write_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

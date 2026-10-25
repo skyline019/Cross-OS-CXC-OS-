@@ -80,6 +80,7 @@ struct Session {
     uint32_t saw_user_libc_uname_pass;
     uint32_t saw_user_libc_tid_pass;
     uint32_t saw_user_libc_pid_pass;
+    uint32_t saw_user_musl_write_pass;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;

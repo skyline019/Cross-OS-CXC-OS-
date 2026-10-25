@@ -302,6 +302,18 @@ struct LibcPidProbeResult {
     uint64_t image_size;
 };
 
+struct MuslWriteProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t entry;
+    uint64_t exit_code;
+    uint64_t image_size;
+};
+
 // BSP-only: load the embedded static hello ELF, enter CPL3, run syscall v0
 // write+exit, then tear down the user address space.
 bool run_elf_probe(ElfProbeResult& result);
@@ -416,5 +428,10 @@ const LibcTidProbeResult& libc_tid_probe_result();
 bool run_libc_pid_probe(const uint8_t* image, size_t image_size,
                         LibcPidProbeResult& result);
 const LibcPidProbeResult& libc_pid_probe_result();
+
+// BSP-only: musl-subset write via ESP LIBMSL.ELF (M65).
+bool run_musl_write_probe(const uint8_t* image, size_t image_size,
+                          MuslWriteProbeResult& result);
+const MuslWriteProbeResult& musl_write_probe_result();
 
 }  // namespace cxc::user
