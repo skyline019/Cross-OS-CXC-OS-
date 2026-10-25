@@ -265,11 +265,12 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
             }
             break;
         }
-        // M30: wait until IRQ has delivered this datagram into the socket
-        // (echo may still be in flight). Then drain recv before waiting TX.
+        // M30: wait for IRQ deliver, or DD if IRQ rejected the frame (fault
+        // path → failure 3 like legacy validation).
         if (irq_echo) {
             while (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
-                   expected_irq_total) {
+                       expected_irq_total &&
+                   (rx_descriptor.status & descriptor_done) == 0) {
                 if (scheduler::ticks() - first_tick > wait_ticks) {
                     if (stress) {
                         info.stress.failure = 2;
@@ -304,10 +305,20 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
         } else {
             info.stress.rx_head = rx_head;
         }
-        if (irq_echo) {
-            // Descriptor may already have been recycled/reused; trust socket.
-            if (__atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) <
-                expected_irq_total) {
+        const bool irq_delivered =
+            irq_echo &&
+            __atomic_load_n(&info.irq_rx.delivered, __ATOMIC_ACQUIRE) >=
+                expected_irq_total;
+        if (!irq_delivered) {
+            // Legacy / IRQ-reject path: validate the descriptor frame.
+            if ((rx_status & (descriptor_done | rx_descriptor_eop)) !=
+                    (descriptor_done | rx_descriptor_eop) ||
+                rx_errors != 0 || rx_length != expected_length ||
+                (!irq_echo && rx_head != expected_head) ||
+                (!irq_echo &&
+                 network_rx_interrupts(phase) != expected_irqs) ||
+                !valid_udp_request(rx_buffers[rx_index], rx_length) ||
+                !rx_guard_intact(rx_buffers[rx_index], rx_length)) {
                 if (stress) {
                     info.stress.failure = 3;
                 } else {
@@ -315,19 +326,6 @@ bool run_udp_datagram(volatile LegacyRxDescriptor* rx_ring,
                 }
                 break;
             }
-        } else if ((rx_status & (descriptor_done | rx_descriptor_eop)) !=
-                       (descriptor_done | rx_descriptor_eop) ||
-                   rx_errors != 0 || rx_length != expected_length ||
-                   rx_head != expected_head ||
-                   network_rx_interrupts(phase) != expected_irqs ||
-                   !valid_udp_request(rx_buffers[rx_index], rx_length) ||
-                   !rx_guard_intact(rx_buffers[rx_index], rx_length)) {
-            if (stress) {
-                info.stress.failure = 3;
-            } else {
-                info.udp.failure = 3;
-            }
-            break;
         }
         if (stress) {
             ++info.stress.requests;
