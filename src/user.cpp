@@ -133,8 +133,9 @@ MuslAuxvProbeResult musl_auxv_probe{};
 MuslCrtProbeResult musl_crt_probe{};
 MuslMallocProbeResult musl_malloc_probe{};
 MuslPrintfProbeResult musl_printf_probe{};
-/* Above brk window (0x407000 + 16 pages → 0x417000) and musl .data. */
-constexpr uint64_t user_stack_base = 0x0000000000418000ull;
+MuslFopenProbeResult musl_fopen_probe{};
+/* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
+constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
 
@@ -1165,6 +1166,38 @@ bool run_musl_printf_probe(const uint8_t* image, size_t image_size,
 
 const MuslPrintfProbeResult& musl_printf_probe_result() {
     return musl_printf_probe;
+}
+
+bool run_musl_fopen_probe(const uint8_t* image, size_t image_size,
+                          MuslFopenProbeResult& result) {
+    result = MuslFopenProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_musl_fopen_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    musl_fopen_probe = result;
+    return true;
+}
+
+const MuslFopenProbeResult& musl_fopen_probe_result() {
+    return musl_fopen_probe;
 }
 
 }  // namespace cxc::user

@@ -15,9 +15,13 @@ constexpr uint64_t sys_stat = 4;
 constexpr uint64_t sys_fstat = 5;
 constexpr uint64_t sys_lseek = 8;
 constexpr uint64_t sys_mmap = 9;
+constexpr uint64_t sys_mprotect = 10;
 constexpr uint64_t sys_munmap = 11;
 constexpr uint64_t sys_brk = 12;
+constexpr uint64_t sys_ioctl = 16;
+constexpr uint64_t sys_readv = 19;
 constexpr uint64_t sys_writev = 20;
+constexpr uint64_t sys_fcntl = 72;
 constexpr uint64_t sys_getpid = 39;
 constexpr uint64_t sys_exit = 60;
 constexpr uint64_t sys_exit_group = 231;
@@ -36,8 +40,8 @@ constexpr uint64_t arch_get_gs = 0x1004;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
-// Above musl-gcc stdio .data/.bss (M70 LIBMPR ends ~0x4067c8); stack at 0x418000.
-constexpr uint64_t default_brk_base = 0x0000000000407000ull;
+// Above musl-gcc fopen .data/.bss (M71 LIBFOP ends ~0x408bb0); stack at 0x420000.
+constexpr uint64_t default_brk_base = 0x0000000000409000ull;
 constexpr uint64_t brk_max_pages = 16;
 
 // Anonymous mmap bump region (above brk window).
@@ -87,6 +91,7 @@ struct Session {
     uint32_t saw_user_musl_crt_pass;
     uint32_t saw_user_musl_malloc_pass;
     uint32_t saw_user_musl_printf_pass;
+    uint32_t saw_user_musl_fopen_pass;
     uint64_t clear_child_tid;
     uint32_t brk_grows;
     uint32_t brk_pages;

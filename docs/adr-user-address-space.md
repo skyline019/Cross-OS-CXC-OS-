@@ -133,7 +133,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M68** | musl-gcc 静态 CRT + PHDR-in-LOAD | 串口 `USER_MUSL_CRT_PASS`；ESP `LIBMCR.ELF` |
 | **M69** | musl-gcc `malloc`/`free` | 串口 `USER_MUSL_MAL_PASS`；ESP `LIBMMA.ELF` |
 | **M70** | musl-gcc `printf` + brk 抬升 | 串口 `USER_MUSL_PRT_PASS`；ESP `LIBMPR.ELF` |
-| **M71+** | 加深真 musl API / A2 工具链准备 | 见 link notes |
+| **M71** | musl-gcc `fopen` + layout/stub | 串口 `USER_MUSL_FOP_PASS`；ESP `LIBFOP.ELF` |
+| **M72+** | 加深真 musl API / A2 工具链准备 | 见 link notes |
 
 ## 6. 参考
 

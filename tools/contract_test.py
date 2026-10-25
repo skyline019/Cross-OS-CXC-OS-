@@ -117,6 +117,8 @@ USER_MUSL_MAL_PASS = "USER_MUSL_MAL_PASS"
 USER_MUSL_MAL_PROBE_SUCCESS = "user musl malloc: pass: 1"
 USER_MUSL_PRT_PASS = "USER_MUSL_PRT_PASS"
 USER_MUSL_PRT_PROBE_SUCCESS = "user musl printf: pass: 1"
+USER_MUSL_FOP_PASS = "USER_MUSL_FOP_PASS"
+USER_MUSL_FOP_PROBE_SUCCESS = "user musl fopen: pass: 1"
 
 
 @dataclass
@@ -534,6 +536,8 @@ class ContractRunner:
         assert USER_MUSL_MAL_PROBE_SUCCESS.encode() in serial
         assert USER_MUSL_PRT_PASS.encode() in serial
         assert USER_MUSL_PRT_PROBE_SUCCESS.encode() in serial
+        assert USER_MUSL_FOP_PASS.encode() in serial
+        assert USER_MUSL_FOP_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -542,7 +546,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M70 musl-gcc printf"
+            "kernel PASS + net contracts + M71 musl-gcc fopen"
         )
 
     def negative_evidence(self, work: Path) -> str:

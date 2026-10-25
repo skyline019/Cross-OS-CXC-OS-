@@ -18,6 +18,8 @@ Session current{};
 constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
 constexpr uint64_t page_size = 4096;
 constexpr size_t max_io = 256;
+// musl BUFSIZ is 1024; __stdio_read readv iov entries may be that large.
+constexpr size_t max_iov_bytes = 4096;
 constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
 constexpr char expected_fs_pass[] = "USER_FS_PASS\n";
 constexpr char expected_brk_pass[] = "USER_BRK_PASS\n";
@@ -47,6 +49,12 @@ constexpr char expected_musl_auxv_pass[] = "USER_MUSL_AUXV_PASS\n";
 constexpr char expected_musl_crt_pass[] = "USER_MUSL_CRT_PASS\n";
 constexpr char expected_musl_malloc_pass[] = "USER_MUSL_MAL_PASS\n";
 constexpr char expected_musl_printf_pass[] = "USER_MUSL_PRT_PASS\n";
+constexpr char expected_musl_fopen_pass[] = "USER_MUSL_FOP_PASS\n";
+constexpr int64_t errno_notty = -25;  // -ENOTTY
+constexpr uint64_t fcntl_getfd = 1;
+constexpr uint64_t fcntl_setfd = 2;
+constexpr uint64_t fcntl_getfl = 3;
+constexpr uint64_t fcntl_setfl = 4;
 constexpr int64_t mmap_error = -1;
 constexpr uint64_t probe_tid = 1;
 constexpr uint64_t probe_pid = 1;
@@ -472,6 +480,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_user_musl_printf_pass = 1;
         }
     }
+    if (length == sizeof(expected_musl_fopen_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_musl_fopen_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_musl_fopen_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_user_musl_fopen_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -668,8 +689,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.71.0");
-    fill_uts_field(local.version, "M70");
+    fill_uts_field(local.release, "0.72.0");
+    fill_uts_field(local.version, "M71");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -697,6 +718,36 @@ cpu::InterruptFrame* handle_set_tid_address(cpu::InterruptFrame* frame) {
     }
     current.clear_child_tid = tidptr;
     frame->rax = probe_tid;
+    return frame;
+}
+
+// M71: musl stdio may tweak buffer page perms; mapped pages already RW/RX.
+cpu::InterruptFrame* handle_mprotect(cpu::InterruptFrame* frame) {
+    (void)frame->rdi;
+    (void)frame->rsi;
+    (void)frame->rdx;
+    frame->rax = 0;
+    return frame;
+}
+
+// M71: isatty → ioctl(TCGETS); treat all as non-tty.
+cpu::InterruptFrame* handle_ioctl(cpu::InterruptFrame* frame) {
+    (void)frame->rdi;
+    (void)frame->rsi;
+    (void)frame->rdx;
+    frame->rax = static_cast<uint64_t>(errno_notty);
+    return frame;
+}
+
+// M71: fopen O_CLOEXEC path uses F_SETFD; ignore FD flags.
+cpu::InterruptFrame* handle_fcntl(cpu::InterruptFrame* frame) {
+    const uint64_t cmd = frame->rsi;
+    if (cmd == fcntl_getfd || cmd == fcntl_setfd || cmd == fcntl_getfl ||
+        cmd == fcntl_setfl) {
+        frame->rax = 0;
+        return frame;
+    }
+    frame->rax = static_cast<uint64_t>(errno_inval);
     return frame;
 }
 
@@ -743,7 +794,8 @@ cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
     }
     const auto* iov = reinterpret_cast<const UserIovec*>(iov_addr);
 
-    char scratch[max_io]{};
+    // Static: MinGW freestanding has no ___chkstk_ms for large frames.
+    static char scratch[max_iov_bytes];
     size_t total = 0;
     for (uint64_t index = 0; index < iovcnt; ++index) {
         const uint64_t base = iov[index].base;
@@ -751,7 +803,8 @@ cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
         if (len == 0) {
             continue;
         }
-        if (len > max_io || total > max_io - static_cast<size_t>(len) ||
+        if (len > max_iov_bytes ||
+            total > max_iov_bytes - static_cast<size_t>(len) ||
             !user_pages_ok(base, static_cast<size_t>(len), false)) {
             frame->rax = static_cast<uint64_t>(errno_fault);
             return frame;
@@ -782,6 +835,52 @@ cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
         }
         log::write(scratch, total);
         note_stdout_pass(scratch, total);
+    }
+    frame->rax = static_cast<uint64_t>(total);
+    return frame;
+}
+
+// M71: musl __stdio_read uses readv with a 2-entry iovec (user buf + FILE buf).
+cpu::InterruptFrame* handle_readv(cpu::InterruptFrame* frame) {
+    const uint64_t fd = frame->rdi;
+    const uint64_t iov_addr = frame->rsi;
+    const uint64_t iovcnt = frame->rdx;
+    if (iovcnt == 0 || iovcnt > max_iov) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    const size_t table_bytes =
+        static_cast<size_t>(iovcnt) * sizeof(UserIovec);
+    if (!user_pages_ok(iov_addr, table_bytes, false)) {
+        frame->rax = static_cast<uint64_t>(errno_fault);
+        return frame;
+    }
+    const auto* iov = reinterpret_cast<const UserIovec*>(iov_addr);
+
+    size_t total = 0;
+    for (uint64_t index = 0; index < iovcnt; ++index) {
+        const uint64_t base = iov[index].base;
+        const uint64_t len = iov[index].len;
+        if (len == 0) {
+            continue;
+        }
+        if (len > max_iov_bytes ||
+            total > max_iov_bytes - static_cast<size_t>(len) ||
+            !user_pages_ok(base, static_cast<size_t>(len), true)) {
+            frame->rax = static_cast<uint64_t>(errno_fault);
+            return frame;
+        }
+        auto* bytes = reinterpret_cast<char*>(base);
+        const int64_t got = fs::read_fd(static_cast<uint32_t>(fd), bytes,
+                                        static_cast<size_t>(len));
+        if (got < 0) {
+            frame->rax = static_cast<uint64_t>(got);
+            return frame;
+        }
+        total += static_cast<size_t>(got);
+        if (static_cast<uint64_t>(got) < len) {
+            break;
+        }
     }
     frame->rax = static_cast<uint64_t>(total);
     return frame;
@@ -980,6 +1079,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_read(frame);
     case sys_write:
         return handle_write(frame);
+    case sys_readv:
+        return handle_readv(frame);
     case sys_writev:
         return handle_writev(frame);
     case sys_open:
@@ -994,10 +1095,16 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_lseek(frame);
     case sys_mmap:
         return handle_mmap(frame);
+    case sys_mprotect:
+        return handle_mprotect(frame);
     case sys_munmap:
         return handle_munmap(frame);
     case sys_brk:
         return handle_brk(frame);
+    case sys_ioctl:
+        return handle_ioctl(frame);
+    case sys_fcntl:
+        return handle_fcntl(frame);
     case sys_arch_prctl:
         return handle_arch_prctl(frame);
     case sys_mkdir:
