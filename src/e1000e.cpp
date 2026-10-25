@@ -78,11 +78,18 @@ void interrupt_handler(void* opaque) {
         return;
     }
     if ((payload & result->expected_cause) == 0) {
+        const bool socket_tx_wait_phase =
+            __atomic_load_n(&detail::socket_tx_wait_active, __ATOMIC_ACQUIRE);
         // Link setup and TX queue draining can leave LSC/TXQE latched even
         // though IMS never enabled them. A later queue/EITR notification can
         // observe only those auxiliary causes. Acknowledge just those bits
         // during packet/protocol/UDP phases; every other foreign cause fails.
         if (packet_phase && (payload & ~detail::auxiliary_causes) == 0) {
+            // M32: TXQE means the ring drained — wake Event-backed TX wait.
+            if (socket_tx_wait_phase &&
+                (payload & detail::cause_txqe) != 0) {
+                (void)scheduler::signal(detail::tx_space_gate);
+            }
             detail::mmio_write(detail::reg_icr, payload);
             return;
         }
@@ -92,6 +99,11 @@ void interrupt_handler(void* opaque) {
         if (packet_phase &&
             (payload & ~(detail::packet_queue_causes | detail::auxiliary_causes)) == 0) {
             __atomic_add_fetch(&result->cross_calls, 1, __ATOMIC_RELAXED);
+            // M32: cross-observed TXQ0 still posts the TX-space Event.
+            if (socket_tx_wait_phase &&
+                (payload & detail::cause_txq0) != 0) {
+                (void)scheduler::signal(detail::tx_space_gate);
+            }
             if ((payload & detail::auxiliary_causes) != 0) {
                 detail::mmio_write(detail::reg_icr, payload & detail::auxiliary_causes);
             }
@@ -140,6 +152,8 @@ void interrupt_handler(void* opaque) {
             } else if (socket_tx_wait_phase) {
                 __atomic_add_fetch(&detail::info.socket_tx_wait.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
+                // M32: TXQ0 completion posts sticky Event for post_tx_wait.
+                (void)scheduler::signal(detail::tx_space_gate);
             } else if (socket_tx_bp_phase) {
                 __atomic_add_fetch(&detail::info.socket_tx_bp.tx_interrupts, 1,
                                    __ATOMIC_RELAXED);
@@ -222,6 +236,7 @@ volatile bool socket_tx_active = false;
 volatile bool socket_tx_bp_active = false;
 volatile bool socket_tx_wait_active = false;
 volatile bool socket_irq_rx_active = false;
+scheduler::Event tx_space_gate{};
 volatile LegacyRxDescriptor* live_rx_ring = nullptr;
 volatile LegacyTxDescriptor* live_tx_ring = nullptr;
 uint8_t* live_tx_buffer = nullptr;
@@ -558,8 +573,9 @@ bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
 }
 
 bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,
-                  uint64_t first_tick, uint32_t& blocked) {
+                  uint64_t first_tick, uint32_t& blocked, uint32_t& events) {
     blocked = 0;
+    events = 0;
     while (true) {
         const uint32_t tdt = mmio_read(reg_tdt0);
         if (try_post_tx_frame(tx_ring, tdt, length)) {
@@ -569,7 +585,28 @@ bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,
         if (scheduler::ticks() - first_tick > wait_ticks) {
             return false;
         }
-        cpu::wait_for_interrupt();
+        // M32: retry only after an Event consume (worker wait or sticky).
+        // TXQ0/TXQE/cross paths signal; timer WFI may observe TDH first — in
+        // that case publish sticky here so the gate stays Event-shaped.
+        if (scheduler::started() && scheduler::current_thread() != 0) {
+            if (!scheduler::wait(tx_space_gate)) {
+                return false;
+            }
+            ++events;
+            continue;
+        }
+        while (!scheduler::event_try_consume(tx_space_gate)) {
+            if (scheduler::ticks() - first_tick > wait_ticks) {
+                return false;
+            }
+            cpu::wait_for_interrupt();
+            const uint32_t tdh = mmio_read(reg_tdh0);
+            const uint32_t tdt_now = mmio_read(reg_tdt0);
+            if (!net::tx_ring_full(tdh, tdt_now)) {
+                (void)scheduler::signal(tx_space_gate);
+            }
+        }
+        ++events;
     }
 }
 

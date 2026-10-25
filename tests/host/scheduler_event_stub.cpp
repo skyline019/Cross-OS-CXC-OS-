@@ -47,4 +47,12 @@ bool broadcast(Event& event) {
     return true;
 }
 
+bool event_try_consume(Event& event) {
+    if (event.signaled > 0) {
+        --event.signaled;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace cxc::scheduler

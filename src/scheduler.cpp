@@ -598,8 +598,21 @@ bool wait(Event& event) {
 }
 
 bool signal(Event& event) {
+    // Before initialize: sticky-only (no waiters). Lets drivers post completion
+    // Events during BSP self-tests that run ahead of scheduler::start.
     if (configured_cpus == 0) {
-        return false;
+        __atomic_add_fetch(&event_signals, 1, __ATOMIC_RELAXED);
+        uint32_t current =
+            __atomic_load_n(&event.signaled, __ATOMIC_RELAXED);
+        while (current < UINT32_MAX) {
+            if (__atomic_compare_exchange_n(&event.signaled, &current,
+                                            current + 1, false,
+                                            __ATOMIC_RELEASE,
+                                            __ATOMIC_RELAXED)) {
+                return true;
+            }
+        }
+        return true;
     }
 
     uint32_t wake_cpu = UINT32_MAX;
@@ -619,6 +632,33 @@ bool signal(Event& event) {
     __atomic_add_fetch(&event_wakes, 1, __ATOMIC_RELAXED);
     queue_lock.unlock_irqrestore(flags);
     return deliver_wake_ipis(&wake_cpu, 1);
+}
+
+bool event_try_consume(Event& event) {
+    if (configured_cpus == 0) {
+        uint32_t current =
+            __atomic_load_n(&event.signaled, __ATOMIC_RELAXED);
+        while (current > 0) {
+            if (__atomic_compare_exchange_n(&event.signaled, &current,
+                                            current - 1, false,
+                                            __ATOMIC_ACQ_REL,
+                                            __ATOMIC_RELAXED)) {
+                __atomic_add_fetch(&event_waits, 1, __ATOMIC_RELAXED);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const uint64_t flags = queue_lock.lock_irqsave();
+    if (event.signaled == 0) {
+        queue_lock.unlock_irqrestore(flags);
+        return false;
+    }
+    --event.signaled;
+    __atomic_add_fetch(&event_waits, 1, __ATOMIC_RELAXED);
+    queue_lock.unlock_irqrestore(flags);
+    return true;
 }
 
 bool broadcast(Event& event) {

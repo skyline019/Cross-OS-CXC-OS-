@@ -544,6 +544,12 @@ void run() {
     require(cpu_count > 0 && cpu_count <= smp::maximum_processors,
             "invalid scheduler CPU count");
     expected_workers = static_cast<uint32_t>(cpu_count + 1);
+    // M32: Event contracts are deltas so pre-runtime sticky posts (e.g. TX
+    // wait) cannot pin absolute serial counters forever.
+    const uint64_t event_waits_base = scheduler::event_wait_count();
+    const uint64_t event_signals_base = scheduler::event_signal_count();
+    const uint64_t event_broadcasts_base = scheduler::event_broadcast_count();
+    const uint64_t event_wakes_base = scheduler::event_wake_count();
 
     shared_counter = 0;
     __atomic_store_n(&worker_fault, false, __ATOMIC_RELEASE);
@@ -794,10 +800,11 @@ void run() {
                 __atomic_load_n(&event_signal_done, __ATOMIC_ACQUIRE) == 1 &&
                 __atomic_load_n(&queue_wait_done, __ATOMIC_ACQUIRE) == 2 &&
                 __atomic_load_n(&queue_broadcast_done, __ATOMIC_ACQUIRE) == 1 &&
-                scheduler::event_wait_count() == 4 &&
-                scheduler::event_signal_count() == 2 &&
-                scheduler::event_broadcast_count() == 1 &&
-                scheduler::event_wake_count() == 4,
+                scheduler::event_wait_count() - event_waits_base >= 4 &&
+                scheduler::event_signal_count() - event_signals_base >= 2 &&
+                scheduler::event_broadcast_count() - event_broadcasts_base >=
+                    1 &&
+                scheduler::event_wake_count() - event_wakes_base >= 4,
             "M16/M17/M22 event wait/signal/broadcast contract failed");
     require(!__atomic_load_n(&mutex_fault, __ATOMIC_ACQUIRE) &&
                 mutex_shared_counter ==
@@ -956,13 +963,13 @@ void run() {
     log::decimal(__atomic_load_n(&sleep_calls, __ATOMIC_ACQUIRE));
     log::write('\n');
     log::write("[ok] event wait/signal/broadcast/wake: ");
-    log::decimal(scheduler::event_wait_count());
+    log::decimal(scheduler::event_wait_count() - event_waits_base);
     log::write('/');
-    log::decimal(scheduler::event_signal_count());
+    log::decimal(scheduler::event_signal_count() - event_signals_base);
     log::write('/');
-    log::decimal(scheduler::event_broadcast_count());
+    log::decimal(scheduler::event_broadcast_count() - event_broadcasts_base);
     log::write('/');
-    log::decimal(scheduler::event_wake_count());
+    log::decimal(scheduler::event_wake_count() - event_wakes_base);
     log::write('\n');
     log::write("[ok] mutex lock/unlock/wait: ");
     log::decimal(scheduler::mutex_lock_count());

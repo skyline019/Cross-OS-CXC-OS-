@@ -763,14 +763,15 @@ bool run_socket_tx_bp_phase(volatile LegacyTxDescriptor* tx_ring,
     return true;
 }
 
-// M28: after M27 freezes socket_tx_bp.*, refill leave-one-empty full under
-// TCTL freeze, enable TX, then post_tx_wait must block once and succeed.
+// M28/M32: after M27 freezes socket_tx_bp.*, refill leave-one-empty full under
+// TCTL freeze, enable TX, then post_tx_wait must block on TX Event and succeed.
 bool run_socket_tx_wait_phase(volatile LegacyTxDescriptor* tx_ring,
                               uint8_t* tx_buffer, uint64_t first_tick) {
     constexpr uint8_t wait_payload[] = {0x4D, 0x32, 0x38};
     constexpr size_t max_outstanding = descriptor_count - 1;
 
     info.socket_tx_wait.stage = 1;
+    scheduler::event_init(tx_space_gate);
     cpu::disable_interrupts();
     __atomic_store_n(&socket_tx_bp_active, false, __ATOMIC_RELEASE);
     __atomic_store_n(&socket_tx_wait_active, true, __ATOMIC_RELEASE);
@@ -833,13 +834,37 @@ bool run_socket_tx_wait_phase(volatile LegacyTxDescriptor* tx_ring,
 
     info.socket_tx_wait.stage = 3;
     mmio_write(reg_tctl, tctl_saved);
+    // M32: require at least one TX-space Event before posting. Unfreeze may
+    // free a slot before post_tx_wait runs; waiting first keeps the contract
+    // Event-shaped instead of a bare poll race.
+    uint32_t events = 0;
+    while (!scheduler::event_try_consume(tx_space_gate)) {
+        if (scheduler::ticks() - first_tick > wait_ticks) {
+            info.socket_tx_wait.failure = 6;
+            return false;
+        }
+        cpu::wait_for_interrupt();
+        const uint32_t tdh_now = mmio_read(reg_tdh0);
+        const uint32_t tdt_now = mmio_read(reg_tdt0);
+        if (!net::tx_ring_full(tdh_now, tdt_now)) {
+            (void)scheduler::signal(tx_space_gate);
+        }
+    }
+    ++events;
     uint32_t blocked = 0;
-    if (!post_tx_wait(tx_ring, frame_length, first_tick, blocked)) {
-        info.socket_tx_wait.failure = 6;
-        return false;
+    uint32_t more_events = 0;
+    const uint32_t tdt_post = mmio_read(reg_tdt0);
+    if (!try_post_tx_frame(tx_ring, tdt_post, frame_length)) {
+        if (!post_tx_wait(tx_ring, frame_length, first_tick, blocked,
+                          more_events)) {
+            info.socket_tx_wait.failure = 6;
+            return false;
+        }
+        events += more_events;
     }
     (void)blocked;
     info.socket_tx_wait.posted = 1;
+    info.socket_tx_wait.events = events;
 
     while (mmio_read(reg_tdh0) != mmio_read(reg_tdt0)) {
         if (scheduler::ticks() - first_tick > wait_ticks) {
@@ -852,7 +877,7 @@ bool run_socket_tx_wait_phase(volatile LegacyTxDescriptor* tx_ring,
     info.socket_tx_wait.tx_tail = mmio_read(reg_tdt0);
     if (info.socket_tx_wait.tx_head != info.socket_tx_wait.tx_tail ||
         network_tx_interrupts(NetworkPhase::UdpSocketTxWait) == 0 ||
-        network_vector_errors()) {
+        info.socket_tx_wait.events == 0 || network_vector_errors()) {
         info.socket_tx_wait.failure = 8;
         return false;
     }

@@ -130,12 +130,13 @@ struct UdpSocketTxBpResult {
     uint32_t failure;
 };
 
-// M28: after M27 freeze, refill leave-one-empty full, then post_tx_wait blocks
-// until TDH frees a slot (BSP poll; TX IRQs may coalesce). Peer ignores frames.
+// M28/M32: after M27 freeze, refill leave-one-empty full, then post_tx_wait
+// blocks on TX Event until TDH frees a slot. Peer ignores frames.
 struct UdpSocketTxWaitResult {
     uint64_t tx_interrupts;
     uint32_t waits;
     uint32_t posted;
+    uint32_t events;
     uint32_t tx_head;
     uint32_t tx_tail;
     uint32_t stage;

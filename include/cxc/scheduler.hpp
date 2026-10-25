@@ -65,6 +65,9 @@ void event_init(Event& event);
 bool wait(Event& event);
 bool signal(Event& event);
 bool broadcast(Event& event);
+// Consume one sticky signal without enqueueing. Safe before scheduler start
+// (and from BSP bootstrap). Returns false if no sticky is posted.
+bool event_try_consume(Event& event);
 
 // M18: blocking mutex for workers. Contended lock enqueues on an internal
 // Event waiter list (no sticky). Not recursive; bootstrap may not lock.

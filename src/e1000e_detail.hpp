@@ -2,6 +2,7 @@
 
 #include <cxc/e1000e.hpp>
 #include <cxc/net/proto.hpp>
+#include <cxc/scheduler.hpp>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -178,10 +179,12 @@ bool network_vector_errors();
 // Does not wait for DD. Returns false when full or arguments are invalid.
 bool try_post_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                        uint16_t length);
-// M28: retry try_post until a free slot appears (BSP wait_for_interrupt) or
-// timeout. Sets blocked=1 if at least one failed attempt preceded success.
+// M28/M32: retry try_post until a free slot appears. Slot wait is Event-gated
+// (worker wait or sticky try_consume + WFI). Sets blocked/events on success path.
 bool post_tx_wait(volatile LegacyTxDescriptor* tx_ring, uint16_t length,
-                  uint64_t first_tick, uint32_t& blocked);
+                  uint64_t first_tick, uint32_t& blocked, uint32_t& events);
+
+extern scheduler::Event tx_space_gate;
 bool submit_tx_frame(volatile LegacyTxDescriptor* tx_ring, uint32_t index,
                      uint16_t length, uint64_t first_tick, NetworkPhase phase,
                      uint64_t expected_interrupts);

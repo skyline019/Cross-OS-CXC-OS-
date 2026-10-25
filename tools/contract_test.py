@@ -44,7 +44,7 @@ SOCKET_TX_BP_SUCCESS = (
 )
 SOCKET_TX_WAIT_SUCCESS = (
     "UDP socket TX wait: waits: 1, posted: 1, drained: 1, "
-    "heads/tails: 5/5"
+    "events: 1, heads/tails: 5/5"
 )
 IRQ_RX_DEMUX_SUCCESS = "UDP IRQ RX demux deliver/echo/recycle: 266/266/266"
 

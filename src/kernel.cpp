@@ -544,7 +544,9 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(msix_info.socket_tx_wait.waits);
     log::write(", posted: ");
     log::decimal(msix_info.socket_tx_wait.posted);
-    log::write(", drained: 1, heads/tails: ");
+    log::write(", drained: 1, events: ");
+    log::decimal(msix_info.socket_tx_wait.events);
+    log::write(", heads/tails: ");
     log::decimal(msix_info.socket_tx_wait.tx_head);
     log::write('/');
     log::decimal(msix_info.socket_tx_wait.tx_tail);
@@ -674,7 +676,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.32.0 - e1000e UDP IRQ RX RDT recycle");
+    cxc::log::line("CXC/OS 0.33.0 - e1000e Event-backed TX wait");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

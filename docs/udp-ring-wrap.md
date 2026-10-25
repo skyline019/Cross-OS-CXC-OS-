@@ -182,3 +182,7 @@ Milestone 30 / v0.31.0：RXQ0/TXQ0 路径在 TX 环空闲时 `build_udp_echo_rep
 ## 19. M31 IRQ RDT recycle
 
 Milestone 31 / v0.32.0：IRQ 在 deliver+Echo 后按 `udp_recycle_step` 移动最旧页并推进 RDT；BSP 仅等待 `irq_rx.recycled` 并核对 RDT。串口 `deliver/echo/recycle: 266/266/266`；M13/M14 `recycled_buffers` 仍由 IRQ 记账。仍非 Event/`udp_send_wait` 通用阻塞 IO。
+
+## 20. M32 Event-backed TX wait
+
+Milestone 32 / v0.33.0：TXQ0 在 M28 相位 `signal(tx_space_gate)`；`post_tx_wait` 仅在 `event_try_consume`（或 worker `wait`）后重试 `try_post`。串口 `waits:1 posted:1 drained:1 events:1 heads/tails:5/5`。runtime Event 合同改为相对 initialize 的 delta（弱化绝对计数）。仍非通用 `udp_send_wait`。
