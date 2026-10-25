@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 45 / v0.46.0：ESP 外部静态 ELF（A2 脊柱）**（M13–M44 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 46 / v0.47.0：host-gcc CROSS.ELF（A2 脊柱）**（M13–M45 合同保持）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -72,6 +72,7 @@ CXC_OS_SELF_TEST_PASS
 | User munmap (M43) | `mmap`+`munmap` 一页往返并释放帧；串口 `USER_MUNMAP_PASS` |
 | Fourth midfield (M44) | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；A1 最小闭环收束；主线仍 A2 |
 | ESP ext ELF (M45) | `EXT.ELF` 入 ESP；UEFI 读入后 `launch_user_elf`；串口 `USER_EXT_ELF_PASS` |
+| Host-gcc CROSS.ELF (M46) | `user/cross_hello.c` → ESP `CROSS.ELF`；串口 `USER_CROSS_ELF_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -255,4 +256,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀交叉工具链 / libc 缺口 syscall）。须保持 M13–M45 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 libc 缺口 syscall / 可链接子集）。须保持 M13–M46 回归证据。

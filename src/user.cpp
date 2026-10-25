@@ -30,6 +30,7 @@ MmapProbeResult mmap_probe{};
 DirProbeResult dir_probe{};
 MunmapProbeResult munmap_probe{};
 ExtElfProbeResult ext_elf_probe{};
+ExtElfProbeResult cross_elf_probe{};
 constexpr uint64_t user_stack_base = 0x0000000000402000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
@@ -329,6 +330,38 @@ bool run_ext_elf_probe(const uint8_t* image, size_t image_size,
 
 const ExtElfProbeResult& ext_elf_probe_result() {
     return ext_elf_probe;
+}
+
+bool run_cross_elf_probe(const uint8_t* image, size_t image_size,
+                         ExtElfProbeResult& result) {
+    result = ExtElfProbeResult{};
+    result.image_size = image_size;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 9;
+        return false;
+    }
+    if (!launch_user_elf(image, image_size, result.entry, result.stage,
+                         result.failure)) {
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_user_cross_elf_pass;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    cross_elf_probe = result;
+    return true;
+}
+
+const ExtElfProbeResult& cross_elf_probe_result() {
+    return cross_elf_probe;
 }
 
 }  // namespace cxc::user

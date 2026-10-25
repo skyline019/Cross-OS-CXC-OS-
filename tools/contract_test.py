@@ -71,6 +71,10 @@ USER_MUNMAP_PASS = "USER_MUNMAP_PASS"
 USER_MUNMAP_PROBE_SUCCESS = "user munmap: mmap: 1, munmap: 1, pass: 1"
 USER_EXT_ELF_PASS = "USER_EXT_ELF_PASS"
 USER_EXT_ELF_PROBE_SUCCESS = "user ext ELF: loaded: 1, enter: 1, exit: 1, pass: 1"
+USER_CROSS_ELF_PASS = "USER_CROSS_ELF_PASS"
+USER_CROSS_ELF_PROBE_SUCCESS = (
+    "user cross ELF: loaded: 1, enter: 1, exit: 1, pass: 1"
+)
 
 
 @dataclass
@@ -444,6 +448,8 @@ class ContractRunner:
         assert USER_MUNMAP_PROBE_SUCCESS.encode() in serial
         assert USER_EXT_ELF_PASS.encode() in serial
         assert USER_EXT_ELF_PROBE_SUCCESS.encode() in serial
+        assert USER_CROSS_ELF_PASS.encode() in serial
+        assert USER_CROSS_ELF_PROBE_SUCCESS.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -452,7 +458,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net contracts + M36–M45 ESP ext ELF"
+            "kernel PASS + net contracts + M36–M46 host-gcc CROSS.ELF"
         )
 
     def negative_evidence(self, work: Path) -> str:

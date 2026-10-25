@@ -126,4 +126,9 @@ bool run_ext_elf_probe(const uint8_t* image, size_t image_size,
                        ExtElfProbeResult& result);
 const ExtElfProbeResult& ext_elf_probe_result();
 
+// BSP-only: host-gcc (or fallback) CROSS.ELF from the ESP (M46).
+bool run_cross_elf_probe(const uint8_t* image, size_t image_size,
+                         ExtElfProbeResult& result);
+const ExtElfProbeResult& cross_elf_probe_result();
+
 }  // namespace cxc::user

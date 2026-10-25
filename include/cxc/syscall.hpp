@@ -47,6 +47,7 @@ struct Session {
     uint32_t saw_user_dir_pass;
     uint32_t saw_user_munmap_pass;
     uint32_t saw_user_ext_elf_pass;
+    uint32_t saw_user_cross_elf_pass;
     uint32_t brk_grows;
     uint32_t brk_pages;
     uint32_t mmap_calls;

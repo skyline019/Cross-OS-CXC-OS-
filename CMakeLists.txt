@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.46.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.47.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -287,21 +287,67 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_CROSS_ELF "${CMAKE_CURRENT_BINARY_DIR}/user_cross.elf")
+find_program(CXC_USER_ELF_CC NAMES gcc)
+set(CXC_USER_CROSS_USES_GCC FALSE)
+if(CXC_USER_ELF_CC)
+    execute_process(
+        COMMAND "${CXC_USER_ELF_CC}" -dumpmachine
+        OUTPUT_VARIABLE CXC_USER_ELF_CC_MACHINE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(CXC_USER_ELF_CC_MACHINE MATCHES "linux")
+        set(CXC_USER_CROSS_USES_GCC TRUE)
+    endif()
+endif()
+if(CXC_USER_CROSS_USES_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_CROSS_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+            -o "${CXC_USER_CROSS_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+        COMMENT "Building ESP CROSS.ELF via host gcc (ELF64 ET_EXEC)"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_CROSS_ELF}"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
+            --output "${CXC_USER_CROSS_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
+        COMMENT "Building ESP CROSS.ELF via handmade fallback (no ELF gcc)"
+        VERBATIM
+    )
+endif()
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         --kernel "$<TARGET_FILE:cxc_kernel>"
-        --extra-file "${CXC_USER_EXT_ELF}"
-        --extra-name "EXT     ELF"
+        --extra "EXT     ELF" "${CXC_USER_EXT_ELF}"
+        --extra "CROSS   ELF" "${CXC_USER_CROSS_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
         "${CXC_USER_EXT_ELF}"
+        "${CXC_USER_CROSS_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
-    COMMENT "Creating FAT32 UEFI system partition (+ EXT.ELF)"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cross_hello.ld"
+    COMMENT "Creating FAT32 UEFI system partition (+ EXT.ELF + CROSS.ELF)"
     VERBATIM
 )
 add_custom_target(esp_image ALL DEPENDS "${CXC_ESP_IMAGE}")

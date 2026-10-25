@@ -108,7 +108,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M43** | `munmap` 释放 anonymous 映射 | 串口 `USER_MUNMAP_PASS` + `user munmap: …` |
 | **M44** | 第四次中场（M35–M44） | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；CI/合同统一；v0.45.0 |
 | **M45** | ESP 外部静态 ELF（非嵌入 PE） | 串口 `USER_EXT_ELF_PASS` + `user ext ELF: …` |
-| **M46+** | 交叉工具链 / libc 缺口 syscall | 见第四次中场 §6 |
+| **M46** | host gcc 产出 `CROSS.ELF`（无 libc） | 串口 `USER_CROSS_ELF_PASS` + `user cross ELF: …` |
+| **M47+** | libc 缺口 syscall / 可链接子集 | 见第四次中场 §6 |
 
 ## 6. 参考
 

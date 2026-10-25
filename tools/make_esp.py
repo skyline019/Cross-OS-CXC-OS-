@@ -51,19 +51,20 @@ def chain_clusters(fat: list[int], first: int, count: int) -> None:
 def build_image(
     kernel: Path,
     output: Path,
-    extra_file: Path | None = None,
-    extra_name: bytes = b"EXT     ELF",
+    extras: list[tuple[bytes, Path]] | None = None,
 ) -> None:
     kernel_data = kernel.read_bytes()
     if not kernel_data:
         raise ValueError("kernel image is empty")
-    extra_data = b""
-    if extra_file is not None:
-        extra_data = extra_file.read_bytes()
-        if not extra_data:
-            raise ValueError("extra ESP file is empty")
-        if len(extra_name) != 11:
-            raise ValueError(f"extra name must be 8.3: {extra_name!r}")
+
+    extra_files: list[tuple[bytes, bytes]] = []
+    for name, path in extras or []:
+        if len(name) != 11:
+            raise ValueError(f"extra name must be 8.3: {name!r}")
+        payload = path.read_bytes()
+        if not payload:
+            raise ValueError(f"extra ESP file is empty: {path}")
+        extra_files.append((name, payload))
 
     fat_sectors = 1
     for _ in range(32):
@@ -87,14 +88,16 @@ def build_image(
 
     kernel_cluster_count = max(1, math.ceil(len(kernel_data) / cluster_size))
     first_kernel_cluster = 5
-    last_kernel_cluster = first_kernel_cluster + kernel_cluster_count - 1
-    first_extra_cluster = 0
-    extra_cluster_count = 0
-    last_used_cluster = last_kernel_cluster
-    if extra_data:
-        first_extra_cluster = last_kernel_cluster + 1
-        extra_cluster_count = max(1, math.ceil(len(extra_data) / cluster_size))
-        last_used_cluster = first_extra_cluster + extra_cluster_count - 1
+    last_used_cluster = first_kernel_cluster + kernel_cluster_count - 1
+
+    placed: list[tuple[bytes, bytes, int, int]] = []
+    next_cluster = last_used_cluster + 1
+    for name, payload in extra_files:
+        count = max(1, math.ceil(len(payload) / cluster_size))
+        first = next_cluster
+        placed.append((name, payload, first, count))
+        last_used_cluster = first + count - 1
+        next_cluster = last_used_cluster + 1
     if last_used_cluster > cluster_count + 1:
         raise ValueError("ESP contents do not fit in the volume")
 
@@ -105,8 +108,8 @@ def build_image(
     fat[3] = EOC  # /EFI
     fat[4] = EOC  # /EFI/BOOT
     chain_clusters(fat, first_kernel_cluster, kernel_cluster_count)
-    if extra_data:
-        chain_clusters(fat, first_extra_cluster, extra_cluster_count)
+    for _, _, first, count in placed:
+        chain_clusters(fat, first, count)
     fat_data = struct.pack(f"<{len(fat)}I", *fat)
 
     boot_sector = bytearray(SECTOR_SIZE)
@@ -171,10 +174,8 @@ def build_image(
             b"BOOTX64 EFI", 0x20, first_kernel_cluster, len(kernel_data)
         ),
     ]
-    if extra_data:
-        boot_entries.append(
-            directory_entry(extra_name, 0x20, first_extra_cluster, len(extra_data))
-        )
+    for name, payload, first, _count in placed:
+        boot_entries.append(directory_entry(name, 0x20, first, len(payload)))
     boot = directory_cluster(boot_entries, cluster_size)
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -208,12 +209,16 @@ def build_image(
         write_cluster(3, efi)
         write_cluster(4, boot)
         write_file_clusters(first_kernel_cluster, kernel_cluster_count, kernel_data)
-        if extra_data:
-            write_file_clusters(first_extra_cluster, extra_cluster_count, extra_data)
+        for _name, payload, first, count in placed:
+            write_file_clusters(first, count, payload)
 
     extra_note = ""
-    if extra_data:
-        extra_note = f", {len(extra_data)} byte {extra_name.decode(errors='replace').strip()}"
+    if placed:
+        parts = [
+            f"{len(payload)}B {name.decode(errors='replace').strip()}"
+            for name, payload, _first, _count in placed
+        ]
+        extra_note = ", extras=[" + "; ".join(parts) + "]"
     print(
         f"created {output} ({len(kernel_data)} byte kernel, "
         f"{kernel_cluster_count} kernel clusters{extra_note}, "
@@ -226,27 +231,23 @@ def main() -> int:
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--extra-file",
-        type=Path,
-        default=None,
-        help="Optional file placed next to BOOTX64.EFI (8.3 name via --extra-name)",
-    )
-    parser.add_argument(
-        "--extra-name",
-        type=str,
-        default="EXT     ELF",
-        help="Exactly 11 chars for the FAT 8.3 directory name (default EXT.ELF)",
+        "--extra",
+        action="append",
+        nargs=2,
+        metavar=("NAME11", "PATH"),
+        default=[],
+        help="FAT 8.3 name (exactly 11 ASCII chars) and file path; repeatable",
     )
     arguments = parser.parse_args()
-    name = arguments.extra_name.encode("ascii")
-    if len(name) != 11:
-        raise SystemExit(f"--extra-name must be exactly 11 ASCII bytes, got {len(name)}")
-    build_image(
-        arguments.kernel,
-        arguments.output,
-        extra_file=arguments.extra_file,
-        extra_name=name,
-    )
+    extras: list[tuple[bytes, Path]] = []
+    for name_text, path_text in arguments.extra:
+        name = name_text.encode("ascii")
+        if len(name) != 11:
+            raise SystemExit(
+                f"--extra name must be exactly 11 ASCII bytes, got {len(name)}: {name_text!r}"
+            )
+        extras.append((name, Path(path_text)))
+    build_image(arguments.kernel, arguments.output, extras=extras)
     return 0
 
 
