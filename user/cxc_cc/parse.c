@@ -26,6 +26,26 @@ static void expect(CcParser* p, int tok) {
     }
 }
 
+static int accept_type(CcParser* p) {
+    if (accept(p, TOK_KW_INT)) {
+        return 1;
+    }
+    if (p->lx->tok == TOK_IDENT &&
+        cc_typedef_find(p->em, p->lx->text) >= 0) {
+        cc_lex_next(p->lx);
+        return 1;
+    }
+    return 0;
+}
+
+static int is_type_tok(CcParser* p) {
+    if (p->lx->tok == TOK_KW_INT) {
+        return 1;
+    }
+    return p->lx->tok == TOK_IDENT &&
+           cc_typedef_find(p->em, p->lx->text) >= 0;
+}
+
 static void parse_expr(CcParser* p);
 
 static size_t emit_je32(CcEmit* em) {
@@ -305,7 +325,7 @@ static void parse_unary(CcParser* p) {
     if (accept(p, TOK_KW_SIZEOF)) {
         unsigned sz = 8;
         expect(p, TOK_LPAREN);
-        if (accept(p, TOK_KW_INT)) {
+        if (accept_type(p)) {
             sz = 8;
         } else if (p->lx->tok == TOK_IDENT) {
             int st = cc_struct_find(p->em, p->lx->text);
@@ -859,7 +879,64 @@ static void parse_stmt(CcParser* p) {
         }
         return;
     }
-    accept(p, TOK_KW_INT);
+    if (is_type_tok(p)) {
+        char name[CC_IDENT_MAX + 1];
+        int idx;
+        int slot;
+        if (!accept_type(p)) {
+            fail(p);
+            return;
+        }
+        if (p->lx->tok != TOK_IDENT) {
+            fail(p);
+            return;
+        }
+        memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+        cc_lex_next(p->lx);
+        if (accept(p, TOK_SEMI)) {
+            if (cc_local_define(p->em, name, 1) < 0) {
+                fail(p);
+            }
+            return;
+        }
+        if (accept(p, TOK_LBRACK)) {
+            long dim;
+            if (p->lx->tok != TOK_NUMBER) {
+                fail(p);
+                return;
+            }
+            dim = p->lx->number;
+            cc_lex_next(p->lx);
+            expect(p, TOK_RBRACK);
+            expect(p, TOK_SEMI);
+            if (dim < 1 || dim > CC_LOCAL_MAX) {
+                fail(p);
+                return;
+            }
+            if (cc_local_define(p->em, name, (int)dim) < 0) {
+                fail(p);
+            }
+            return;
+        }
+        if (accept(p, TOK_ASSIGN)) {
+            if (cc_local_define(p->em, name, 1) < 0) {
+                fail(p);
+                return;
+            }
+            idx = cc_local_find(p->em, name);
+            if (idx < 0) {
+                fail(p);
+                return;
+            }
+            slot = p->em->locals[idx].slot;
+            parse_expr(p);
+            expect(p, TOK_SEMI);
+            cc_emit_store_local(p->em, slot);
+            return;
+        }
+        fail(p);
+        return;
+    }
     if (p->lx->tok == TOK_IDENT) {
         char name[CC_IDENT_MAX + 1];
         int idx;
@@ -1099,6 +1176,22 @@ static void clear_locals(CcEmit* em) {
     em->nloops = 0;
 }
 
+static void parse_typedef_def(CcParser* p) {
+    char name[CC_IDENT_MAX + 1];
+    expect(p, TOK_KW_TYPEDEF);
+    expect(p, TOK_KW_INT);
+    if (p->lx->tok != TOK_IDENT) {
+        fail(p);
+        return;
+    }
+    memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+    cc_lex_next(p->lx);
+    expect(p, TOK_SEMI);
+    if (cc_typedef_define(p->em, name) < 0) {
+        fail(p);
+    }
+}
+
 static void parse_enum_def(CcParser* p) {
     long next_val = 0;
     expect(p, TOK_KW_ENUM);
@@ -1135,7 +1228,10 @@ static void parse_enum_def(CcParser* p) {
 static void parse_global_def(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     unsigned long long init = 0;
-    expect(p, TOK_KW_INT);
+    if (!accept_type(p)) {
+        fail(p);
+        return;
+    }
     if (p->lx->tok != TOK_IDENT) {
         fail(p);
         return;
@@ -1380,7 +1476,10 @@ static void parse_defs(CcParser* p) {
     while (!p->em->failed &&
            (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
             p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_ENUM ||
-            p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT)) {
+            p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT ||
+            p->lx->tok == TOK_KW_TYPEDEF ||
+            (p->lx->tok == TOK_IDENT &&
+             cc_typedef_find(p->em, p->lx->text) >= 0))) {
         if (++guard > 64) {
             p->em->failed = 1;
             break;
@@ -1395,6 +1494,8 @@ static void parse_defs(CcParser* p) {
             parse_struct_def(p);
         } else if (p->lx->tok == TOK_KW_ENUM) {
             parse_enum_def(p);
+        } else if (p->lx->tok == TOK_KW_TYPEDEF) {
+            parse_typedef_def(p);
         } else {
             parse_global_def(p);
         }
@@ -1571,7 +1672,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                 }
                 if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
                     lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM ||
-                    lx.tok == TOK_KW_EXTERN || lx.tok == TOK_KW_IMPORT) {
+                    lx.tok == TOK_KW_EXTERN || lx.tok == TOK_KW_IMPORT ||
+                    lx.tok == TOK_KW_TYPEDEF) {
                     em.failed = 1;
                     break;
                 }

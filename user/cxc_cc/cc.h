@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): #lib cwrite/strlen/memcpy + escapes + cross-UND. */
+/* CXC mini-cc (A2): musl-ish CRT plant + typedef + DMSG/DHINT. */
 #pragma once
 
 #ifdef CC_HOST
@@ -31,6 +31,7 @@ enum {
     CC_CALL_MAX = 32,
     CC_LINK_MAX = 4,
     CC_EXPORT_MAX = 16,
+    CC_TYPEDEF_MAX = 8,
     CC_LOAD_VA = 0x400000
 };
 
@@ -61,6 +62,7 @@ enum CcTok {
     TOK_KW_SIZEOF,
     TOK_KW_EXTERN,
     TOK_KW_IMPORT,
+    TOK_KW_TYPEDEF,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -147,6 +149,10 @@ typedef struct CcExport {
     size_t entry;
 } CcExport;
 
+typedef struct CcTypedef {
+    char name[CC_IDENT_MAX + 1];
+} CcTypedef;
+
 typedef struct CcStruct {
     char name[CC_IDENT_MAX + 1];
     char fields[CC_STRUCT_FIELDS][CC_IDENT_MAX + 1];
@@ -185,6 +191,8 @@ typedef struct CcEmit {
     int ncalls;
     CcExport exports[CC_EXPORT_MAX];
     int nexports;
+    CcTypedef typedefs[CC_TYPEDEF_MAX];
+    int ntypedefs;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -201,6 +209,8 @@ int cc_global_find(CcEmit* em, const char* name);
 int cc_global_define(CcEmit* em, const char* name, unsigned long long init);
 int cc_enum_find(CcEmit* em, const char* name);
 int cc_enum_define(CcEmit* em, const char* name, long value);
+int cc_typedef_find(CcEmit* em, const char* name);
+int cc_typedef_define(CcEmit* em, const char* name);
 
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);

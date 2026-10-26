@@ -45,9 +45,10 @@ static int write_all(int fd, const unsigned char* buf, size_t n) {
     return 0;
 }
 
-/* Debug兜底: surface link/compile fail code on serial before exit 4. */
+/* Debug兜底: DMSG:NN + DHINT:TAG on serial before exit 4. */
 static void write_dmsg(int code) {
     char msg[8];
+    const char* hint;
     int c;
     if (code < 0) {
         code = 0;
@@ -64,6 +65,37 @@ static void write_dmsg(int code) {
     msg[6] = (char)('0' + (code % 10));
     msg[7] = '\n';
     c = write(1, msg, 8);
+    (void)c;
+    switch (code) {
+    case 10:
+        hint = "DHINT:PRE\n";
+        break;
+    case 11:
+        hint = "DHINT:CAL\n";
+        break;
+    case 12:
+        hint = "DHINT:STM\n";
+        break;
+    case 20:
+        hint = "DHINT:ELF\n";
+        break;
+    case 21:
+        hint = "DHINT:UND\n";
+        break;
+    case 22:
+        hint = "DHINT:REL\n";
+        break;
+    case 23:
+        hint = "DHINT:DUP\n";
+        break;
+    case 30:
+        hint = "DHINT:PAR\n";
+        break;
+    default:
+        hint = "DHINT:UNK\n";
+        break;
+    }
+    c = write(1, hint, 10);
     (void)c;
 }
 

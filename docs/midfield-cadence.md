@@ -17,7 +17,7 @@
 | 第九次 | M85–M94 | [`midpoint-assessment-9.md`](midpoint-assessment-9.md) |
 | 第十次 | 约 M95–M104 | [`midpoint-assessment-10.md`](midpoint-assessment-10.md) |
 
-当前基线：**M111 / v2.2.0**（机上 mini-cc：`strlen`/`memcpy`/`cwrite` + `DMSG`；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M114**。
+当前基线：**M112 / v2.3.0**（机上 mini-cc：`memset`/`memcmp` + `typedef` + `DMSG`/`DHINT`；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M114**。
 
 ## 中场窗口必做
 

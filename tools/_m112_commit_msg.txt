@@ -1,0 +1,4 @@
+feat: M112 mini-cc memset/memcmp typedef DHINT ONBOX_MUSL_PASS (v2.3.0)
+
+Plant memset/memcmp in io.elf; typedef int aliases; DMSG+DHINT edge.
+Evidence WMSG:MS + DMSG:21 + DHINT:UND + ONBOX_MUSL_PASS.

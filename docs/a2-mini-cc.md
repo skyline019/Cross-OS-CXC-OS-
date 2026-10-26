@@ -1,7 +1,7 @@
 # A2 机上迷你编译器（cxc-cc）路线
 
 **目标**：不依赖宿主机，在 CXC/OS 上用**完整内部编译器**编译并运行合理范围内的程序（通向 g++/gcc）。  
-**当前基线**：M111 — planted **`strlen`/`memcpy`/`cwrite`** + 表达式语句 + 跨 `#lib` UND + `DMSG` 调试兜底。
+**当前基线**：M112 — planted **`memset`/`memcmp`/`strlen`/`memcpy`/`cwrite`** + `typedef` + 跨 `#lib` UND + `DMSG`/`DHINT` 调试兜底。
 
 ## 1. 语言分期（合同只增不减）
 
@@ -11,8 +11,9 @@
 | M105–M108 | `#link` / `#lib` / 多符号 / 节内 PC32 | 曾用 LINK/LIB/MATH/PC32 |
 | M109 | 跨 `#lib` UND；`DMSG` 边缘 | 曾用 `ONBOX_XLIB_PASS` |
 | M110 | `call(...);`；`io.elf`/`cwrite`；`"...\n"` 转义 | 曾用 `ONBOX_LIBC_PASS` |
-| **M111（本窗）** | `strlen`/`memcpy` planted；`cwrite(…, strlen(…))` | `NMSG:42` + `WMSG:ST` + `DMSG:21` + `ONBOX_CSTR_PASS` + `edge: 1` |
-| M112+ | 更多 musl（`memcmp`/`memset`…）；声明靠拢真实 C | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| M111 | `strlen`/`memcpy` planted；`cwrite(…, strlen(…))` | 曾用 `ONBOX_CSTR_PASS` |
+| **M112（本窗）** | `memset`/`memcmp`；`typedef int`；`DMSG`+`DHINT` | `NMSG:42` + `WMSG:MS` + `DMSG:21` + `DHINT:UND` + `ONBOX_MUSL_PASS` + `edge: 1` |
+| M113+ | 更多 musl / 声明靠拢真实 C → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 **未宣称 A2**：仍无完整工具链 / 动态链接 / 完整 C 类型系统。
 

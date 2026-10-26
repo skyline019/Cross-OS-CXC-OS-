@@ -125,7 +125,7 @@ int cc_enum_define(CcEmit* em, const char* name, long value) {
     CcEnumConst* e;
     size_t n = 0;
     if (em->nenums >= CC_ENUM_MAX || cc_enum_find(em, name) >= 0 ||
-        cc_global_find(em, name) >= 0) {
+        cc_global_find(em, name) >= 0 || cc_typedef_find(em, name) >= 0) {
         return -1;
     }
     e = &em->enums[em->nenums];
@@ -139,13 +139,41 @@ int cc_enum_define(CcEmit* em, const char* name, long value) {
     return em->nenums - 1;
 }
 
+int cc_typedef_find(CcEmit* em, const char* name) {
+    int i;
+    for (i = 0; i < em->ntypedefs; i++) {
+        if (strcmp(em->typedefs[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int cc_typedef_define(CcEmit* em, const char* name) {
+    CcTypedef* t;
+    size_t n = 0;
+    if (em->ntypedefs >= CC_TYPEDEF_MAX || cc_typedef_find(em, name) >= 0 ||
+        cc_global_find(em, name) >= 0 || cc_enum_find(em, name) >= 0 ||
+        cc_fn_find(em, name) >= 0) {
+        return -1;
+    }
+    t = &em->typedefs[em->ntypedefs];
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        t->name[n] = name[n];
+        n++;
+    }
+    t->name[n] = 0;
+    em->ntypedefs++;
+    return em->ntypedefs - 1;
+}
+
 int cc_global_define(CcEmit* em, const char* name, unsigned long long init) {
     CcGlobal* g;
     size_t n = 0;
     unsigned char words[8];
     int i;
     if (em->nglobals >= CC_GLOBAL_MAX || cc_global_find(em, name) >= 0 ||
-        cc_local_find(em, name) >= 0) {
+        cc_local_find(em, name) >= 0 || cc_typedef_find(em, name) >= 0) {
         return -1;
     }
     for (i = 0; i < 8; i++) {
@@ -406,7 +434,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_CSTR_PASS\n";
+    static const char pass[] = "ONBOX_MUSL_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

@@ -379,16 +379,23 @@ int main(void) {
             "import fn ans();\n"
             "import fn cwrite(p,n);\n"
             "import fn strlen(s);\n"
+            "import fn memset(d,c,n);\n"
+            "import fn memcmp(a,b,n);\n"
+            "typedef int i32;\n"
             "fn main(){\n"
-            "int n;\n"
-            "int m;\n"
-            "m=strlen(\"WMSG:ST\\n\");\n"
-            "cwrite(\"WMSG:ST\\n\", m);\n"
+            "i32 n;\n"
+            "i32 m;\n"
+            "i32 d;\n"
+            "buf[2];\n"
+            "memset(&buf[0], 0, 16);\n"
+            "d=memcmp(&buf[0], &buf[0], 16);\n"
+            "m=strlen(\"WMSG:MS\\n\");\n"
+            "cwrite(\"WMSG:MS\\n\", m);\n"
             "n=ans();\n"
             "print n;\n"
-            "return n;\n"
+            "return n+d;\n"
             "}\n",
-            "m111-cstr") != 0) {
+            "m112-musl") != 0) {
         fails++;
     }
     if (expect_ok(
@@ -414,6 +421,35 @@ int main(void) {
             "return b[0]+b[1]+39;\n"
             "}\n",
             "m111-memcpy") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "import fn memset(d,c,n);\n"
+            "import fn memcmp(a,b,n);\n"
+            "fn main(){\n"
+            "a[2];\n"
+            "memset(&a[0], 0, 16);\n"
+            "return memcmp(&a[0], &a[0], 16);\n"
+            "}\n",
+            "m112-memset-memcmp") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "typedef int i32;\n"
+            "i32 g=7;\n"
+            "fn main(){\n"
+            "i32 x=5;\n"
+            "return x+g+30;\n"
+            "}\n",
+            "m112-typedef") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\ntypedef int i32;\ntypedef int i32;\nreturn 0;\n",
+            "bad-dup-typedef") != 0) {
         fails++;
     }
     if (expect_ok(

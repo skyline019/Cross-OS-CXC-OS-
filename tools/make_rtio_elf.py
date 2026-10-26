@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ET_REL IO/string: cwrite + strlen + memcpy (SysV). M110/M111."""
+"""ET_REL IO/string: cwrite/strlen/memcpy/memset/memcmp (SysV). M111/M112."""
 
 from __future__ import annotations
 
@@ -7,24 +7,36 @@ import argparse
 import struct
 from pathlib import Path
 
-# cwrite(rdi=buf, rsi=len): write(1, buf, len) via int 0x80
+# cwrite(rdi=buf, rsi=len)
 CWRITE = bytes.fromhex("4889F24889FEBF01000000B801000000CD80C3")
 
-# strlen(rdi=s): rax = length
-# xor eax,eax; L: cmp byte [rdi+rax],0; je done; inc rax; jmp L; done: ret
+# strlen(rdi=s)
 STRLEN = bytes.fromhex("31C0803C0700740548FFC0EBF5C3")
 
-# memcpy(rdi=dst, rsi=src, rdx=n): byte copy, returns dst in rax
-# mov rax,rdi; test rdx,rdx; je done; L: mov cl,[rsi]; mov [rdi],cl;
-# inc rsi; inc rdi; dec rdx; jnz L; done: ret
+# memcpy(rdi=dst, rsi=src, rdx=n)
 MEMCPY = bytes.fromhex(
     "4889F84885D2740F8A0E880F48FFC648FFC748FFCA75F1C3"
+)
+
+# memset(rdi=dst, rsi=c, rdx=n): mov rax,rdi; test rdx,rdx; je done;
+# mov cl,sil; L: mov [rdi],cl; inc rdi; dec rdx; jnz L; ret
+MEMSET = bytes.fromhex("4889F84885D2740D408ACE880F48FFC748FFCA75F6C3")
+
+# memcmp(rdi=a, rsi=b, rdx=n): 0 if equal else 1
+# xor eax,eax; test rdx,rdx; je done;
+# L: mov cl,[rdi]; cmp cl,[rsi]; jne diff;
+# inc rdi; inc rsi; dec rdx; jnz L; ret;
+# diff: mov eax,1; ret
+MEMCMP = bytes.fromhex(
+    "31C04885D274118A0F3A0E750C48FFC748FFC648FFCA75EFC3B801000000C3"
 )
 
 FUNCS = (
     ("cwrite", CWRITE),
     ("strlen", STRLEN),
     ("memcpy", MEMCPY),
+    ("memset", MEMSET),
+    ("memcmp", MEMCMP),
 )
 
 SHT_PROGBITS = 1

@@ -1922,7 +1922,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M111: strlen+cwrite + memcpy plant + cross-#lib; edge DMSG.
+    // M112: memset/memcmp + typedef + cwrite/strlen; edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"rt.elf\"\n"
@@ -1931,14 +1931,21 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "import fn ans();\n"
         "import fn cwrite(p,n);\n"
         "import fn strlen(s);\n"
+        "import fn memset(d,c,n);\n"
+        "import fn memcmp(a,b,n);\n"
+        "typedef int i32;\n"
         "fn main(){\n"
-        "int n;\n"
-        "int m;\n"
-        "m=strlen(\"WMSG:ST\\n\");\n"
-        "cwrite(\"WMSG:ST\\n\", m);\n"
+        "i32 n;\n"
+        "i32 m;\n"
+        "i32 d;\n"
+        "buf[2];\n"
+        "memset(&buf[0], 0, 16);\n"
+        "d=memcmp(&buf[0], &buf[0], 16);\n"
+        "m=strlen(\"WMSG:MS\\n\");\n"
+        "cwrite(\"WMSG:MS\\n\", m);\n"
         "n=ans();\n"
         "print n;\n"
-        "return n;\n"
+        "return n+d;\n"
         "}\n";
     static const char bad_src[] =
         "CXC_A2\n"
