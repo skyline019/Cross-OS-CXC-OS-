@@ -1,4 +1,4 @@
-/* Import ET_REL: .text+.rodata, PC32/PLT32/32/GOTPCREL (M118). */
+/* Import ET_REL: .text(.name)+.rodata, PC32/PLT32/32/GOTPCREL; musl .text.* (M119). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST
@@ -233,8 +233,9 @@ int cc_import_elf(CcEmit* em, const char* path) {
                 stroff = (unsigned)u64(strsh + 24);
                 strsz = (unsigned)u64(strsh + 32);
             }
-        } else if (typ == SHT_PROGBITS && (flags & SHF_EXECINSTR) &&
+        } else if (typ == SHT_PROGBITS && (flags & SHF_EXECINSTR) && sz > 0 &&
                    text_sz == 0) {
+            /* musl uses .text.sym (empty .text first); take first non-empty. */
             text_i = i;
             text_off = off;
             text_sz = sz;

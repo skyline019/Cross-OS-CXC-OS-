@@ -1,6 +1,7 @@
 #include <cxc/user.hpp>
 #include <cxc/host_add_elf.hpp>
 #include <cxc/host_bump_elf.hpp>
+#include <cxc/musl_labs_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
@@ -1924,16 +1925,20 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M118: io → math.o → host.o (-fPIC GOTPCREL); edge DMSG+DHINT.
+    // M119: io → musl.o (real musl labs.lo / .text.labs); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"io.elf\"\n"
-        "#lib \"math.o\"\n"
-        "#lib \"host.o\"\n"
-        "import fn bump(x);\n"
+        "#lib \"musl.o\"\n"
+        "import fn labs(x);\n"
+        "import fn cwrite(p,n);\n"
+        "import fn strlen(s);\n"
         "int main(void){\n"
         "int n;\n"
-        "n=bump(35);\n"
+        "int m;\n"
+        "m=strlen(\"WMSG:ML\\n\");\n"
+        "cwrite(\"WMSG:ML\\n\", m);\n"
+        "n=labs(0-42);\n"
         "print n;\n"
         "return n;\n"
         "}\n";
@@ -2048,6 +2053,25 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(hfd)) != 0) {
             result.failure = 48;
+            return false;
+        }
+    }
+    {
+        const int64_t ufd = fs::open_path(
+            "disk/musl.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ufd < 0) {
+            result.failure = 52;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ufd), musl_labs_elf,
+                         musl_labs_elf_size) !=
+            static_cast<int64_t>(musl_labs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ufd));
+            result.failure = 53;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ufd)) != 0) {
+            result.failure = 54;
             return false;
         }
     }

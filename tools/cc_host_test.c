@@ -433,6 +433,25 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "#lib \"musl.o\"\n"
+            "import fn labs(x);\n"
+            "import fn cwrite(p,n);\n"
+            "import fn strlen(s);\n"
+            "int main(void){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:ML\\n\");\n"
+            "cwrite(\"WMSG:ML\\n\", m);\n"
+            "n=labs(0-42);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m119-musl-labs") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "#lib \"lib.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"
