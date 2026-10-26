@@ -102,6 +102,15 @@ def main() -> int:
         (disk / "labs.o").write_bytes(musl.read_bytes())
         dig = ROOT / "user" / "prebuilt" / "musl_isdigit.o"
         (disk / "dig.o").write_bytes(dig.read_bytes())
+        (disk / "slen.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strlen.o").read_bytes()
+        )
+        (disk / "mcmp.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_memcmp.o").read_bytes()
+        )
+        (disk / "mcpy.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_memcpy.o").read_bytes()
+        )
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

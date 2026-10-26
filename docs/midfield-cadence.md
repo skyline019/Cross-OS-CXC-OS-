@@ -18,7 +18,7 @@
 | 第十次 | 约 M95–M104 | [`midpoint-assessment-10.md`](midpoint-assessment-10.md) |
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 
-当前基线：**M120 / v2.11.0**（机上 mini-cc：musl isdigit 多 .text.*；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M124**。
+当前基线：**M121 / v2.12.0**（机上 mini-cc：musl strlen/memcmp/memcpy；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M124**。
 
 ## 中场窗口必做
 

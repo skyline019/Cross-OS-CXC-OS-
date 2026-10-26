@@ -475,6 +475,30 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"slen.o\"\n"
+            "#lib \"mcmp.o\"\n"
+            "#lib \"mcpy.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn strlen(s);\n"
+            "import fn memcmp(a,b,n);\n"
+            "import fn memcpy(d,s,n);\n"
+            "import fn cwrite(p,n);\n"
+            "int main(void){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:MM\\n\");\n"
+            "memcpy(\"WMSG:MM\\n\", \"WMSG:MM\\n\", 0);\n"
+            "cwrite(\"WMSG:MM\\n\", m);\n"
+            "n=memcmp(\"42\", \"42\", 2);\n"
+            "n=n+42;\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m121-musl-mem-trio") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "#lib \"lib.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"

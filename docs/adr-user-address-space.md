@@ -182,8 +182,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M117** | 双 host-gcc `#lib`（math+host） | 曾用 `ONBOX_H2O_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M118** | host-gcc `-fPIC` GOTPCREL 合成 GOT | 曾用 `ONBOX_GOT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M119** | 真实 musl `labs.lo`（`.text.labs`） | 曾用 `ONBOX_MLAB_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M120** | musl `isdigit.lo` 多 `.text.*` | `ONBOX_MDIG_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M121+** | 更大 musl / 机上工具链 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M120** | musl `isdigit.lo` 多 `.text.*` | 曾用 `ONBOX_MDIG_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M121** | musl `strlen`/`memcmp`/`memcpy` 三联 | `ONBOX_MMEM_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M122+** | 更大 musl / 机上工具链 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

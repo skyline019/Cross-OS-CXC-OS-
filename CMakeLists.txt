@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.11.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.12.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1569,6 +1569,13 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isdigit.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_musl_isdigit_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isdigit_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strlen.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memcmp.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memcpy.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_musl_mem_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strlen_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memcmp_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memcpy_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

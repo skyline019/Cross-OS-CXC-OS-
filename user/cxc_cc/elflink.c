@@ -1,4 +1,4 @@
-/* Import ET_REL: multi .text.* + .rodata; PC32/PLT32/32/GOTPCREL (M120). */
+/* Import ET_REL: multi .text.* + .rodata; size0/keep-first (M121). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST
@@ -124,6 +124,7 @@ static int copy_ident(char* dst, const char* src, size_t strsz, unsigned off) {
     return nl == 0 ? -1 : 0;
 }
 
+/* Returns 1 if newly added, 0 if name already exported (keep first), -1 on OOM. */
 static int export_add(CcEmit* em, const char* name, size_t entry) {
     int i;
     if (em->nexports >= CC_EXPORT_MAX) {
@@ -131,7 +132,7 @@ static int export_add(CcEmit* em, const char* name, size_t entry) {
     }
     for (i = 0; i < em->nexports; i++) {
         if (name_eq(em->exports[i].name, name)) {
-            return -1;
+            return 0;
         }
     }
     i = 0;
@@ -142,7 +143,7 @@ static int export_add(CcEmit* em, const char* name, size_t entry) {
     em->exports[em->nexports].name[i] = 0;
     em->exports[em->nexports].entry = entry;
     em->nexports++;
-    return 0;
+    return 1;
 }
 
 static int resolve_addr(CcEmit* em, const char* name, size_t* out) {
@@ -459,15 +460,28 @@ int cc_import_elf(CcEmit* em, const char* path) {
         if (copy_ident(ident, strbase, strsz, name_off) != 0) {
             continue; /* skip long/weak-adjacent names */
         }
-        if (value > tex_sz[tslot] || size == 0 ||
-            size > tex_sz[tslot] - value) {
+        if (value > tex_sz[tslot]) {
+            em->fail_code = CC_FAIL_ELF;
+            return -1;
+        }
+        /* musl memcpy/memset often st_size==0; treat as rest of section. */
+        if (size == 0) {
+            size = (unsigned long long)tex_sz[tslot] - value;
+        }
+        if (size == 0 || size > tex_sz[tslot] - value) {
             em->fail_code = CC_FAIL_ELF;
             return -1;
         }
         entry = tex_base[tslot] + (size_t)value;
-        if (export_add(em, ident, entry) != 0) {
-            em->fail_code = CC_FAIL_DUP;
-            return -1;
+        {
+            int added = export_add(em, ident, entry);
+            if (added < 0) {
+                em->fail_code = CC_FAIL_DUP;
+                return -1;
+            }
+            if (added == 0) {
+                continue;
+            }
         }
         fi = cc_fn_find(em, ident);
         if (fi < 0) {

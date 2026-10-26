@@ -3,6 +3,9 @@
 #include <cxc/host_bump_elf.hpp>
 #include <cxc/musl_isdigit_elf.hpp>
 #include <cxc/musl_labs_elf.hpp>
+#include <cxc/musl_memcmp_elf.hpp>
+#include <cxc/musl_memcpy_elf.hpp>
+#include <cxc/musl_strlen_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
@@ -1926,24 +1929,25 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M120: io → dig.o (isdigit multi .text.*) → labs.o; edge DMSG+DHINT.
+    // M121: musl strlen/memcmp/memcpy #lib (+io cwrite); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
+        "#lib \"slen.o\"\n"
+        "#lib \"mcmp.o\"\n"
+        "#lib \"mcpy.o\"\n"
         "#lib \"io.elf\"\n"
-        "#lib \"dig.o\"\n"
-        "#lib \"labs.o\"\n"
-        "import fn isdigit(c);\n"
-        "import fn labs(x);\n"
-        "import fn cwrite(p,n);\n"
         "import fn strlen(s);\n"
+        "import fn memcmp(a,b,n);\n"
+        "import fn memcpy(d,s,n);\n"
+        "import fn cwrite(p,n);\n"
         "int main(void){\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:MD\\n\");\n"
-        "cwrite(\"WMSG:MD\\n\", m);\n"
-        "n=isdigit(50);\n"
-        "n=n+41;\n"
-        "n=labs(0-n);\n"
+        "m=strlen(\"WMSG:MM\\n\");\n"
+        "memcpy(\"WMSG:MM\\n\", \"WMSG:MM\\n\", 0);\n"
+        "cwrite(\"WMSG:MM\\n\", m);\n"
+        "n=memcmp(\"42\", \"42\", 2);\n"
+        "n=n+42;\n"
         "print n;\n"
         "return n;\n"
         "}\n";
@@ -2096,6 +2100,63 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(ufd)) != 0) {
             result.failure = 57;
+            return false;
+        }
+    }
+    {
+        const int64_t sfd2 = fs::open_path(
+            "disk/slen.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (sfd2 < 0) {
+            result.failure = 58;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(sfd2), musl_strlen_elf,
+                         musl_strlen_elf_size) !=
+            static_cast<int64_t>(musl_strlen_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(sfd2));
+            result.failure = 59;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(sfd2)) != 0) {
+            result.failure = 60;
+            return false;
+        }
+    }
+    {
+        const int64_t cfd2 = fs::open_path(
+            "disk/mcmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (cfd2 < 0) {
+            result.failure = 61;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(cfd2), musl_memcmp_elf,
+                         musl_memcmp_elf_size) !=
+            static_cast<int64_t>(musl_memcmp_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(cfd2));
+            result.failure = 62;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(cfd2)) != 0) {
+            result.failure = 63;
+            return false;
+        }
+    }
+    {
+        const int64_t yfd = fs::open_path(
+            "disk/mcpy.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (yfd < 0) {
+            result.failure = 64;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(yfd), musl_memcpy_elf,
+                         musl_memcpy_elf_size) !=
+            static_cast<int64_t>(musl_memcpy_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(yfd));
+            result.failure = 65;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(yfd)) != 0) {
+            result.failure = 66;
             return false;
         }
     }
