@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M132/A2: frontend char truncate + const → ONBOX_CHAR_PASS.
+// M133/A2: as+cc+ld+musl merge → ONBOX_MERG_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

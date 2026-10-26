@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M132/A2: char/const frontend → NMSG + WMSG + CHAR.
+    // M133/A2: as+cc+ld+musl merge → NMSG + WMSG + MERG.
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2075,16 +2075,16 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", exit: ");
         log::decimal(onbox.exit_code);
         log::write('\n');
-        log::panic("M132 on-box mini-cc char/const failed");
+        log::panic("M133 on-box mini-cc as+cc+ld merge failed");
     }
     log::write("[ok] onbox-cc: pass: ");
     log::decimal(onbox.wrote_pass);
     log::write(" src: 1 cc: 1 run: 1 exit: ");
     log::decimal(onbox.exit_code);
-    log::write(" write: 1 char: 1 edge: ");
+    log::write(" write: 1 merg: 1 edge: ");
     log::decimal(onbox.edge_ok);
     log::write('\n');
-    log::line("ONBOX_CHAR_PASS");
+    log::line("ONBOX_MERG_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2357,7 +2357,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.23.0 - on-box mini-cc char/const (A2/M132)");
+    cxc::log::line("CXC/OS 2.24.0 - on-box mini-cc merge (A2/M133)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

@@ -1031,6 +1031,172 @@ int main(void) {
         }
     }
     {
+        /* M133: as+cc+ld+musl merge success + DUP/bad ELF/trunc/UND edges. */
+        unsigned char* o = 0;
+        size_t on = 0;
+        unsigned char* elf = 0;
+        size_t en = 0;
+        FILE* f;
+        const char* paths[10];
+        const char* lib_c =
+            "CXC_A2\n"
+            "int add(int a, int b){ return a+b; }\n"
+            "int bump(int x){ return add(x, 42); }\n";
+        const char* main_s =
+            ".text\n.globl main\nmain:\n"
+            "lea s(%rip), %rax\nmov %rax, %rdi\ncall strlen\n"
+            "cmp $2, %eax\nje .Lok\nmov $1, %eax\nret\n"
+            ".Lok:\nmov $0, %edi\ncall bump\nret\n"
+            ".rodata\ns:\n.asciz \"MX\"\n";
+        if (cc_compile_obj(lib_c, strlen(lib_c), &o, &on) != 0 || !o ||
+            on < 64) {
+            fprintf(stderr, "FAIL ok m133-merge: cc lib.c\n");
+            fails++;
+        } else {
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m133-merge: write lib.o\n");
+                fails++;
+            }
+        }
+        o = 0;
+        on = 0;
+        if (as_compile(main_s, strlen(main_s), &o, &on) != 0 || !o ||
+            on < 64) {
+            fprintf(stderr, "FAIL ok m133-merge: as main.s\n");
+            fails++;
+        } else {
+            f = fopen("disk/main.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m133-merge: write main.o\n");
+                fails++;
+            }
+        }
+        paths[0] = "disk/main.o";
+        paths[1] = "disk/lib.o";
+        paths[2] = "disk/scat.o";
+        paths[3] = "disk/schr.o";
+        paths[4] = "disk/snul.o";
+        paths[5] = "disk/scpy.o";
+        paths[6] = "disk/stpc.o";
+        paths[7] = "disk/sncmp.o";
+        paths[8] = "disk/mcmp.o";
+        paths[9] = "disk/io.elf";
+        if (ld_link(paths, 10, &elf, &en) != 0 || !elf || en < 64 ||
+            elf[16] != 2) {
+            fprintf(stderr, "FAIL ok m133-merge: ld_link\n");
+            fails++;
+        }
+        /* DUP: local bump + #lib bump.o → fail_code DUP. */
+        {
+            const char* dup_src =
+                ".text\n.globl bump\nbump:\nmov $1, %eax\nret\n";
+            o = 0;
+            on = 0;
+            if (as_compile(dup_src, strlen(dup_src), &o, &on) == 0 && o) {
+                f = fopen("disk/dup.o", "wb");
+                if (f) {
+                    (void)fwrite(o, 1, on, f);
+                    (void)fclose(f);
+                }
+            }
+            if (expect_fail(
+                    "CXC_A2\n"
+                    "#lib \"dup.o\"\n"
+                    "fn bump(x){\n"
+                    "return 1;\n"
+                    "}\n"
+                    "fn main(){\n"
+                    "return bump(0);\n"
+                    "}\n",
+                    "m133-dup") != 0) {
+                fails++;
+            }
+        }
+        /* Bad e_type: ET_EXEC pretending to be .o */
+        {
+            unsigned char bad[64];
+            const char* bp[1];
+            int i;
+            for (i = 0; i < 64; i++) {
+                bad[i] = 0;
+            }
+            bad[0] = 0x7f;
+            bad[1] = 'E';
+            bad[2] = 'L';
+            bad[3] = 'F';
+            bad[4] = 2; /* ELFCLASS64 */
+            bad[16] = 2; /* ET_EXEC — must reject for import */
+            bad[17] = 0;
+            f = fopen("disk/badtype.o", "wb");
+            if (f) {
+                (void)fwrite(bad, 1, 64, f);
+                (void)fclose(f);
+            }
+            bp[0] = "disk/badtype.o";
+            if (ld_link(bp, 1, &elf, &en) == 0) {
+                fprintf(stderr, "FAIL edge m133: bad e_type accepted\n");
+                fails++;
+            }
+        }
+        /* Truncated ELF */
+        {
+            unsigned char trunc[16];
+            const char* tp[1];
+            int i;
+            for (i = 0; i < 16; i++) {
+                trunc[i] = 0;
+            }
+            trunc[0] = 0x7f;
+            trunc[1] = 'E';
+            trunc[2] = 'L';
+            trunc[3] = 'F';
+            trunc[4] = 2;
+            trunc[16 - 16] = 1; /* won't matter — file too short */
+            f = fopen("disk/trunc.o", "wb");
+            if (f) {
+                (void)fwrite(trunc, 1, 16, f);
+                (void)fclose(f);
+            }
+            tp[0] = "disk/trunc.o";
+            if (ld_link(tp, 1, &elf, &en) == 0) {
+                fprintf(stderr, "FAIL edge m133: trunc ELF accepted\n");
+                fails++;
+            }
+        }
+        /* Unresolved UND via link.rsp order: main calls missing */
+        {
+            const char* und_main =
+                ".text\n.globl main\nmain:\ncall nosym\nret\n";
+            const char* up[1];
+            o = 0;
+            on = 0;
+            if (as_compile(und_main, strlen(und_main), &o, &on) == 0 && o) {
+                f = fopen("disk/undmain.o", "wb");
+                if (f) {
+                    (void)fwrite(o, 1, on, f);
+                    (void)fclose(f);
+                }
+            }
+            up[0] = "disk/undmain.o";
+            if (ld_link(up, 1, &elf, &en) == 0) {
+                fprintf(stderr, "FAIL edge m133: unresolved UND accepted\n");
+                fails++;
+            }
+        }
+        /* Unordered #lib UND that never resolves (edge). */
+        if (expect_fail(
+                "CXC_A2\n"
+                "#lib \"io.elf\"\n"
+                "import fn missing();\n"
+                "fn main(){\n"
+                "return missing();\n"
+                "}\n",
+                "m133-unordered-und") != 0) {
+            fails++;
+        }
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;
