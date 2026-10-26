@@ -22,7 +22,8 @@ constexpr uint32_t pf_x = 1;
 constexpr uint32_t pf_w = 2;
 constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
 constexpr size_t max_phnum = 8;
-constexpr size_t max_image = 64 * 1024;
+// M89: match CXCFS 128 KiB ceiling so disk/ toolchain ELFs can execve.
+constexpr size_t max_image = 128 * 1024;
 
 struct Ehdr {
     uint8_t ident[16];

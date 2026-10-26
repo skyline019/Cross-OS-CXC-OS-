@@ -151,6 +151,8 @@ NEST_PASS = "NEST_PASS"
 NEST_PROBE_SUCCESS = "nest: pass: 1"
 CAP_PASS = "CAP_PASS"
 CAP_PROBE_SUCCESS = "cap: pass: 1"
+LOAD128_PASS = "LOAD128_PASS"
+LOAD128_PROBE_SUCCESS = "load128: pass: 1"
 
 
 @dataclass
@@ -628,6 +630,9 @@ class ContractRunner:
         assert b"bytes: 98304" in serial
         assert b"ceiling: 131072" in serial
         assert b"file_bytes: 131072" in serial
+        assert LOAD128_PASS.encode() in serial
+        assert LOAD128_PROBE_SUCCESS.encode() in serial
+        assert b"elf_bytes: 102400" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -636,7 +641,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M88 CXCFS capacity"
+            "kernel PASS + net + M75–M89 ELF load 128KiB"
         )
 
     def negative_evidence(self, work: Path) -> str:

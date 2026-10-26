@@ -65,6 +65,7 @@ constexpr char expected_pipe_pass[] = "PIPE_PASS\n";
 constexpr char expected_chdir_pass[] = "CHDIR_PASS\n";
 constexpr char expected_nest_pass[] = "NEST_PASS\n";
 constexpr char expected_cap_pass[] = "CAP_PASS\n";
+constexpr char expected_load128_pass[] = "LOAD128_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr int64_t errno_fault_cwd = -14;  // -EFAULT
 constexpr uint64_t fcntl_getfd = 1;
@@ -687,6 +688,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_cap_pass = 1;
         }
     }
+    if (length == sizeof(expected_load128_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_load128_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_load128_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_load128_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -883,8 +897,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.89.0");
-    fill_uts_field(local.version, "M88");
+    fill_uts_field(local.release, "0.90.0");
+    fill_uts_field(local.version, "M89");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,

@@ -114,6 +114,7 @@ struct Session {
     uint32_t saw_chdir_pass;
     uint32_t saw_nest_pass;
     uint32_t saw_cap_pass;
+    uint32_t saw_load128_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t pid;

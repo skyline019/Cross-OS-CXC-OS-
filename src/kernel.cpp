@@ -105,6 +105,10 @@ uint64_t nest_elf_physical = 0;
 uint64_t nest_elf_size = 0;
 uint64_t cap_elf_physical = 0;
 uint64_t cap_elf_size = 0;
+uint64_t load128_stub_elf_physical = 0;
+uint64_t load128_stub_elf_size = 0;
+uint64_t load128_payload_elf_physical = 0;
+uint64_t load128_payload_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1951,6 +1955,44 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write('\n');
     log::line("CAP_PASS");
 
+    // M89: >64 KiB ET_EXEC on disk/ via execve (loader ceiling 128 KiB).
+    user::Load128ProbeResult load128{};
+    const auto* load128_stub = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + load128_stub_elf_physical);
+    const auto* load128_payload = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + load128_payload_elf_physical);
+    if (load128_stub_elf_physical == 0 || load128_stub_elf_size == 0 ||
+        load128_payload_elf_physical == 0 || load128_payload_elf_size == 0 ||
+        !user::run_load128_probe(
+            load128_stub, static_cast<size_t>(load128_stub_elf_size),
+            load128_payload, static_cast<size_t>(load128_payload_elf_size),
+            load128)) {
+        log::write("[debug] load128 stage: ");
+        log::decimal(load128.stage);
+        log::write(", failure: ");
+        log::decimal(load128.failure);
+        log::write(", wrote_elf: ");
+        log::decimal(load128.wrote_elf);
+        log::write(", remount: ");
+        log::decimal(load128.remount_ok);
+        log::write(", pass: ");
+        log::decimal(load128.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(load128.exit_code);
+        log::write(", elf_bytes: ");
+        log::decimal(load128.elf_bytes);
+        log::write('\n');
+        log::panic("M89 load128 execve probe failed");
+    }
+    log::write("[ok] load128: pass: ");
+    log::decimal(load128.wrote_pass);
+    log::write(" elf_bytes: ");
+    log::decimal(load128.elf_bytes);
+    log::write(" remount: ");
+    log::decimal(load128.remount_ok);
+    log::write('\n');
+    log::line("LOAD128_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2182,6 +2224,14 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP CAP.ELF")) {
         log::panic("cannot relocate ESP CAP.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(load128_stub_elf_physical,
+                                 load128_stub_elf_size, "ESP L128S.ELF")) {
+        log::panic("cannot relocate ESP L128S.ELF into PMM");
+    }
+    if (!relocate_esp_elf_to_pmm(load128_payload_elf_physical,
+                                 load128_payload_elf_size, "ESP L128.ELF")) {
+        log::panic("cannot relocate ESP L128.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2198,7 +2248,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.89.0 - CXCFS capacity (A2/M88)");
+    cxc::log::line("CXC/OS 0.90.0 - ELF load 128KiB (A2/M89)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2781,6 +2831,38 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP CAP.ELF bytes: ");
     cxc::log::decimal(cxc::cap_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 load128_stub_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'1', u'2', u'8', u'S',  u'.', u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, load128_stub_path, 64 * 1024,
+        cxc::load128_stub_elf_physical, cxc::load128_stub_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP L128S.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP L128S.ELF bytes: ");
+    cxc::log::decimal(cxc::load128_stub_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 load128_payload_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'L',  u'1', u'2', u'8', u'.',  u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, load128_payload_path, 64 * 1024,
+        cxc::load128_payload_elf_physical, cxc::load128_payload_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP L128.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP L128.ELF bytes: ");
+    cxc::log::decimal(cxc::load128_payload_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

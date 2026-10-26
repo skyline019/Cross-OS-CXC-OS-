@@ -685,6 +685,25 @@ bool run_cap_probe(const uint8_t* image, size_t image_size,
                    CapProbeResult& result);
 const CapProbeResult& cap_probe_result();
 
+struct Load128ProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t wrote_elf;
+    uint32_t remount_ok;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint32_t elf_bytes;
+    uint64_t exit_code;
+};
+
+// M89: write >64 KiB ET_EXEC to disk/, execve via stub → LOAD128_PASS.
+bool run_load128_probe(const uint8_t* stub_image, size_t stub_size,
+                       const uint8_t* payload_image, size_t payload_size,
+                       Load128ProbeResult& result);
+const Load128ProbeResult& load128_probe_result();
+
 constexpr uint32_t max_exec_argc = 8;
 constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;

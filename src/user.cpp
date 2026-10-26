@@ -186,6 +186,7 @@ PipeProbeResult pipe_probe{};
 ChdirProbeResult chdir_probe{};
 NestProbeResult nest_probe{};
 CapProbeResult cap_probe{};
+Load128ProbeResult load128_probe{};
 /* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
 constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1735,6 +1736,93 @@ bool run_cap_probe(const uint8_t* image, size_t image_size,
 
 const CapProbeResult& cap_probe_result() {
     return cap_probe;
+}
+
+bool run_load128_probe(const uint8_t* stub_image, size_t stub_size,
+                       const uint8_t* payload_image, size_t payload_size,
+                       Load128ProbeResult& result) {
+    constexpr size_t target_bytes = 100 * 1024;
+    result = Load128ProbeResult{};
+    result.stage = 1;
+    if (stub_image == nullptr || stub_size == 0 || payload_image == nullptr ||
+        payload_size == 0 || !cxcfs::is_mounted()) {
+        result.failure = 1;
+        return false;
+    }
+    if (payload_size > target_bytes || target_bytes > cxcfs::max_file_bytes) {
+        result.failure = 2;
+        return false;
+    }
+
+    const int64_t wfd = fs::open_path(
+        "disk/load128.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+    if (wfd < 0) {
+        result.failure = 3;
+        return false;
+    }
+    if (fs::write_fd(static_cast<uint32_t>(wfd), payload_image, payload_size) !=
+        static_cast<int64_t>(payload_size)) {
+        (void)fs::close_fd(static_cast<uint32_t>(wfd));
+        result.failure = 4;
+        return false;
+    }
+    static uint8_t pad[4096];
+    memset(pad, 0xA5, sizeof(pad));
+    size_t remaining = target_bytes - payload_size;
+    while (remaining > 0) {
+        const size_t chunk =
+            remaining < sizeof(pad) ? remaining : sizeof(pad);
+        if (fs::write_fd(static_cast<uint32_t>(wfd), pad, chunk) !=
+            static_cast<int64_t>(chunk)) {
+            (void)fs::close_fd(static_cast<uint32_t>(wfd));
+            result.failure = 5;
+            return false;
+        }
+        remaining -= chunk;
+    }
+    if (fs::close_fd(static_cast<uint32_t>(wfd)) != 0) {
+        result.failure = 6;
+        return false;
+    }
+    result.wrote_elf = 1;
+    result.elf_bytes = static_cast<uint32_t>(target_bytes);
+    result.stage = 2;
+
+    cxcfs::MountResult remounted{};
+    if (!cxcfs::remount(remounted)) {
+        result.failure = 7;
+        return false;
+    }
+    result.remount_ok = 1;
+    result.stage = 3;
+
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(stub_image, stub_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 20 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_load128_pass;
+    result.stage = 4;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 8;
+        return false;
+    }
+    syscall::clear_session();
+    load128_probe = result;
+    return true;
+}
+
+const Load128ProbeResult& load128_probe_result() {
+    return load128_probe;
 }
 
 }  // namespace cxc::user
