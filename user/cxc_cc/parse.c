@@ -57,6 +57,43 @@ static void patch_rel32(CcEmit* em, size_t at, size_t target) {
     em->code[at + 3] = (unsigned char)(rel >> 24);
 }
 
+static void parse_call(CcParser* p, const char* name) {
+    int fi = cc_fn_find(p->em, name);
+    int argc = 0;
+    size_t call_at;
+    expect(p, TOK_LPAREN);
+    if (fi < 0) {
+        fail(p);
+        return;
+    }
+    if (p->lx->tok != TOK_RPAREN) {
+        for (;;) {
+            parse_expr(p);
+            cc_emit_push_rax(p->em);
+            argc++;
+            if (argc > CC_FN_ARGS) {
+                fail(p);
+                return;
+            }
+            if (!accept(p, TOK_COMMA)) {
+                break;
+            }
+        }
+    }
+    expect(p, TOK_RPAREN);
+    if (argc != p->em->fns[fi].arity) {
+        fail(p);
+        return;
+    }
+    call_at = cc_emit_call_rel32(p->em);
+    patch_rel32(p->em, call_at, p->em->fns[fi].entry);
+    if (argc > 0) {
+        /* add rsp, 8*argc */
+        cc_emit_bytes(p->em, "\x48\x81\xC4", 3);
+        cc_emit_u32(p->em, (unsigned)(argc * 8));
+    }
+}
+
 static void parse_primary(CcParser* p) {
     if (p->lx->tok == TOK_NUMBER) {
         cc_emit_mov_eax_imm(p->em, (unsigned)p->lx->number);
@@ -68,6 +105,10 @@ static void parse_primary(CcParser* p) {
         int idx;
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
+        if (p->lx->tok == TOK_LPAREN) {
+            parse_call(p, name);
+            return;
+        }
         idx = cc_local_find(p->em, name);
         if (idx < 0) {
             fail(p);
@@ -365,9 +406,13 @@ static void parse_stmt(CcParser* p) {
     if (accept(p, TOK_KW_RETURN)) {
         parse_expr(p);
         expect(p, TOK_SEMI);
-        cc_emit_bytes(p->em, "\x89\xC3", 2); /* mov ebx, eax */
-        cc_emit_write_pass(p->em);
-        cc_emit_exit_rax(p->em);
+        if (p->em->in_fn) {
+            cc_emit_leave_ret(p->em);
+        } else {
+            cc_emit_bytes(p->em, "\x89\xC3", 2); /* mov ebx, eax */
+            cc_emit_write_pass(p->em);
+            cc_emit_exit_rax(p->em);
+        }
         return;
     }
     if (p->lx->tok == TOK_IDENT) {
@@ -446,12 +491,79 @@ static void parse_stmt(CcParser* p) {
     fail(p);
 }
 
+static void clear_locals(CcEmit* em) {
+    em->nlocals = 0;
+    em->next_slot = 0;
+    em->nloops = 0;
+}
+
+static void parse_function(CcParser* p) {
+    char name[CC_IDENT_MAX + 1];
+    CcFn* fn;
+    int arity = 0;
+    size_t n;
+
+    expect(p, TOK_KW_FN);
+    if (p->lx->tok != TOK_IDENT) {
+        fail(p);
+        return;
+    }
+    memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+    cc_lex_next(p->lx);
+    if (cc_fn_find(p->em, name) >= 0 || p->em->nfns >= CC_FN_MAX) {
+        fail(p);
+        return;
+    }
+    fn = &p->em->fns[p->em->nfns];
+    n = 0;
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        fn->name[n] = name[n];
+        n++;
+    }
+    fn->name[n] = 0;
+    fn->entry = p->em->code_len;
+    fn->arity = 0;
+    p->em->nfns++;
+
+    clear_locals(p->em);
+    expect(p, TOK_LPAREN);
+    if (p->lx->tok != TOK_RPAREN) {
+        for (;;) {
+            if (p->lx->tok != TOK_IDENT || arity >= CC_FN_ARGS) {
+                fail(p);
+                return;
+            }
+            if (cc_local_define(p->em, p->lx->text, 1) < 0) {
+                fail(p);
+                return;
+            }
+            arity++;
+            cc_lex_next(p->lx);
+            if (!accept(p, TOK_COMMA)) {
+                break;
+            }
+        }
+    }
+    expect(p, TOK_RPAREN);
+    fn->arity = arity;
+    cc_emit_fn_prologue(p->em, arity);
+    p->em->in_fn = 1;
+    parse_block(p);
+    p->em->in_fn = 0;
+    /* fallthrough return 0 */
+    cc_emit_mov_eax_imm(p->em, 0);
+    cc_emit_leave_ret(p->em);
+    clear_locals(p->em);
+}
+
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len) {
     CcLexer lx;
     CcParser p;
     const char magic[] = "CXC_A2";
     size_t i;
+    size_t jmp_entry;
+    size_t entry_at;
     static CcEmit em;
     static unsigned char code_buf[CC_CODE_MAX];
     static unsigned char data_buf[CC_DATA_MAX];
@@ -466,6 +578,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nlocals = 0;
     em.next_slot = 0;
     em.nloops = 0;
+    em.nfns = 0;
+    em.in_fn = 0;
     em.failed = 0;
     cc_reloc_reset();
 
@@ -485,11 +599,31 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
 
     p.lx = &lx;
     p.em = &em;
+
+    /* jmp entry; function bodies; entry: prologue + top-level */
+    jmp_entry = emit_jmp32(&em);
+    {
+        int guard = 0;
+        while (!em.failed && lx.tok == TOK_KW_FN) {
+            if (++guard > 32) {
+                em.failed = 1;
+                break;
+            }
+            parse_function(&p);
+        }
+    }
+    entry_at = em.code_len;
+    patch_rel32(&em, jmp_entry, entry_at);
+    clear_locals(&em);
     cc_emit_prologue(&em);
     {
         int guard = 0;
         while (!em.failed && lx.tok != TOK_EOF) {
             if (++guard > 512) {
+                em.failed = 1;
+                break;
+            }
+            if (lx.tok == TOK_KW_FN) {
                 em.failed = 1;
                 break;
             }

@@ -72,10 +72,38 @@ int main(void) {
     if (expect_ok("CXC_A2\nprint 0;\nreturn 0;\n", "print-zero") != 0) {
         fails++;
     }
+    if (expect_ok(
+            "CXC_A2\n"
+            "fn add(a,b){\nreturn a+b;\n}\n"
+            "fn mul(a,b){\nreturn a*b;\n}\n"
+            "n=mul(add(3,4),6);\n"
+            "print n;\n"
+            "return n;\n",
+            "m99-func") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "fn sum(n){\n"
+            "if(n==0){ return 0; }\n"
+            "return n+sum(n-1);\n"
+            "}\n"
+            "return sum(8);\n",
+            "m99-recur") != 0) {
+        fails++;
+    }
     if (expect_fail("CXC_A2\ninput ;\n", "bad-input") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\nprint ;\n", "bad-print") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nfn add(a,b){ return a+b; }\nn=add(1);\nreturn n;\n",
+            "bad-arity") != 0) {
+        fails++;
+    }
+    if (expect_fail("CXC_A2\nn=missing(1);\nreturn n;\n", "bad-call") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\nreturn ;\n", "bad-return") != 0) {

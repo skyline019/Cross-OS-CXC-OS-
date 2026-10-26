@@ -1919,16 +1919,21 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M98: input from disk/io.in + print + write; then edge reject.
+    // M99: fn add/mul nested calls → 42; then edge reject.
     static const char src_text[] =
         "CXC_A2\n"
-        "input n;\n"
-        "print n;\n"
-        "if(n==35){\n"
-        "write IO;\n"
+        "fn add(a,b){\n"
+        "return a+b;\n"
         "}\n"
-        "return n+7;\n";
-    static const char io_text[] = "35\n";
+        "fn mul(a,b){\n"
+        "return a*b;\n"
+        "}\n"
+        "n=mul(add(3,4),6);\n"
+        "print n;\n"
+        "if(n==42){\n"
+        "write FN;\n"
+        "}\n"
+        "return n;\n";
     static const char bad_src[] = "CXC_A2\nreturn ;\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
@@ -1940,26 +1945,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     if (cc_size > cxcfs::max_file_bytes) {
         result.failure = 2;
         return false;
-    }
-
-    {
-        const int64_t iofd = fs::open_path(
-            "disk/io.in", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (iofd < 0) {
-            result.failure = 16;
-            return false;
-        }
-        const size_t io_len = sizeof(io_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(iofd), io_text, io_len) !=
-            static_cast<int64_t>(io_len)) {
-            (void)fs::close_fd(static_cast<uint32_t>(iofd));
-            result.failure = 17;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(iofd)) != 0) {
-            result.failure = 18;
-            return false;
-        }
     }
 
     const int64_t sfd = fs::open_path(
@@ -2031,7 +2016,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: illegal source must exit 4 from cxc-cc without IORW_PASS.
+    // Edge: illegal source must exit 4 from cxc-cc without FUNC_PASS.
     result.stage = 6;
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);

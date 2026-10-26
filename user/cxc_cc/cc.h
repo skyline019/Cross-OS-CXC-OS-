@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): statements, expressions, control, arrays. Freestanding. */
+/* CXC mini-cc (A2): control, arrays, I/O, functions. Freestanding. */
 #pragma once
 
 #ifdef CC_HOST
@@ -14,13 +14,15 @@
 
 enum {
     CC_SRC_MAX = 4096,
-    CC_CODE_MAX = 12288,
+    CC_CODE_MAX = 16384,
     CC_DATA_MAX = 2048,
     CC_LOCAL_MAX = 32,
     CC_IDENT_MAX = 8,
     CC_LIT_MAX = 8,
     CC_LOOP_MAX = 4,
     CC_BREAK_MAX = 8,
+    CC_FN_MAX = 8,
+    CC_FN_ARGS = 4,
     CC_LOAD_VA = 0x400000
 };
 
@@ -38,6 +40,7 @@ enum CcTok {
     TOK_KW_INPUT,
     TOK_KW_BREAK,
     TOK_KW_CONTINUE,
+    TOK_KW_FN,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -45,6 +48,7 @@ enum CcTok {
     TOK_LBRACK,
     TOK_RBRACK,
     TOK_SEMI,
+    TOK_COMMA,
     TOK_ASSIGN,
     TOK_PLUS,
     TOK_MINUS,
@@ -72,8 +76,8 @@ typedef struct CcLexer {
 
 typedef struct CcLocal {
     char name[CC_IDENT_MAX + 1];
-    int slot;  /* base stack slot */
-    int count; /* 1 scalar, N array */
+    int slot;
+    int count;
 } CcLocal;
 
 typedef struct CcLoop {
@@ -81,6 +85,12 @@ typedef struct CcLoop {
     size_t brk_at[CC_BREAK_MAX];
     int nbrk;
 } CcLoop;
+
+typedef struct CcFn {
+    char name[CC_IDENT_MAX + 1];
+    int arity;
+    size_t entry;
+} CcFn;
 
 typedef struct CcEmit {
     unsigned char* code;
@@ -95,6 +105,9 @@ typedef struct CcEmit {
     int failed;
     CcLoop loops[CC_LOOP_MAX];
     int nloops;
+    CcFn fns[CC_FN_MAX];
+    int nfns;
+    int in_fn;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -103,6 +116,7 @@ void cc_lex_next(CcLexer* lx);
 int cc_local_find(CcEmit* em, const char* name);
 int cc_local_define(CcEmit* em, const char* name, int count);
 int cc_local_slot(CcEmit* em, const char* name, int create);
+int cc_fn_find(CcEmit* em, const char* name);
 
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
@@ -121,6 +135,9 @@ void cc_emit_load_local(CcEmit* em, int slot);
 void cc_emit_index_load(CcEmit* em, int base_slot);
 void cc_emit_index_store(CcEmit* em, int base_slot);
 void cc_emit_prologue(CcEmit* em);
+void cc_emit_fn_prologue(CcEmit* em, int arity);
+void cc_emit_leave_ret(CcEmit* em);
+size_t cc_emit_call_rel32(CcEmit* em);
 void cc_emit_write_lit2(CcEmit* em, const char* lit);
 void cc_emit_write_pass(CcEmit* em);
 void cc_emit_print_rax(CcEmit* em);

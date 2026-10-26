@@ -63,6 +63,16 @@ int cc_local_slot(CcEmit* em, const char* name, int create) {
     return cc_local_define(em, name, 1);
 }
 
+int cc_fn_find(CcEmit* em, const char* name) {
+    int i;
+    for (i = 0; i < em->nfns; i++) {
+        if (strcmp(em->fns[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void cc_emit_byte(CcEmit* em, unsigned char b) {
     if (em->failed || em->code_len >= em->code_cap) {
         em->failed = 1;
@@ -179,6 +189,30 @@ void cc_emit_prologue(CcEmit* em) {
     cc_emit_bytes(em, "\xF3\x48\xAB", 3);
 }
 
+void cc_emit_fn_prologue(CcEmit* em, int arity) {
+    int i;
+    cc_emit_prologue(em);
+    /* Caller pushes args left-to-right → last arg at [rbp+16]. */
+    for (i = 0; i < arity; i++) {
+        cc_emit_bytes(em, "\x48\x8B\x85", 3);
+        cc_emit_i32(em, 16 + (arity - 1 - i) * 8);
+        cc_emit_store_local(em, i);
+    }
+}
+
+void cc_emit_leave_ret(CcEmit* em) {
+    cc_emit_byte(em, 0xC9); /* leave */
+    cc_emit_byte(em, 0xC3); /* ret */
+}
+
+size_t cc_emit_call_rel32(CcEmit* em) {
+    size_t at;
+    cc_emit_byte(em, 0xE8);
+    at = em->code_len;
+    cc_emit_i32(em, 0);
+    return at;
+}
+
 /* Reloc: lea rsi sites → data VA */
 typedef struct CcReloc {
     size_t code_off; /* offset of disp32 after 48 8D 35 */
@@ -236,7 +270,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_IORW_PASS\n";
+    static const char pass[] = "ONBOX_FUNC_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

@@ -37,6 +37,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_PRINT;
     } else if (strcmp(lx->text, "input") == 0) {
         lx->tok = TOK_KW_INPUT;
+    } else if (strcmp(lx->text, "fn") == 0) {
+        lx->tok = TOK_KW_FN;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {
@@ -96,6 +98,8 @@ void cc_lex_next(CcLexer* lx) {
         lx->tok = TOK_RBRACK;
     } else if (c == ';') {
         lx->tok = TOK_SEMI;
+    } else if (c == ',') {
+        lx->tok = TOK_COMMA;
     } else if (c == '+') {
         lx->tok = TOK_PLUS;
     } else if (c == '-') {
