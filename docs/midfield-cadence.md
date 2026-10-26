@@ -14,9 +14,10 @@
 | 第六次 | M55–M64 | [`midpoint-assessment-6.md`](midpoint-assessment-6.md) |
 | 第七次 | M65–M74 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md) |
 | 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
-| 第九次（计划） | 约 M85–M94 | `midpoint-assessment-9.md`（届时新建） |
+| 第九次 | M85–M94 | [`midpoint-assessment-9.md`](midpoint-assessment-9.md) |
+| 第十次（计划） | 约 M95–M104 | `midpoint-assessment-10.md`（届时新建） |
 
-当前基线：**M93 / v0.94.0**（机上 codegen：`return N`→exit N；A2 前端起步；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M94**。
+当前基线：**M94 / v0.95.0**（第九次中场；机上 return-N codegen；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M104**。
 
 ## 中场窗口必做
 

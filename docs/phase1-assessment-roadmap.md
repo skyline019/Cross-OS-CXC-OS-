@@ -1,8 +1,8 @@
 # 一期总评与后续规划（M0–M31）
 
-**基线**：Milestone 93 / v0.94.0（2026-10；机上 codegen return-N；主靶 A2 / 次靶 B；产品目标见 [`product-goals.md`](product-goals.md)；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
+**基线**：Milestone 94 / v0.95.0（2026-10；第九次中场；主靶 A2 / 次靶 B；产品目标见 [`product-goals.md`](product-goals.md)；ADR 见 [`adr-user-address-space.md`](adr-user-address-space.md)）。  
 **证据契约**：默认 `qemu-test` → `CXC_OS_SELF_TEST_PASS` + `peer_ok=1`；Full midpoint 绿；host `ctest` + sanitizer；**M74 起边缘纳入范围**（[`test-contract.md`](test-contract.md) §8）。  
-**中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第八次中场已完成（M84）；下一正式中场约 **M94**；**大跨步 + 完整功能**（非薄烟测、非 PASS 后拆除）。  
+**中场节奏**：见 [`midfield-cadence.md`](midfield-cadence.md)；第九次中场已完成（M94）；下一正式中场约 **M104**；**大跨步 + 完整功能**（非薄烟测、非 PASS 后拆除）。  
 **一阶段主靶（重申）**：不依赖宿主机，在 CXC/OS 上跑通 **g++/gcc** 编译并运行任意（合理范围内）代码（A2）。
 
 本文回答两件事：（1）与生产级 OS 的真实差距；（2）若目标是「编译器/用户程序可跑」或「生产级内核」，后续应怎么排主线。
@@ -203,3 +203,4 @@ B 的工期以 **人年** 计；不能用薄切片里程碑编号假装到达。
 - 第六次中场（M55–M64）：[`midpoint-assessment-6.md`](midpoint-assessment-6.md) 确认 CRT/heap/缺口号加深；下一刀极小静态 musl 子集。
 - 第七次中场（M65–M74）：[`midpoint-assessment-7.md`](midpoint-assessment-7.md) 确认真 musl 子集；裁定块设备大跨步 + 边缘契约。  
 - 第八次中场（M75–M84）：[`midpoint-assessment-8.md`](midpoint-assessment-8.md) 确认持久根 + execve + 协作 fork；裁定下一刀 pipe/dup。
+- 第九次中场（M85–M94）：[`midpoint-assessment-9.md`](midpoint-assessment-9.md) 确认 pipe/容量/机上 return-N codegen；裁定下一刀表达式或多语句前端。
