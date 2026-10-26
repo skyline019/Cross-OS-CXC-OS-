@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.86.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.87.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1255,6 +1255,18 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_CHDIR_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_chdir.elf")
+add_custom_command(
+    OUTPUT "${CXC_USER_CHDIR_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_chdir_elf.py"
+        --output "${CXC_USER_CHDIR_ELF}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_chdir_elf.py"
+    COMMENT "Building ESP CHDIR.ELF chdir/getcwd probe"
+    VERBATIM
+)
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -1293,6 +1305,7 @@ add_custom_command(
         --extra "DEXEC   ELF" "${CXC_USER_DISK_EXEC_PAYLOAD_ELF}"
         --extra "FORK    ELF" "${CXC_USER_FORK_WAIT_ELF}"
         --extra "PIPE    ELF" "${CXC_USER_PIPE_ELF}"
+        --extra "CHDIR   ELF" "${CXC_USER_CHDIR_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -1328,6 +1341,7 @@ add_custom_command(
         "${CXC_USER_DISK_EXEC_PAYLOAD_ELF}"
         "${CXC_USER_FORK_WAIT_ELF}"
         "${CXC_USER_PIPE_ELF}"
+        "${CXC_USER_CHDIR_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -1361,6 +1375,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_disk_exec_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_fork_wait_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_pipe_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_chdir_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

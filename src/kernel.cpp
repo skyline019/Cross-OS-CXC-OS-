@@ -99,6 +99,8 @@ uint64_t fork_wait_elf_physical = 0;
 uint64_t fork_wait_elf_size = 0;
 uint64_t pipe_elf_physical = 0;
 uint64_t pipe_elf_size = 0;
+uint64_t chdir_elf_physical = 0;
+uint64_t chdir_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1796,6 +1798,69 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" fork_ipc: 1 epipe: 1 dup: 1\n");
     log::line("PIPE_PASS");
 
+    // M86 kernel-side chdir/getcwd smoke.
+    {
+        fs::reset();
+        if (fs::mkdir_path("cwdtest", 0755) != 0) {
+            log::panic("M86 kernel mkdir failed");
+        }
+        if (fs::chdir_path("cwdtest") != 0) {
+            log::panic("M86 kernel chdir failed");
+        }
+        char cwd_buf[32]{};
+        if (fs::getcwd_path(cwd_buf, sizeof(cwd_buf)) != 9) {
+            log::panic("M86 kernel getcwd len failed");
+        }
+        const char expect[] = "/cwdtest";
+        for (size_t i = 0; i < sizeof(expect); ++i) {
+            if (cwd_buf[i] != expect[i]) {
+                log::panic("M86 kernel getcwd content failed");
+            }
+        }
+        const int64_t nfd =
+            fs::open_path("note.txt", fs::o_rdwr | fs::o_creat | fs::o_trunc, 0644);
+        if (nfd < 0) {
+            log::panic("M86 kernel relative open failed");
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nfd), "HI", 2) != 2) {
+            log::panic("M86 kernel relative write failed");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(nfd));
+        if (fs::chdir_path("..") != 0) {
+            log::panic("M86 kernel chdir .. failed");
+        }
+        if (fs::chdir_path("no_such_dir") != -2) {
+            log::panic("M86 kernel ENOENT edge failed");
+        }
+        if (fs::getcwd_path(cwd_buf, 1) != -34) {
+            log::panic("M86 kernel ERANGE edge failed");
+        }
+        fs::reset();
+        log::write("[ok] chdir-k: pass: 1 enoent: 1 erange: 1\n");
+    }
+
+    user::ChdirProbeResult chdir_probe{};
+    const auto* chdir_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + chdir_elf_physical);
+    if (chdir_elf_physical == 0 || chdir_elf_size == 0 ||
+        !user::run_chdir_probe(chdir_image, static_cast<size_t>(chdir_elf_size),
+                               chdir_probe)) {
+        log::write("[debug] chdir stage: ");
+        log::decimal(chdir_probe.stage);
+        log::write(", failure: ");
+        log::decimal(chdir_probe.failure);
+        log::write(", pass: ");
+        log::decimal(chdir_probe.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(chdir_probe.exit_code);
+        log::write('\n');
+        log::panic("M86 chdir/getcwd probe failed");
+    }
+    log::write("[ok] chdir: pass: ");
+    log::decimal(chdir_probe.wrote_pass);
+    log::write(" rel: 1 enoent: 1 erange: 1\n");
+    log::line("CHDIR_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2015,6 +2080,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP PIPE.ELF")) {
         log::panic("cannot relocate ESP PIPE.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(chdir_elf_physical, chdir_elf_size,
+                                 "ESP CHDIR.ELF")) {
+        log::panic("cannot relocate ESP CHDIR.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2031,7 +2100,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.86.0 - pipe/dup (A2/M85)");
+    cxc::log::line("CXC/OS 0.87.0 - chdir/getcwd (A2/M86)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2566,6 +2635,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP PIPE.ELF bytes: ");
     cxc::log::decimal(cxc::pipe_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 chdir_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'C',  u'H', u'D', u'I', u'R',  u'.', u'E', u'L',  u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, chdir_path,
+                                      64 * 1024, cxc::chdir_elf_physical,
+                                      cxc::chdir_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP CHDIR.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP CHDIR.ELF bytes: ");
+    cxc::log::decimal(cxc::chdir_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

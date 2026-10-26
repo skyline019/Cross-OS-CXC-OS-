@@ -14,8 +14,10 @@ namespace {
 constexpr uint8_t backend_ram = 0;
 constexpr uint8_t backend_disk = 1;
 constexpr uint8_t backend_pipe = 2;
-constexpr int64_t errno_again = -11;  // -EAGAIN
-constexpr int64_t errno_pipe = -32;   // -EPIPE
+constexpr int64_t errno_again = -11;   // -EAGAIN
+constexpr int64_t errno_notdir = -20;  // -ENOTDIR
+constexpr int64_t errno_range = -34;   // -ERANGE
+constexpr int64_t errno_pipe = -32;    // -EPIPE
 
 struct Inode {
     bool used;
@@ -61,12 +63,16 @@ bool disk_rest(const char* name, size_t length, const char*& rest,
 
 Inode inodes[max_files]{};
 FileDesc tables[2][fd_table_end]{};
+char cwd_storage[2][max_path]{};
+size_t cwd_len[2]{};
 uint32_t live_table = 0;
 PipeBuf pipes[max_pipes]{};
 Stats current_stats{};
 
 // Freestanding-safe: no dynamic FileDesc* init (ctors may not run).
 #define fds (tables[live_table])
+#define cwd (cwd_storage[live_table])
+#define cwd_n (cwd_len[live_table])
 
 size_t name_length(const char* path) {
     size_t length = 0;
@@ -85,35 +91,121 @@ bool names_match(const char* stored, const char* candidate, size_t length) {
     return stored[length] == '\0';
 }
 
-// Strip a single leading '/'; reject empty, trailing '/', or '//'.
-bool normalize(const char* path, const char*& out, size_t& out_len) {
-    if (path == nullptr) {
+int32_t find_inode(const char* name, size_t length);
+
+bool path_is_dir(const char* name, size_t name_len) {
+    if (name_len == 0) {
+        return true;  // logical root
+    }
+    const char* rest = nullptr;
+    size_t rest_len = 0;
+    if (disk_rest(name, name_len, rest, rest_len)) {
+        const int32_t inode = cxcfs::find_inode(rest, rest_len);
+        return inode >= 0 && cxcfs::inode_is_dir(static_cast<uint32_t>(inode));
+    }
+    const int32_t inode = find_inode(name, name_len);
+    return inode >= 0 && inodes[inode].is_dir;
+}
+
+// Resolve user path against cwd into abs (no leading '/'; empty = root).
+bool resolve_path(const char* path, char* abs, size_t& abs_len) {
+    if (path == nullptr || abs == nullptr) {
         return false;
     }
-    const size_t length = name_length(path);
-    if (length == 0 || length >= max_path || path[length] != '\0') {
+    const size_t raw_len = name_length(path);
+    if (raw_len == 0 || raw_len >= max_path || path[raw_len] != '\0') {
         return false;
     }
-    out = path;
-    out_len = length;
+
+    char stack[max_path]{};
+    size_t stack_len = 0;
+
+    auto push_comp = [&](const char* comp, size_t comp_len) -> bool {
+        if (comp_len == 0) {
+            return false;
+        }
+        if (comp_len == 1 && comp[0] == '.') {
+            return true;
+        }
+        if (comp_len == 2 && comp[0] == '.' && comp[1] == '.') {
+            // Pop last component; stay at root if empty.
+            if (stack_len == 0) {
+                return true;
+            }
+            size_t cut = stack_len;
+            while (cut > 0 && stack[cut - 1] != '/') {
+                --cut;
+            }
+            if (cut > 0 && stack[cut - 1] == '/') {
+                --cut;
+            }
+            stack_len = cut;
+            stack[stack_len] = '\0';
+            return true;
+        }
+        if (stack_len > 0) {
+            if (stack_len + 1 + comp_len >= max_path) {
+                return false;
+            }
+            stack[stack_len++] = '/';
+        } else if (comp_len >= max_path) {
+            return false;
+        }
+        if (stack_len + comp_len >= max_path) {
+            return false;
+        }
+        memcpy(stack + stack_len, comp, comp_len);
+        stack_len += comp_len;
+        stack[stack_len] = '\0';
+        return true;
+    };
+
+    auto walk = [&](const char* text, size_t text_len) -> bool {
+        size_t i = 0;
+        while (i < text_len) {
+            while (i < text_len && text[i] == '/') {
+                ++i;
+            }
+            if (i >= text_len) {
+                break;
+            }
+            size_t j = i;
+            while (j < text_len && text[j] != '/') {
+                ++j;
+            }
+            if (!push_comp(text + i, j - i)) {
+                return false;
+            }
+            i = j;
+        }
+        return true;
+    };
+
     if (path[0] == '/') {
-        if (length < 2) {
+        // Absolute: root "/" or "/a/b".
+        if (raw_len > 1 && path[raw_len - 1] == '/') {
             return false;
         }
-        out = path + 1;
-        out_len = length - 1;
-    }
-    if (out_len == 0 || out[out_len - 1] == '/') {
-        return false;
-    }
-    for (size_t index = 0; index < out_len; ++index) {
-        if (out[index] == '\0') {
+        if (raw_len > 1 && !walk(path + 1, raw_len - 1)) {
             return false;
         }
-        if (out[index] == '/' && index + 1 < out_len && out[index + 1] == '/') {
+    } else {
+        if (path[raw_len - 1] == '/') {
+            return false;
+        }
+        if (cwd_n > 0 && !walk(cwd, cwd_n)) {
+            return false;
+        }
+        if (!walk(path, raw_len)) {
             return false;
         }
     }
+
+    abs_len = stack_len;
+    if (stack_len > 0) {
+        memcpy(abs, stack, stack_len);
+    }
+    abs[stack_len] = '\0';
     return true;
 }
 
@@ -265,6 +357,10 @@ void reset() {
     for (uint32_t index = 0; index < max_pipes; ++index) {
         pipes[index] = PipeBuf{};
     }
+    for (uint32_t table = 0; table < 2; ++table) {
+        memset(cwd_storage[table], 0, max_path);
+        cwd_len[table] = 0;
+    }
     live_table = 0;
     current_stats = Stats{};
 }
@@ -274,11 +370,12 @@ const Stats& stats() {
 }
 
 int64_t mkdir_path(const char* path, uint64_t /*mode*/) {
-    const char* name = nullptr;
+    char resolved[max_path]{};
     size_t name_len = 0;
-    if (!normalize(path, name, name_len)) {
+    if (!resolve_path(path, resolved, name_len) || name_len == 0) {
         return -1;
     }
+    const char* name = resolved;
     const char* rest = nullptr;
     size_t rest_len = 0;
     if (disk_rest(name, name_len, rest, rest_len)) {
@@ -311,11 +408,12 @@ int64_t mkdir_path(const char* path, uint64_t /*mode*/) {
 }
 
 int64_t unlink_path(const char* path) {
-    const char* name = nullptr;
+    char resolved[max_path]{};
     size_t name_len = 0;
-    if (!normalize(path, name, name_len)) {
+    if (!resolve_path(path, resolved, name_len) || name_len == 0) {
         return -1;
     }
+    const char* name = resolved;
     const char* rest = nullptr;
     size_t rest_len = 0;
     if (disk_rest(name, name_len, rest, rest_len)) {
@@ -358,14 +456,16 @@ int64_t unlink_path(const char* path) {
 }
 
 int64_t rename_path(const char* old_path, const char* new_path) {
-    const char* old_name = nullptr;
+    char old_resolved[max_path]{};
+    char new_resolved[max_path]{};
     size_t old_len = 0;
-    const char* new_name = nullptr;
     size_t new_len = 0;
-    if (!normalize(old_path, old_name, old_len) ||
-        !normalize(new_path, new_name, new_len)) {
+    if (!resolve_path(old_path, old_resolved, old_len) || old_len == 0 ||
+        !resolve_path(new_path, new_resolved, new_len) || new_len == 0) {
         return -1;
     }
+    const char* old_name = old_resolved;
+    const char* new_name = new_resolved;
     const char* old_rest = nullptr;
     size_t old_rest_len = 0;
     const char* new_rest = nullptr;
@@ -429,11 +529,12 @@ int64_t rename_path(const char* old_path, const char* new_path) {
 }
 
 int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
-    const char* name = nullptr;
+    char resolved[max_path]{};
     size_t name_len = 0;
-    if (!normalize(path, name, name_len)) {
+    if (!resolve_path(path, resolved, name_len) || name_len == 0) {
         return -1;
     }
+    const char* name = resolved;
 
     const bool creat = (flags & o_creat) != 0;
     const bool trunc = (flags & o_trunc) != 0;
@@ -722,11 +823,12 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out) {
 }
 
 int64_t stat_path(const char* path, StatBuf& out) {
-    const char* name = nullptr;
+    char resolved[max_path]{};
     size_t name_len = 0;
-    if (!normalize(path, name, name_len)) {
+    if (!resolve_path(path, resolved, name_len) || name_len == 0) {
         return -1;
     }
+    const char* name = resolved;
     const char* rest = nullptr;
     size_t rest_len = 0;
     if (disk_rest(name, name_len, rest, rest_len)) {
@@ -964,6 +1066,8 @@ void fork_clone_fd_table() {
         tables[child][fd] = tables[parent][fd];
         bump_pipe_refs(tables[child][fd]);
     }
+    memcpy(cwd_storage[child], cwd_storage[parent], max_path);
+    cwd_len[child] = cwd_len[parent];
     live_table = child;
 }
 
@@ -977,6 +1081,55 @@ void fork_restore_parent_fd_table() {
     live_table = parent;
 }
 
+int64_t chdir_path(const char* path) {
+    char resolved[max_path]{};
+    size_t abs_len = 0;
+    if (!resolve_path(path, resolved, abs_len)) {
+        return -1;
+    }
+    if (!path_is_dir(resolved, abs_len)) {
+        // Missing → ENOENT; present non-dir → ENOTDIR.
+        if (abs_len == 0) {
+            return -1;
+        }
+        const char* rest = nullptr;
+        size_t rest_len = 0;
+        bool exists = false;
+        if (disk_rest(resolved, abs_len, rest, rest_len)) {
+            exists = cxcfs::find_inode(rest, rest_len) >= 0;
+        } else {
+            exists = find_inode(resolved, abs_len) >= 0;
+        }
+        return exists ? errno_notdir : static_cast<int64_t>(-2);
+    }
+    if (abs_len > 0) {
+        memcpy(cwd, resolved, abs_len);
+    }
+    cwd[abs_len] = '\0';
+    cwd_n = abs_len;
+    ++current_stats.chdirs;
+    return 0;
+}
+
+int64_t getcwd_path(char* buffer, size_t size) {
+    if (buffer == nullptr || size == 0) {
+        return -1;
+    }
+    const size_t needed = cwd_n == 0 ? 2 : cwd_n + 2;  // '/' + cwd + NUL
+    if (size < needed) {
+        return errno_range;
+    }
+    buffer[0] = '/';
+    if (cwd_n > 0) {
+        memcpy(buffer + 1, cwd, cwd_n);
+    }
+    buffer[needed - 1] = '\0';
+    ++current_stats.getcwds;
+    return static_cast<int64_t>(needed);
+}
+
 #undef fds
+#undef cwd
+#undef cwd_n
 
 }  // namespace cxc::fs

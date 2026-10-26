@@ -640,6 +640,21 @@ bool run_pipe_probe(const uint8_t* image, size_t image_size,
                     PipeProbeResult& result);
 const PipeProbeResult& pipe_probe_result();
 
+struct ChdirProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t exit_code;
+};
+
+// M86: launch CHDIR.ELF — chdir/getcwd + relative open + edges.
+bool run_chdir_probe(const uint8_t* image, size_t image_size,
+                     ChdirProbeResult& result);
+const ChdirProbeResult& chdir_probe_result();
+
 constexpr uint32_t max_exec_argc = 8;
 constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;

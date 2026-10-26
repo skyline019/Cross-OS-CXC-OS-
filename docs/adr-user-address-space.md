@@ -148,7 +148,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M83** | 协作式 `fork`/`wait4` + AS clone | 串口 `FORK_WAIT_PASS`；ECHILD 边缘 |
 | **M84** | 第八次中场（M75–M84） | [`midpoint-assessment-8.md`](midpoint-assessment-8.md)；下一刀 pipe/dup |
 | **M85** | `pipe`/`dup`/`dup2`；fork 克隆 fd 表 | 串口 `PIPE_PASS`；EPIPE + dup 边缘 |
-| **M86+** | 更大 POSIX / 工具链 → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M86** | `chdir`/`getcwd`；相对路径 + `.`/`..` | 串口 `CHDIR_PASS`；ENOENT/ERANGE |
+| **M87+** | 容量/多级目录 / 工具链 → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

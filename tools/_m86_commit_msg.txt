@@ -1,0 +1,5 @@
+feat: M86 chdir/getcwd + cwd-relative paths (v0.87.0)
+
+Process cwd with . / .. resolution for open/mkdir/unlink/rename/stat.
+Contract CHDIR_PASS covers relative creat, ENOENT, ERANGE; ESP CHDIR.ELF.
+Baseline M86.

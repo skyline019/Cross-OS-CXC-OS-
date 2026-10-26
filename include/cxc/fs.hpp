@@ -73,6 +73,8 @@ struct Stats {
     uint32_t renames;
     uint32_t pipes;
     uint32_t dups;
+    uint32_t chdirs;
+    uint32_t getcwds;
     uint32_t files;
     uint32_t dirs;
 };
@@ -106,5 +108,10 @@ int64_t dup2_fd(uint32_t oldfd, uint32_t newfd);
 // Cooperative fork: clone live fd table + bump pipe refs; restore on child exit.
 void fork_clone_fd_table();
 void fork_restore_parent_fd_table();
+
+// M86: process cwd (absolute logical path without leading '/'; empty = "/").
+int64_t chdir_path(const char* path);
+// Writes "/"+cwd+"\0" (or "/\0"); returns length including NUL, or -ERANGE/-fault.
+int64_t getcwd_path(char* buffer, size_t size);
 
 }  // namespace cxc::fs

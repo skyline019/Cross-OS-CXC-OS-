@@ -16,7 +16,7 @@
 | 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
 | 第九次（计划） | 约 M85–M94 | `midpoint-assessment-9.md`（届时新建） |
 
-当前基线：**M85 / v0.86.0**（pipe/dup；A2 主线）。下一正式中场目标：**约 M94**。
+当前基线：**M86 / v0.87.0**（chdir/getcwd；A2 主线）。下一正式中场目标：**约 M94**。
 
 ## 中场窗口必做
 

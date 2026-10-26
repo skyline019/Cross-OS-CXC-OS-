@@ -236,6 +236,11 @@ jobs:
           grep -F 'fork_ipc: 1' build/uefi/qemu-test/serial.log
           grep -F 'epipe: 1' build/uefi/qemu-test/serial.log
           grep -F 'dup: 1' build/uefi/qemu-test/serial.log
+          grep -F 'CHDIR_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'chdir: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'rel: 1' build/uefi/qemu-test/serial.log
+          grep -F 'enoent: 1' build/uefi/qemu-test/serial.log
+          grep -F 'erange: 1' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

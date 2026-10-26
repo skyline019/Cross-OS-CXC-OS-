@@ -61,7 +61,9 @@ constexpr char expected_disk_argv_pass[] = "DISK_ARGV_PASS\n";
 constexpr char expected_disk_env_pass[] = "DISK_ENV_PASS\n";
 constexpr char expected_fork_wait_pass[] = "FORK_WAIT_PASS\n";
 constexpr char expected_pipe_pass[] = "PIPE_PASS\n";
+constexpr char expected_chdir_pass[] = "CHDIR_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
+constexpr int64_t errno_fault_cwd = -14;  // -EFAULT
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
 constexpr uint64_t fcntl_getfl = 3;
@@ -643,6 +645,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_pipe_pass = 1;
         }
     }
+    if (length == sizeof(expected_chdir_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_chdir_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_chdir_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_chdir_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -839,8 +854,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.86.0");
-    fill_uts_field(local.version, "M84");
+    fill_uts_field(local.release, "0.87.0");
+    fill_uts_field(local.version, "M86");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -1215,6 +1230,30 @@ cpu::InterruptFrame* handle_mkdir(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_chdir(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    if (!copy_user_path(frame->rdi, path, sizeof(path))) {
+        frame->rax = static_cast<uint64_t>(-1);
+        return frame;
+    }
+    frame->rax = static_cast<uint64_t>(fs::chdir_path(path));
+    return frame;
+}
+
+cpu::InterruptFrame* handle_getcwd(cpu::InterruptFrame* frame) {
+    const uint64_t buf = frame->rdi;
+    const uint64_t size = frame->rsi;
+    if (size == 0 || size > fs::max_path + 2 ||
+        !user_pages_ok(buf, static_cast<size_t>(size), true)) {
+        frame->rax = static_cast<uint64_t>(errno_fault_cwd);
+        return frame;
+    }
+    auto* bytes = reinterpret_cast<char*>(buf);
+    frame->rax =
+        static_cast<uint64_t>(fs::getcwd_path(bytes, static_cast<size_t>(size)));
+    return frame;
+}
+
 cpu::InterruptFrame* handle_unlink(cpu::InterruptFrame* frame) {
     char path[fs::max_path]{};
     if (!copy_user_path(frame->rdi, path, sizeof(path))) {
@@ -1528,6 +1567,10 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_rename(frame);
     case sys_mkdir:
         return handle_mkdir(frame);
+    case sys_chdir:
+        return handle_chdir(frame);
+    case sys_getcwd:
+        return handle_getcwd(frame);
     case sys_unlink:
         return handle_unlink(frame);
     case sys_getdents64:

@@ -145,6 +145,8 @@ FORK_WAIT_PASS = "FORK_WAIT_PASS"
 FORK_WAIT_PROBE_SUCCESS = "fork-wait: pass: 1"
 PIPE_PASS = "PIPE_PASS"
 PIPE_PROBE_SUCCESS = "pipe: pass: 1"
+CHDIR_PASS = "CHDIR_PASS"
+CHDIR_PROBE_SUCCESS = "chdir: pass: 1"
 
 
 @dataclass
@@ -608,6 +610,11 @@ class ContractRunner:
         assert b"fork_ipc: 1" in serial
         assert b"epipe: 1" in serial
         assert b"dup: 1" in serial
+        assert CHDIR_PASS.encode() in serial
+        assert CHDIR_PROBE_SUCCESS.encode() in serial
+        assert b"rel: 1" in serial
+        assert b"enoent: 1" in serial
+        assert b"erange: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -616,7 +623,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M85 pipe/dup"
+            "kernel PASS + net + M75–M86 chdir/getcwd"
         )
 
     def negative_evidence(self, work: Path) -> str:
