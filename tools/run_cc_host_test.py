@@ -89,6 +89,8 @@ def main() -> int:
         )
         rt = ROOT / "user" / "prebuilt" / "rtmath.elf"
         (disk / "rt.elf").write_bytes(rt.read_bytes())
+        crt = ROOT / "user" / "prebuilt" / "rtcrt.elf"
+        (disk / "crt.elf").write_bytes(crt.read_bytes())
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

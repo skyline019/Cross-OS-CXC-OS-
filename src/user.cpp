@@ -1,4 +1,5 @@
 #include <cxc/user.hpp>
+#include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
 
 #include <cxc/cpu.hpp>
@@ -1920,22 +1921,28 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M108: #lib PC32 twice→add + multi-symbol math → 42; edge reject.
+    // M109: cross-#lib UND (crt ans→twice) + math → 42; edge + DMSG.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"rt.elf\"\n"
-        "import fn twice(a);\n"
-        "import fn mac(a,b,c);\n"
+        "#lib \"crt.elf\"\n"
+        "import fn ans();\n"
         "fn main(){\n"
         "int n;\n"
-        "n=mac(twice(10),2,2);\n"
+        "n=ans();\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"PC\";\n"
+        "write \"XL\";\n"
         "}\n"
         "return n;\n"
         "}\n";
-    static const char bad_src[] = "CXC_A2\nreturn ;\n";
+    static const char bad_src[] =
+        "CXC_A2\n"
+        "#lib \"crt.elf\"\n"
+        "import fn ans();\n"
+        "fn main(){\n"
+        "return ans();\n"
+        "}\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
     if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||
@@ -1964,6 +1971,25 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(lfd)) != 0) {
             result.failure = 18;
+            return false;
+        }
+    }
+    {
+        const int64_t crtfd = fs::open_path(
+            "disk/crt.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (crtfd < 0) {
+            result.failure = 40;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(crtfd), rtcrt_elf,
+                         rtcrt_elf_size) !=
+            static_cast<int64_t>(rtcrt_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(crtfd));
+            result.failure = 41;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(crtfd)) != 0) {
+            result.failure = 42;
             return false;
         }
     }
@@ -2037,7 +2063,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: illegal source must exit 4 from cxc-cc without LIB_PASS.
+    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG, no XLIB_PASS.
     result.stage = 6;
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
@@ -2072,8 +2098,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     {
         const uint64_t edge_exit = syscall::session().exit_code;
         const uint32_t edge_pass = syscall::session().saw_onbox_cc_pass;
+        const uint32_t edge_dmsg = syscall::session().saw_onbox_dmsg;
         syscall::clear_session();
-        if (edge_exit != 4 || edge_pass != 0) {
+        if (edge_exit != 4 || edge_pass != 0 || edge_dmsg == 0) {
             result.failure = 15;
             result.exit_code = edge_exit;
             return false;

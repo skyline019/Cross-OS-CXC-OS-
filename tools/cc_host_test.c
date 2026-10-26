@@ -328,6 +328,23 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "#lib \"crt.elf\"\n"
+            "import fn ans();\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=ans();\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"XL\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m109-xlib") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -392,6 +409,14 @@ int main(void) {
             "import fn mac(a,b,c);\n"
             "fn main(){\nreturn mac(1,2);\n}\n",
             "bad-mac-arity") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\n"
+            "#lib \"crt.elf\"\n"
+            "import fn ans();\n"
+            "fn main(){\nreturn ans();\n}\n",
+            "bad-cross-und") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

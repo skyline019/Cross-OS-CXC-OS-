@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): CRT + #link + #lib ET_REL SysV + R_X86_64_PC32. */
+/* CXC mini-cc (A2): #link + #lib cross-object UND PC32/PLT32 + CRT plant. */
 #pragma once
 
 #ifdef CC_HOST
@@ -22,7 +22,7 @@ enum {
     CC_STR_MAX = 16,
     CC_LOOP_MAX = 4,
     CC_BREAK_MAX = 8,
-    CC_FN_MAX = 8,
+    CC_FN_MAX = 12,
     CC_FN_ARGS = 4,
     CC_STRUCT_MAX = 4,
     CC_STRUCT_FIELDS = 4,
@@ -30,6 +30,7 @@ enum {
     CC_ENUM_MAX = 16,
     CC_CALL_MAX = 32,
     CC_LINK_MAX = 4,
+    CC_EXPORT_MAX = 16,
     CC_LOAD_VA = 0x400000
 };
 
@@ -141,6 +142,11 @@ typedef struct CcCallFix {
     int fn;
 } CcCallFix;
 
+typedef struct CcExport {
+    char name[CC_IDENT_MAX + 1];
+    size_t entry;
+} CcExport;
+
 typedef struct CcStruct {
     char name[CC_IDENT_MAX + 1];
     char fields[CC_STRUCT_FIELDS][CC_IDENT_MAX + 1];
@@ -163,6 +169,7 @@ typedef struct CcEmit {
     int nlocals;
     int next_slot;
     int failed;
+    int fail_code; /* M109 debug: link/parse reason for DMSG */
     CcLoop loops[CC_LOOP_MAX];
     int nloops;
     CcFn fns[CC_FN_MAX];
@@ -176,6 +183,8 @@ typedef struct CcEmit {
     int nenums;
     CcCallFix calls[CC_CALL_MAX];
     int ncalls;
+    CcExport exports[CC_EXPORT_MAX];
+    int nexports;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -238,6 +247,7 @@ void cc_lib_reset(void);
 int cc_lib_count(void);
 const char* cc_lib_at(int i);
 int cc_import_elf(CcEmit* em, const char* path);
+int cc_last_fail_code(void);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);

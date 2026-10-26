@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 108 / v1.9.0：机上 mini-cc #lib R_X86_64_PC32**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-10.md`](midpoint-assessment-10.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 109 / v2.0.0：机上 mini-cc 跨 #lib UND + CRT**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-10.md`](midpoint-assessment-10.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -133,7 +133,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box link (M105) | `#link`/`extern fn` 多 TU；曾用 `ONBOX_LINK_PASS` |
 | on-box lib (M106) | `#lib`/`import fn` 单符号 ET_REL；曾用 `ONBOX_LIB_PASS` |
 | on-box math (M107) | 多符号 `#lib` add/mul/mac + SysV≤4；曾用 `ONBOX_MATH_PASS` |
-| on-box pc32 (M108) | `#lib` 整节 `.text` + `R_X86_64_PC32`；`ONBOX_PC32_PASS` + `edge: 1`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
+| on-box pc32 (M108) | `#lib` 整节 `.text` + `R_X86_64_PC32`；曾用 `ONBOX_PC32_PASS` |
+| on-box xlib (M109) | 跨 `#lib` UND + CRT plant + `DMSG`；`ONBOX_XLIB_PASS` + `edge: 1`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -323,4 +324,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **更多 planted musl/CRT + 跨目标未定义符号**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；第十次中场见 [`midpoint-assessment-10.md`](midpoint-assessment-10.md)）。须保持 M13–M108 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **更多 planted musl/CRT + 声明靠拢真实 C**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；第十次中场见 [`midpoint-assessment-10.md`](midpoint-assessment-10.md)）。须保持 M13–M109 回归证据。

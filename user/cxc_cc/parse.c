@@ -1409,6 +1409,12 @@ static int resolve_calls(CcEmit* em) {
     return 0;
 }
 
+static int g_last_fail_code;
+
+int cc_last_fail_code(void) {
+    return g_last_fail_code;
+}
+
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len) {
     CcLexer lx;
@@ -1423,6 +1429,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     static unsigned char data_buf[CC_DATA_MAX];
     static char expanded[CC_SRC_MAX];
 
+    g_last_fail_code = 0;
     memset(&em, 0, sizeof(em));
     em.code_cap = CC_CODE_MAX;
     em.data_cap = CC_DATA_MAX;
@@ -1439,13 +1446,16 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nglobals = 0;
     em.nenums = 0;
     em.ncalls = 0;
+    em.nexports = 0;
     em.failed = 0;
+    em.fail_code = 0;
     cc_reloc_reset();
     cc_link_reset();
     cc_lib_reset();
 
     if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
         0) {
+        g_last_fail_code = 10;
         return -1;
     }
     src = expanded;
@@ -1509,11 +1519,19 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
             const char* path = cc_lib_at(li);
             if (!path || cc_import_elf(&em, path) != 0) {
                 em.failed = 1;
+                if (em.fail_code == 0) {
+                    em.fail_code = 20;
+                }
                 break;
             }
         }
     }
+    if (em.failed) {
+        g_last_fail_code = em.fail_code ? em.fail_code : 20;
+        return -1;
+    }
     if (resolve_calls(&em) != 0) {
+        g_last_fail_code = em.fail_code ? em.fail_code : 11;
         return -1;
     }
     entry_at = em.code_len;
@@ -1553,6 +1571,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
         }
     }
     if (em.failed) {
+        g_last_fail_code = em.fail_code ? em.fail_code : 12;
         return -1;
     }
     return cc_build_elf(&em, out_elf, out_len);

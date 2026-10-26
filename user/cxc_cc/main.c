@@ -1,6 +1,7 @@
-/* On-box CXC mini-cc driver: disk/in.c → disk/out.elf → execve (A2/M96). */
+/* On-box CXC mini-cc driver: disk/in.c → disk/out.elf → execve (A2). */
 #include "cxc_cc/cc.h"
 #include "mini_libc/fcntl.h"
+#include "mini_libc/unistd.h"
 
 extern int execve(const char* path, char* const argv[], char* const envp[]);
 
@@ -44,6 +45,28 @@ static int write_all(int fd, const unsigned char* buf, size_t n) {
     return 0;
 }
 
+/* Debug兜底: surface link/compile fail code on serial before exit 4. */
+static void write_dmsg(int code) {
+    char msg[8];
+    int c;
+    if (code < 0) {
+        code = 0;
+    }
+    if (code > 99) {
+        code = 99;
+    }
+    msg[0] = 'D';
+    msg[1] = 'M';
+    msg[2] = 'S';
+    msg[3] = 'G';
+    msg[4] = ':';
+    msg[5] = (char)('0' + (code / 10));
+    msg[6] = (char)('0' + (code % 10));
+    msg[7] = '\n';
+    c = write(1, msg, 8);
+    (void)c;
+}
+
 int main(int argc, char** argv) {
     char* src;
     size_t src_len = 0;
@@ -69,6 +92,7 @@ int main(int argc, char** argv) {
     src[src_len] = 0;
 
     if (cc_compile(src, src_len, &elf, &elf_len) != 0 || !elf || elf_len == 0) {
+        write_dmsg(cc_last_fail_code());
         _exit(4);
     }
 
