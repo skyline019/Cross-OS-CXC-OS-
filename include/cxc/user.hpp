@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M110/A2: cwrite CRT + \\n escape + cross-#lib + DMSG → ONBOX_LIBC_PASS.
+// M111/A2: strlen+cwrite + memcpy plant + DMSG → ONBOX_CSTR_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

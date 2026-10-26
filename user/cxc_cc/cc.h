@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): #lib CRT cwrite + string escapes + cross-#lib UND. */
+/* CXC mini-cc (A2): #lib cwrite/strlen/memcpy + escapes + cross-UND. */
 #pragma once
 
 #ifdef CC_HOST

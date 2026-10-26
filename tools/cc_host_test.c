@@ -373,6 +373,51 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "#lib \"crt.elf\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn ans();\n"
+            "import fn cwrite(p,n);\n"
+            "import fn strlen(s);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:ST\\n\");\n"
+            "cwrite(\"WMSG:ST\\n\", m);\n"
+            "n=ans();\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m111-cstr") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "import fn strlen(s);\n"
+            "fn main(){\n"
+            "return strlen(\"abcd\");\n"
+            "}\n",
+            "m111-strlen") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "import fn memcpy(d,s,n);\n"
+            "fn main(){\n"
+            "a[2];\n"
+            "b[2];\n"
+            "a[0]=1;\n"
+            "a[1]=2;\n"
+            "memcpy(&b[0], &a[0], 16);\n"
+            "return b[0]+b[1]+39;\n"
+            "}\n",
+            "m111-memcpy") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"

@@ -172,8 +172,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M107** | 多符号 `#lib`（add/mul/mac）+ SysV 至 4 参 + 边缘 | 曾用 `ONBOX_MATH_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M108** | `#lib` 整节 `.text` + `R_X86_64_PC32`（`twice`→`add`）+ 边缘 | 曾用 `ONBOX_PC32_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M109** | 跨 `#lib` UND + planted CRT + `DMSG` 边缘 | 曾用 `ONBOX_XLIB_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M110** | CRT `cwrite` + `\n` 转义 + 字面量指针实参 | `ONBOX_LIBC_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M111+** | 更多 musl 符号；声明靠拢真实 C → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M110** | `call(...);` + `cwrite`/`io.elf` + `\n` 转义 | 曾用 `ONBOX_LIBC_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M111** | planted `strlen`/`memcpy` + `cwrite(…,strlen)` | `ONBOX_CSTR_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M112+** | 更多 musl；声明靠拢真实 C → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

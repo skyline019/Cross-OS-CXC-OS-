@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ET_REL IO: cwrite(buf,len) SysV → Linux int 0x80 write(1,...). M110."""
+"""ET_REL IO/string: cwrite + strlen + memcpy (SysV). M110/M111."""
 
 from __future__ import annotations
 
@@ -7,8 +7,25 @@ import argparse
 import struct
 from pathlib import Path
 
-# mov rdx,rsi; mov rsi,rdi; mov edi,1; mov eax,1; int 0x80; ret
+# cwrite(rdi=buf, rsi=len): write(1, buf, len) via int 0x80
 CWRITE = bytes.fromhex("4889F24889FEBF01000000B801000000CD80C3")
+
+# strlen(rdi=s): rax = length
+# xor eax,eax; L: cmp byte [rdi+rax],0; je done; inc rax; jmp L; done: ret
+STRLEN = bytes.fromhex("31C0803C0700740548FFC0EBF5C3")
+
+# memcpy(rdi=dst, rsi=src, rdx=n): byte copy, returns dst in rax
+# mov rax,rdi; test rdx,rdx; je done; L: mov cl,[rsi]; mov [rdi],cl;
+# inc rsi; inc rdi; dec rdx; jnz L; done: ret
+MEMCPY = bytes.fromhex(
+    "4889F84885D2740F8A0E880F48FFC648FFC748FFCA75F1C3"
+)
+
+FUNCS = (
+    ("cwrite", CWRITE),
+    ("strlen", STRLEN),
+    ("memcpy", MEMCPY),
+)
 
 SHT_PROGBITS = 1
 SHT_SYMTAB = 2
@@ -16,13 +33,19 @@ SHT_STRTAB = 3
 
 
 def build() -> bytes:
-    text = CWRITE
-    strtab = b"\x00cwrite\x00"
+    text = b"".join(body for _, body in FUNCS)
+    offsets: list[tuple[str, int, int]] = []
+    at = 0
+    for name, body in FUNCS:
+        offsets.append((name, at, len(body)))
+        at += len(body)
+
+    strtab = b"\x00" + b"".join(n.encode("ascii") + b"\x00" for n, _, _ in offsets)
     shstr = b"\x00.text\x00.shstrtab\x00.symtab\x00.strtab\x00"
 
     ehdr_sz = 64
     off_text = ehdr_sz
-    nsym = 2
+    nsym = 1 + len(offsets)
     off_shstr = off_text + len(text)
     off_sym = (off_shstr + len(shstr) + 7) & ~7
     pad_shstr = b"\x00" * (off_sym - (off_shstr + len(shstr)))
@@ -45,8 +68,6 @@ def build() -> bytes:
             entsz,
         )
 
-    # 0 null, 1 .text, 2 .shstrtab, 3 .symtab, 4 .strtab
-    # shstr: 1=.text 7=.shstrtab 17=.symtab 25=.strtab
     shdrs = b"".join(
         [
             bytes(64),
@@ -56,9 +77,21 @@ def build() -> bytes:
             shdr(25, SHT_STRTAB, 0, 0, off_str, len(strtab), 0, 0, 1, 0),
         ]
     )
-    symtab = bytes(24) + struct.pack(
-        "<IBBHQQ", 1, (1 << 4) | 2, 0, 1, 0, len(text)
-    )
+
+    symtab = bytearray(24)
+    name_off = 1
+    for name, value, size in offsets:
+        symtab += struct.pack(
+            "<IBBHQQ",
+            name_off,
+            (1 << 4) | 2,
+            0,
+            1,
+            value,
+            size,
+        )
+        name_off += len(name) + 1
+
     ehdr = struct.pack(
         "<16sHHIQQQIHHHHHH",
         b"\x7fELF" + bytes([2, 1, 1, 0]) + bytes(8),
@@ -77,7 +110,7 @@ def build() -> bytes:
         2,
     )
     return b"".join(
-        [ehdr, text, shstr, pad_shstr, symtab, strtab, pad_str, shdrs]
+        [ehdr, text, shstr, pad_shstr, bytes(symtab), strtab, pad_str, shdrs]
     )
 
 
