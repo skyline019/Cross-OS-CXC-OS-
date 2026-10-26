@@ -97,6 +97,8 @@ uint64_t disk_exec_payload_elf_physical = 0;
 uint64_t disk_exec_payload_elf_size = 0;
 uint64_t fork_wait_elf_physical = 0;
 uint64_t fork_wait_elf_size = 0;
+uint64_t pipe_elf_physical = 0;
+uint64_t pipe_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1706,6 +1708,94 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" child: 1 status: 42\n");
     log::line("FORK_WAIT_PASS");
 
+    // M85 kernel-side pipe smoke (before ELF probe).
+    {
+        fs::reset();
+        int32_t pfds[2]{-1, -1};
+        if (fs::pipe_fds(pfds) != 0 || pfds[0] < 0 || pfds[1] < 0) {
+            log::panic("M85 kernel pipe_fds failed");
+        }
+        const char payload[] = "PIPE_DATA\n";
+        if (fs::write_fd(static_cast<uint32_t>(pfds[1]), payload,
+                         sizeof(payload) - 1) !=
+            static_cast<int64_t>(sizeof(payload) - 1)) {
+            log::panic("M85 kernel pipe write failed");
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfds[1])) != 0) {
+            log::panic("M85 kernel pipe close-w failed");
+        }
+        char buf[16]{};
+        if (fs::read_fd(static_cast<uint32_t>(pfds[0]), buf,
+                        sizeof(payload) - 1) !=
+            static_cast<int64_t>(sizeof(payload) - 1)) {
+            log::panic("M85 kernel pipe read failed");
+        }
+        for (size_t i = 0; i < sizeof(payload) - 1; ++i) {
+            if (buf[i] != payload[i]) {
+                log::panic("M85 kernel pipe content mismatch");
+            }
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfds[0])) != 0) {
+            log::panic("M85 kernel pipe close-r failed");
+        }
+        // EPIPE: write with no readers.
+        if (fs::pipe_fds(pfds) != 0) {
+            log::panic("M85 kernel pipe_fds (epipe) failed");
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfds[0])) != 0) {
+            log::panic("M85 kernel epipe close-r failed");
+        }
+        if (fs::write_fd(static_cast<uint32_t>(pfds[1]), "X", 1) != -32) {
+            log::panic("M85 kernel EPIPE edge failed");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(pfds[1]));
+        // dup: write via duplicated end.
+        if (fs::pipe_fds(pfds) != 0) {
+            log::panic("M85 kernel pipe_fds (dup) failed");
+        }
+        const int64_t duped = fs::dup_fd(static_cast<uint32_t>(pfds[1]));
+        if (duped < 0) {
+            log::panic("M85 kernel dup failed");
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfds[1])) != 0) {
+            log::panic("M85 kernel dup close-old failed");
+        }
+        if (fs::write_fd(static_cast<uint32_t>(duped), "D", 1) != 1) {
+            log::panic("M85 kernel dup write failed");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(duped));
+        char dbuf[4]{};
+        if (fs::read_fd(static_cast<uint32_t>(pfds[0]), dbuf, 1) != 1 ||
+            dbuf[0] != 'D') {
+            log::panic("M85 kernel dup read failed");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(pfds[0]));
+        fs::reset();
+        log::write("[ok] pipe-k: pass: 1 epipe: 1 dup: 1\n");
+    }
+
+    user::PipeProbeResult pipe_probe{};
+    const auto* pipe_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + pipe_elf_physical);
+    if (pipe_elf_physical == 0 || pipe_elf_size == 0 ||
+        !user::run_pipe_probe(pipe_image, static_cast<size_t>(pipe_elf_size),
+                              pipe_probe)) {
+        log::write("[debug] pipe stage: ");
+        log::decimal(pipe_probe.stage);
+        log::write(", failure: ");
+        log::decimal(pipe_probe.failure);
+        log::write(", pass: ");
+        log::decimal(pipe_probe.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(pipe_probe.exit_code);
+        log::write('\n');
+        log::panic("M85 pipe/dup probe failed");
+    }
+    log::write("[ok] pipe: pass: ");
+    log::decimal(pipe_probe.wrote_pass);
+    log::write(" fork_ipc: 1 epipe: 1 dup: 1\n");
+    log::line("PIPE_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -1921,6 +2011,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP FORK.ELF")) {
         log::panic("cannot relocate ESP FORK.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(pipe_elf_physical, pipe_elf_size,
+                                 "ESP PIPE.ELF")) {
+        log::panic("cannot relocate ESP PIPE.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -1937,7 +2031,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.85.0 - eighth midfield (A2/M84)");
+    cxc::log::line("CXC/OS 0.86.0 - pipe/dup (A2/M85)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2456,6 +2550,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP FORK.ELF bytes: ");
     cxc::log::decimal(cxc::fork_wait_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 pipe_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'P',  u'I', u'P', u'E', u'.',  u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, pipe_path,
+                                      64 * 1024, cxc::pipe_elf_physical,
+                                      cxc::pipe_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP PIPE.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP PIPE.ELF bytes: ");
+    cxc::log::decimal(cxc::pipe_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

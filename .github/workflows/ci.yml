@@ -231,6 +231,11 @@ jobs:
           grep -F 'fork-wait: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'status: 42' build/uefi/qemu-test/serial.log
           grep -F 'FORK_CHILD' build/uefi/qemu-test/serial.log
+          grep -F 'PIPE_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'pipe: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'fork_ipc: 1' build/uefi/qemu-test/serial.log
+          grep -F 'epipe: 1' build/uefi/qemu-test/serial.log
+          grep -F 'dup: 1' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

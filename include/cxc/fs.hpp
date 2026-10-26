@@ -33,6 +33,8 @@ constexpr size_t max_getdents = 4096;
 constexpr uint32_t fd_stdout = 1;
 constexpr uint32_t fd_table_begin = 3;
 constexpr uint32_t fd_table_end = 16;
+constexpr uint32_t max_pipes = 4;
+constexpr size_t pipe_capacity = 256;
 
 // Linux x86-64 kernel `struct stat` (syscall ABI).
 struct StatBuf {
@@ -69,6 +71,8 @@ struct Stats {
     uint32_t mkdirs;
     uint32_t unlinks;
     uint32_t renames;
+    uint32_t pipes;
+    uint32_t dups;
     uint32_t files;
     uint32_t dirs;
 };
@@ -93,5 +97,14 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out);
 int64_t stat_path(const char* path, StatBuf& out);
 // Directory fd only. Writes packed linux_dirent64 records; returns bytes.
 int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length);
+
+// M85: anonymous pipe; out[0]=read end, out[1]=write end.
+int64_t pipe_fds(int32_t out[2]);
+int64_t dup_fd(uint32_t oldfd);
+int64_t dup2_fd(uint32_t oldfd, uint32_t newfd);
+
+// Cooperative fork: clone live fd table + bump pipe refs; restore on child exit.
+void fork_clone_fd_table();
+void fork_restore_parent_fd_table();
 
 }  // namespace cxc::fs

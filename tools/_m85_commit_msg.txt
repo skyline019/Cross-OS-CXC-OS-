@@ -1,0 +1,5 @@
+feat: M85 pipe/dup/dup2 + fork fd-table clone (v0.86.0)
+
+Anonymous pipes with reader/writer refs, dup/dup2, and cooperative-fork
+fd-table clone so child close does not steal parent ends. Contract
+PIPE_PASS covers fork IPC, EPIPE, and dup; ESP PIPE.ELF. Baseline M85.

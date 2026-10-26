@@ -21,6 +21,9 @@ constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_ioctl = 16;
 constexpr uint64_t sys_readv = 19;
 constexpr uint64_t sys_writev = 20;
+constexpr uint64_t sys_pipe = 22;
+constexpr uint64_t sys_dup = 32;
+constexpr uint64_t sys_dup2 = 33;
 constexpr uint64_t sys_fcntl = 72;
 constexpr uint64_t sys_getpid = 39;
 constexpr uint64_t sys_fork = 57;
@@ -105,6 +108,7 @@ struct Session {
     uint32_t saw_disk_argv_pass;
     uint32_t saw_disk_env_pass;
     uint32_t saw_fork_wait_pass;
+    uint32_t saw_pipe_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t pid;

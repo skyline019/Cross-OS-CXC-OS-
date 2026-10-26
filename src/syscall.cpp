@@ -60,6 +60,7 @@ constexpr char expected_disk_exec_pass[] = "DISK_EXEC_PASS\n";
 constexpr char expected_disk_argv_pass[] = "DISK_ARGV_PASS\n";
 constexpr char expected_disk_env_pass[] = "DISK_ENV_PASS\n";
 constexpr char expected_fork_wait_pass[] = "FORK_WAIT_PASS\n";
+constexpr char expected_pipe_pass[] = "PIPE_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -629,6 +630,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_fork_wait_pass = 1;
         }
     }
+    if (length == sizeof(expected_pipe_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_pipe_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_pipe_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_pipe_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -825,7 +839,7 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.85.0");
+    fill_uts_field(local.release, "0.86.0");
     fill_uts_field(local.version, "M84");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
@@ -1055,6 +1069,37 @@ cpu::InterruptFrame* handle_close(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+cpu::InterruptFrame* handle_pipe(cpu::InterruptFrame* frame) {
+    const uint64_t user_fds = frame->rdi;
+    if (!user_pages_ok(user_fds, sizeof(int32_t) * 2, true)) {
+        frame->rax = static_cast<uint64_t>(errno_fault);
+        return frame;
+    }
+    int32_t local[2]{-1, -1};
+    const int64_t rc = fs::pipe_fds(local);
+    if (rc != 0) {
+        frame->rax = static_cast<uint64_t>(rc);
+        return frame;
+    }
+    memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_fds)), local,
+           sizeof(local));
+    frame->rax = 0;
+    return frame;
+}
+
+cpu::InterruptFrame* handle_dup(cpu::InterruptFrame* frame) {
+    frame->rax =
+        static_cast<uint64_t>(fs::dup_fd(static_cast<uint32_t>(frame->rdi)));
+    return frame;
+}
+
+cpu::InterruptFrame* handle_dup2(cpu::InterruptFrame* frame) {
+    frame->rax = static_cast<uint64_t>(
+        fs::dup2_fd(static_cast<uint32_t>(frame->rdi),
+                    static_cast<uint32_t>(frame->rsi)));
+    return frame;
+}
+
 cpu::InterruptFrame* handle_lseek(cpu::InterruptFrame* frame) {
     const int64_t rc = fs::lseek_fd(static_cast<uint32_t>(frame->rdi),
                                     static_cast<int64_t>(frame->rsi),
@@ -1263,6 +1308,7 @@ cpu::InterruptFrame* handle_fork(cpu::InterruptFrame* frame) {
         frame->rax = static_cast<uint64_t>(-12);
         return frame;
     }
+    fs::fork_clone_fd_table();
     set_user_root(child_root);
     current.pid = child_pid;
     current.ppid = parent_pid;
@@ -1345,6 +1391,7 @@ cpu::InterruptFrame* handle_exit(cpu::InterruptFrame* frame) {
         fork_slot.zombie = 1;
         fork_slot.child_alive = 0;
         fork_slot.child_status = (frame->rdi & 0xffull) << 8;
+        fs::fork_restore_parent_fd_table();
         const uint64_t child_root = fork_slot.child_root;
         fork_slot.child_root = 0;
         if (child_root != 0) {
@@ -1451,6 +1498,12 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_open(frame);
     case sys_close:
         return handle_close(frame);
+    case sys_pipe:
+        return handle_pipe(frame);
+    case sys_dup:
+        return handle_dup(frame);
+    case sys_dup2:
+        return handle_dup2(frame);
     case sys_stat:
         return handle_stat(frame);
     case sys_fstat:

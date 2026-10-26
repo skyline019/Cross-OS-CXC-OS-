@@ -13,6 +13,9 @@ namespace {
 
 constexpr uint8_t backend_ram = 0;
 constexpr uint8_t backend_disk = 1;
+constexpr uint8_t backend_pipe = 2;
+constexpr int64_t errno_again = -11;  // -EAGAIN
+constexpr int64_t errno_pipe = -32;   // -EPIPE
 
 struct Inode {
     bool used;
@@ -31,6 +34,16 @@ struct FileDesc {
     uint32_t readable;
 };
 
+struct PipeBuf {
+    bool used;
+    uint32_t readers;
+    uint32_t writers;
+    uint32_t head;
+    uint32_t tail;
+    uint32_t count;
+    uint8_t data[pipe_capacity];
+};
+
 // Paths `disk/...` go to durable CXCFS (virtio-blk); everything else stays ramfs.
 bool disk_rest(const char* name, size_t length, const char*& rest,
                size_t& rest_len) {
@@ -47,8 +60,13 @@ bool disk_rest(const char* name, size_t length, const char*& rest,
 }
 
 Inode inodes[max_files]{};
-FileDesc fds[fd_table_end]{};
+FileDesc tables[2][fd_table_end]{};
+uint32_t live_table = 0;
+PipeBuf pipes[max_pipes]{};
 Stats current_stats{};
+
+// Freestanding-safe: no dynamic FileDesc* init (ctors may not run).
+#define fds (tables[live_table])
 
 size_t name_length(const char* path) {
     size_t length = 0;
@@ -129,6 +147,47 @@ int32_t alloc_fd() {
     return -1;
 }
 
+int32_t alloc_pipe() {
+    for (uint32_t index = 0; index < max_pipes; ++index) {
+        if (!pipes[index].used) {
+            pipes[index] = PipeBuf{};
+            pipes[index].used = true;
+            return static_cast<int32_t>(index);
+        }
+    }
+    return -1;
+}
+
+void bump_pipe_refs(const FileDesc& slot) {
+    if (!slot.used || slot.backend != backend_pipe ||
+        slot.inode >= max_pipes || !pipes[slot.inode].used) {
+        return;
+    }
+    if (slot.readable != 0) {
+        ++pipes[slot.inode].readers;
+    }
+    if (slot.writable != 0) {
+        ++pipes[slot.inode].writers;
+    }
+}
+
+void release_pipe_end(FileDesc& slot) {
+    if (!slot.used || slot.backend != backend_pipe ||
+        slot.inode >= max_pipes || !pipes[slot.inode].used) {
+        return;
+    }
+    PipeBuf& pipe = pipes[slot.inode];
+    if (slot.readable != 0 && pipe.readers > 0) {
+        --pipe.readers;
+    }
+    if (slot.writable != 0 && pipe.writers > 0) {
+        --pipe.writers;
+    }
+    if (pipe.readers == 0 && pipe.writers == 0) {
+        pipes[slot.inode] = PipeBuf{};
+    }
+}
+
 // Parent directory name for "dir/file" → "dir". Single-component → empty.
 bool parent_name(const char* name, size_t length, const char*& parent,
                  size_t& parent_len) {
@@ -198,9 +257,15 @@ void reset() {
     for (uint32_t index = 0; index < max_files; ++index) {
         inodes[index] = Inode{};
     }
-    for (uint32_t fd = 0; fd < fd_table_end; ++fd) {
-        fds[fd] = FileDesc{};
+    for (uint32_t table = 0; table < 2; ++table) {
+        for (uint32_t fd = 0; fd < fd_table_end; ++fd) {
+            tables[table][fd] = FileDesc{};
+        }
     }
+    for (uint32_t index = 0; index < max_pipes; ++index) {
+        pipes[index] = PipeBuf{};
+    }
+    live_table = 0;
     current_stats = Stats{};
 }
 
@@ -463,6 +528,7 @@ int64_t close_fd(uint32_t fd) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
+    release_pipe_end(fds[fd]);
     fds[fd] = FileDesc{};
     ++current_stats.closes;
     return 0;
@@ -472,6 +538,26 @@ int64_t read_fd(uint32_t fd, void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || fd < fd_table_begin ||
         fd >= fd_table_end || !fds[fd].used || fds[fd].readable == 0) {
         return -1;
+    }
+    if (fds[fd].backend == backend_pipe) {
+        if (fds[fd].inode >= max_pipes || !pipes[fds[fd].inode].used) {
+            return -1;
+        }
+        PipeBuf& pipe = pipes[fds[fd].inode];
+        if (pipe.count == 0) {
+            ++current_stats.reads;
+            return pipe.writers == 0 ? 0 : errno_again;
+        }
+        auto* out = static_cast<uint8_t*>(buffer);
+        const size_t copy =
+            length < pipe.count ? length : static_cast<size_t>(pipe.count);
+        for (size_t i = 0; i < copy; ++i) {
+            out[i] = pipe.data[pipe.head];
+            pipe.head = (pipe.head + 1) % pipe_capacity;
+        }
+        pipe.count -= static_cast<uint32_t>(copy);
+        ++current_stats.reads;
+        return static_cast<int64_t>(copy);
     }
     if (fds[fd].backend == backend_disk) {
         if (cxcfs::inode_is_dir(fds[fd].inode)) {
@@ -508,6 +594,29 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || fd < fd_table_begin ||
         fd >= fd_table_end || !fds[fd].used || fds[fd].writable == 0) {
         return -1;
+    }
+    if (fds[fd].backend == backend_pipe) {
+        if (fds[fd].inode >= max_pipes || !pipes[fds[fd].inode].used) {
+            return -1;
+        }
+        PipeBuf& pipe = pipes[fds[fd].inode];
+        if (pipe.readers == 0) {
+            return errno_pipe;
+        }
+        const uint32_t space = pipe_capacity - pipe.count;
+        if (space == 0) {
+            return errno_again;
+        }
+        const auto* in = static_cast<const uint8_t*>(buffer);
+        const size_t copy =
+            length < space ? length : static_cast<size_t>(space);
+        for (size_t i = 0; i < copy; ++i) {
+            pipe.data[pipe.tail] = in[i];
+            pipe.tail = (pipe.tail + 1) % pipe_capacity;
+        }
+        pipe.count += static_cast<uint32_t>(copy);
+        ++current_stats.writes;
+        return static_cast<int64_t>(copy);
     }
     if (fds[fd].backend == backend_disk) {
         if (cxcfs::inode_is_dir(fds[fd].inode)) {
@@ -548,6 +657,9 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length) {
 int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
+    }
+    if (fds[fd].backend == backend_pipe) {
+        return -1;  // ESPIPE
     }
     int64_t size = 0;
     uint32_t size_cap = max_file_bytes;
@@ -592,6 +704,14 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
+    if (fds[fd].backend == backend_pipe) {
+        out = StatBuf{};
+        out.st_mode = 0010000 | 0600;  // S_IFIFO
+        out.st_nlink = 1;
+        out.st_blksize = static_cast<int64_t>(pipe_capacity);
+        ++current_stats.fstats;
+        return 0;
+    }
     if (fds[fd].backend == backend_disk) {
         cxcfs::fill_stat(fds[fd].inode, out);
     } else {
@@ -630,6 +750,9 @@ int64_t stat_path(const char* path, StatBuf& out) {
 int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || length > max_getdents ||
         fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
+        return -1;
+    }
+    if (fds[fd].backend == backend_pipe) {
         return -1;
     }
     if (fds[fd].backend == backend_disk) {
@@ -751,5 +874,109 @@ int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length) {
     ++current_stats.getdents;
     return static_cast<int64_t>(written);
 }
+
+int64_t pipe_fds(int32_t out[2]) {
+    if (out == nullptr) {
+        return -1;
+    }
+    const int32_t pipe_id = alloc_pipe();
+    if (pipe_id < 0) {
+        return -1;
+    }
+    const int32_t rfd = alloc_fd();
+    if (rfd < 0) {
+        pipes[static_cast<uint32_t>(pipe_id)] = PipeBuf{};
+        return -1;
+    }
+    // Mark read end used before allocating write end (alloc_fd scans .used).
+    fds[static_cast<uint32_t>(rfd)].used = true;
+    fds[static_cast<uint32_t>(rfd)].backend = backend_pipe;
+    fds[static_cast<uint32_t>(rfd)].inode = static_cast<uint32_t>(pipe_id);
+    fds[static_cast<uint32_t>(rfd)].offset = 0;
+    fds[static_cast<uint32_t>(rfd)].readable = 1;
+    fds[static_cast<uint32_t>(rfd)].writable = 0;
+
+    const int32_t wfd = alloc_fd();
+    if (wfd < 0) {
+        fds[static_cast<uint32_t>(rfd)] = FileDesc{};
+        pipes[static_cast<uint32_t>(pipe_id)] = PipeBuf{};
+        return -1;
+    }
+    fds[static_cast<uint32_t>(wfd)].used = true;
+    fds[static_cast<uint32_t>(wfd)].backend = backend_pipe;
+    fds[static_cast<uint32_t>(wfd)].inode = static_cast<uint32_t>(pipe_id);
+    fds[static_cast<uint32_t>(wfd)].offset = 0;
+    fds[static_cast<uint32_t>(wfd)].readable = 0;
+    fds[static_cast<uint32_t>(wfd)].writable = 1;
+
+    pipes[static_cast<uint32_t>(pipe_id)].readers = 1;
+    pipes[static_cast<uint32_t>(pipe_id)].writers = 1;
+
+    out[0] = rfd;
+    out[1] = wfd;
+    ++current_stats.pipes;
+    ++current_stats.opens;
+    ++current_stats.opens;
+    return 0;
+}
+
+int64_t dup_fd(uint32_t oldfd) {
+    if (oldfd < fd_table_begin || oldfd >= fd_table_end || !fds[oldfd].used) {
+        return -1;
+    }
+    const int32_t neu = alloc_fd();
+    if (neu < 0) {
+        return -1;
+    }
+    fds[static_cast<uint32_t>(neu)] = fds[oldfd];
+    bump_pipe_refs(fds[static_cast<uint32_t>(neu)]);
+    ++current_stats.dups;
+    ++current_stats.opens;
+    return neu;
+}
+
+int64_t dup2_fd(uint32_t oldfd, uint32_t newfd) {
+    if (oldfd < fd_table_begin || oldfd >= fd_table_end || !fds[oldfd].used) {
+        return -1;
+    }
+    if (newfd < fd_table_begin || newfd >= fd_table_end) {
+        return -1;
+    }
+    if (oldfd == newfd) {
+        return static_cast<int64_t>(newfd);
+    }
+    if (fds[newfd].used) {
+        if (close_fd(newfd) != 0) {
+            return -1;
+        }
+    }
+    fds[newfd] = fds[oldfd];
+    bump_pipe_refs(fds[newfd]);
+    ++current_stats.dups;
+    ++current_stats.opens;
+    return static_cast<int64_t>(newfd);
+}
+
+void fork_clone_fd_table() {
+    const uint32_t parent = live_table;
+    const uint32_t child = parent == 0 ? 1u : 0u;
+    for (uint32_t fd = 0; fd < fd_table_end; ++fd) {
+        tables[child][fd] = tables[parent][fd];
+        bump_pipe_refs(tables[child][fd]);
+    }
+    live_table = child;
+}
+
+void fork_restore_parent_fd_table() {
+    const uint32_t parent = live_table == 0 ? 1u : 0u;
+    for (uint32_t fd = fd_table_begin; fd < fd_table_end; ++fd) {
+        if (fds[fd].used) {
+            (void)close_fd(fd);
+        }
+    }
+    live_table = parent;
+}
+
+#undef fds
 
 }  // namespace cxc::fs

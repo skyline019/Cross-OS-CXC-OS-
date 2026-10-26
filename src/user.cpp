@@ -182,6 +182,7 @@ MuslBlkfsProbeResult musl_blkfs_probe{};
 MuslBlkdirProbeResult musl_blkdir_probe{};
 DiskExecProbeResult disk_exec_probe{};
 ForkWaitProbeResult fork_wait_probe{};
+PipeProbeResult pipe_probe{};
 /* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
 constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1587,6 +1588,42 @@ bool run_fork_wait_probe(const uint8_t* image, size_t image_size,
 
 const ForkWaitProbeResult& fork_wait_probe_result() {
     return fork_wait_probe;
+}
+
+bool run_pipe_probe(const uint8_t* image, size_t image_size,
+                    PipeProbeResult& result) {
+    result = PipeProbeResult{};
+    result.stage = 1;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 1;
+        return false;
+    }
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(image, image_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 10 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_pipe_pass;
+    result.stage = 2;
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 2;
+        return false;
+    }
+    syscall::clear_session();
+    pipe_probe = result;
+    return true;
+}
+
+const PipeProbeResult& pipe_probe_result() {
+    return pipe_probe;
 }
 
 }  // namespace cxc::user
