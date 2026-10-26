@@ -959,7 +959,7 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "2.24.0");
+    fill_uts_field(local.release, "2.25.0");
     fill_uts_field(local.version, "M126");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");

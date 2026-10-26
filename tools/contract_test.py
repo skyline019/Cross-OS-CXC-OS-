@@ -513,6 +513,24 @@ def run_host_checks(seed: int) -> list[HostCheck]:
         return "host cxc-cc: good ELF + edge rejects"
 
     record("编译器", "cxc-cc host strict compile", cxc_cc_strict, "mini-cc host")
+
+    def cxc_cc_chaos() -> str:
+        script = PROJECT_ROOT / "tools" / "run_cc_chaos_test.py"
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        if completed.returncode != 0:
+            raise AssertionError(
+                (completed.stdout or "") + (completed.stderr or "")
+            )
+        assert "cc_chaos_test: PASS" in completed.stdout
+        return "host cxc chaos: fixed-seed mutate reject"
+
+    record("混沌", "cxc toolchain fixed-seed chaos", cxc_cc_chaos, "mini-cc chaos")
     return checks
 
 

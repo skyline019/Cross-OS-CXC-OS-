@@ -2357,7 +2357,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.24.0 - on-box mini-cc merge (A2/M133)");
+    cxc::log::line("CXC/OS 2.25.0 - midfield-13 merge+chaos (A2/M134)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

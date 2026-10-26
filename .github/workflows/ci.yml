@@ -73,6 +73,9 @@ jobs:
           python3 tools/contract_test.py --host-only
           --work-dir build/contract-host
 
+      - name: Host toolchain chaos (M134)
+        run: python3 tools/run_cc_chaos_test.py
+
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
@@ -444,6 +447,10 @@ jobs:
         run: >-
           python3 tools/contract_test.py --host-only
           --work-dir build/contract-host
+
+      - name: Host toolchain chaos (M134)
+        shell: msys2 {0}
+        run: python3 tools/run_cc_chaos_test.py
 
       - name: Summarize Windows evidence
         shell: msys2 {0}
