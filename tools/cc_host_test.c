@@ -241,6 +241,22 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#link \"lib.c\"\n"
+            "extern fn add(a,b);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=add(10,32);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"LN\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m105-link") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -282,8 +298,8 @@ int main(void) {
         fails++;
     }
     if (expect_fail(
-            "CXC_A2\nenum { A=1, A=2 };\nreturn 0;\n",
-            "bad-dup-enum") != 0) {
+            "CXC_A2\nextern fn missing(a);\nfn main(){\nreturn missing(1);\n}\n",
+            "bad-unresolved") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

@@ -1,0 +1,5 @@
+feat: M105 mini-cc extern/#link multi-TU ONBOX_LINK_PASS (v1.6.0)
+
+Merge a second translation unit via #link and extern fn with delayed
+call relocs; unresolved symbols fail. Evidence WMSG:LN + ONBOX_LINK_PASS
++ link:1 + edge:1.

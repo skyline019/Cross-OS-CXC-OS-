@@ -10,6 +10,80 @@
 
 enum { CC_INCLUDE_DEPTH = 4 };
 
+static char g_links[CC_LINK_MAX][128];
+static int g_nlinks;
+
+void cc_link_reset(void) {
+    g_nlinks = 0;
+}
+
+int cc_link_count(void) {
+    return g_nlinks;
+}
+
+const char* cc_link_at(int i) {
+    if (i < 0 || i >= g_nlinks) {
+        return 0;
+    }
+    return g_links[i];
+}
+
+static int make_disk_path(const char* path, size_t path_len, char* full,
+                          size_t full_cap) {
+    size_t i;
+    if (path_len == 0 || path_len >= 96 || full_cap < 8) {
+        return -1;
+    }
+    if (path_len >= 5 && path[0] == 'd' && path[1] == 'i' && path[2] == 's' &&
+        path[3] == 'k' && path[4] == '/') {
+        if (path_len + 1 > full_cap) {
+            return -1;
+        }
+        for (i = 0; i < path_len; i++) {
+            full[i] = path[i];
+        }
+        full[path_len] = 0;
+        return 0;
+    }
+    if (5 + path_len + 1 > full_cap) {
+        return -1;
+    }
+    full[0] = 'd';
+    full[1] = 'i';
+    full[2] = 's';
+    full[3] = 'k';
+    full[4] = '/';
+    for (i = 0; i < path_len; i++) {
+        full[5 + i] = path[i];
+    }
+    full[5 + path_len] = 0;
+    return 0;
+}
+
+static int add_link(const char* path, size_t path_len) {
+    char full[128];
+    int i;
+    if (g_nlinks >= CC_LINK_MAX) {
+        return -1;
+    }
+    if (make_disk_path(path, path_len, full, sizeof(full)) != 0) {
+        return -1;
+    }
+    for (i = 0; i < g_nlinks; i++) {
+        if (strcmp(g_links[i], full) == 0) {
+            return 0;
+        }
+    }
+    i = 0;
+    while (full[i] != 0) {
+        g_links[g_nlinks][i] = full[i];
+        i++;
+    }
+    g_links[g_nlinks][i] = 0;
+    g_nlinks++;
+    return 0;
+}
+
 static int append_bytes(char* out, size_t cap, size_t* n, const char* p,
                         size_t len) {
     size_t i;
@@ -71,26 +145,11 @@ static int handle_include(const char* path, size_t path_len, char* out,
     char full[128];
     static char file_buf[CC_SRC_MAX];
     size_t file_len = 0;
-    size_t i;
     if (depth >= CC_INCLUDE_DEPTH || path_len == 0 || path_len >= 96) {
         return -1;
     }
-    if (path_len >= 5 && path[0] == 'd' && path[1] == 'i' && path[2] == 's' &&
-        path[3] == 'k' && path[4] == '/') {
-        for (i = 0; i < path_len; i++) {
-            full[i] = path[i];
-        }
-        full[path_len] = 0;
-    } else {
-        full[0] = 'd';
-        full[1] = 'i';
-        full[2] = 's';
-        full[3] = 'k';
-        full[4] = '/';
-        for (i = 0; i < path_len; i++) {
-            full[5 + i] = path[i];
-        }
-        full[5 + path_len] = 0;
+    if (make_disk_path(path, path_len, full, sizeof(full)) != 0) {
+        return -1;
     }
     if (read_file(full, file_buf, sizeof(file_buf), &file_len) != 0) {
         return -1;
@@ -142,6 +201,40 @@ static int expand(const char* in, size_t in_len, char* out, size_t out_cap,
             i = j;
             continue;
         }
+        if (is_line_start(in, i) && i + 5 <= in_len && in[i] == '#' &&
+            in[i + 1] == 'l' && in[i + 2] == 'i' && in[i + 3] == 'n' &&
+            in[i + 4] == 'k') {
+            size_t j = i + 5;
+            size_t path_at;
+            size_t path_len;
+            while (j < in_len && (in[j] == ' ' || in[j] == '\t')) {
+                j++;
+            }
+            if (j >= in_len || in[j] != '"') {
+                return -1;
+            }
+            j++;
+            path_at = j;
+            while (j < in_len && in[j] != '"' && in[j] != '\n') {
+                j++;
+            }
+            if (j >= in_len || in[j] != '"') {
+                return -1;
+            }
+            path_len = j - path_at;
+            j++;
+            while (j < in_len && in[j] != '\n') {
+                j++;
+            }
+            if (j < in_len && in[j] == '\n') {
+                j++;
+            }
+            if (add_link(in + path_at, path_len) != 0) {
+                return -1;
+            }
+            i = j;
+            continue;
+        }
         if (append_bytes(out, out_cap, out_n, in + i, 1) != 0) {
             return -1;
         }
@@ -161,4 +254,8 @@ int cc_preprocess(const char* in, size_t in_len, char* out, size_t out_cap,
     }
     out[*out_len] = 0;
     return 0;
+}
+
+int cc_read_source(const char* path, char* buf, size_t cap, size_t* out_n) {
+    return read_file(path, buf, cap, out_n);
 }

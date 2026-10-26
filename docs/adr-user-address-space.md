@@ -166,8 +166,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M101** | `#include` / `for` / `ptr[i]` + 边缘 | 曾用 `ONBOX_INCL_PASS` |
 | **M102** | CRT `main`/globals/字符串/`do`/`+=` + 边缘 | 曾用 `ONBOX_CRT_PASS` |
 | **M103** | `switch`/`?:`/`%`/`'c'` + 边缘 | 曾用 `ONBOX_CASE_PASS` |
-| **M104** | `enum`/`sizeof`/`<<`/`0x` + 边缘；第十次中场 | `ONBOX_ENUM_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M105+** | musl 真链接 / 多目标 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M104** | `enum`/`sizeof`/`<<`/`0x` + 边缘；第十次中场 | 曾用 `ONBOX_ENUM_PASS` |
+| **M105** | `#link` / `extern fn` 多 TU + 边缘 | `ONBOX_LINK_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M106+** | planted musl/CRT 符号链接 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

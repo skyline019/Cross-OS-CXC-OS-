@@ -1919,22 +1919,21 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M104: enum/sizeof/<< /hex → 42; edge reject.
+    // M105: #link + extern fn multi-TU → 42; edge reject.
     static const char lib_text[] =
         "fn add(a,b){\n"
         "return a+b;\n"
         "}\n";
     static const char src_text[] =
         "CXC_A2\n"
-        "#include \"lib.cx\"\n"
-        "enum { TEN=0x0a, TW=20 };\n"
+        "#link \"lib.c\"\n"
+        "extern fn add(a,b);\n"
         "fn main(){\n"
         "int n;\n"
-        "n=TEN+TW+(1<<2)+sizeof(n);\n"
-        "n=add(n,0);\n"
+        "n=add(10,32);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"EN\";\n"
+        "write \"LN\";\n"
         "}\n"
         "return n;\n"
         "}\n";
@@ -1953,7 +1952,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
 
     {
         const int64_t lfd = fs::open_path(
-            "disk/lib.cx", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (lfd < 0) {
             result.failure = 16;
             return false;

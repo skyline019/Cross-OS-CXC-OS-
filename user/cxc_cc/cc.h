@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): CRT/switch + enum/sizeof/shifts/hex. */
+/* CXC mini-cc (A2): CRT/enum + extern fn / #link multi-TU. */
 #pragma once
 
 #ifdef CC_HOST
@@ -28,6 +28,8 @@ enum {
     CC_STRUCT_FIELDS = 4,
     CC_GLOBAL_MAX = 8,
     CC_ENUM_MAX = 16,
+    CC_CALL_MAX = 32,
+    CC_LINK_MAX = 4,
     CC_LOAD_VA = 0x400000
 };
 
@@ -56,6 +58,7 @@ enum CcTok {
     TOK_KW_DEFAULT,
     TOK_KW_ENUM,
     TOK_KW_SIZEOF,
+    TOK_KW_EXTERN,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -128,7 +131,13 @@ typedef struct CcFn {
     char name[CC_IDENT_MAX + 1];
     int arity;
     size_t entry;
+    int defined;
 } CcFn;
+
+typedef struct CcCallFix {
+    size_t at;
+    int fn;
+} CcCallFix;
 
 typedef struct CcStruct {
     char name[CC_IDENT_MAX + 1];
@@ -163,6 +172,8 @@ typedef struct CcEmit {
     int nglobals;
     CcEnumConst enums[CC_ENUM_MAX];
     int nenums;
+    CcCallFix calls[CC_CALL_MAX];
+    int ncalls;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -217,6 +228,10 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 
 int cc_preprocess(const char* in, size_t in_len, char* out, size_t out_cap,
                   size_t* out_len);
+void cc_link_reset(void);
+int cc_link_count(void);
+const char* cc_link_at(int i);
+int cc_read_source(const char* path, char* buf, size_t cap, size_t* out_n);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);

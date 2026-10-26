@@ -83,6 +83,9 @@ def main() -> int:
         (disk / "lib.cx").write_text(
             "fn add(a,b){\nreturn a+b;\n}\n", encoding="utf-8"
         )
+        (disk / "lib.c").write_text(
+            "fn add(a,b){\nreturn a+b;\n}\n", encoding="utf-8"
+        )
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

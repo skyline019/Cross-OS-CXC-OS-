@@ -59,6 +59,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_ENUM;
     } else if (strcmp(lx->text, "sizeof") == 0) {
         lx->tok = TOK_KW_SIZEOF;
+    } else if (strcmp(lx->text, "extern") == 0) {
+        lx->tok = TOK_KW_EXTERN;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {

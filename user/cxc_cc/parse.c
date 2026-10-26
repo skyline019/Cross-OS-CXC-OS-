@@ -86,7 +86,17 @@ static void parse_call(CcParser* p, const char* name) {
         return;
     }
     call_at = cc_emit_call_rel32(p->em);
-    patch_rel32(p->em, call_at, p->em->fns[fi].entry);
+    if (p->em->fns[fi].defined) {
+        patch_rel32(p->em, call_at, p->em->fns[fi].entry);
+    } else {
+        if (p->em->ncalls >= CC_CALL_MAX) {
+            fail(p);
+            return;
+        }
+        p->em->calls[p->em->ncalls].at = call_at;
+        p->em->calls[p->em->ncalls].fn = fi;
+        p->em->ncalls++;
+    }
     if (argc > 0) {
         /* add rsp, 8*argc */
         cc_emit_bytes(p->em, "\x48\x81\xC4", 3);
@@ -1166,12 +1176,12 @@ static void parse_struct_def(CcParser* p) {
     p->em->nstructs++;
 }
 
-static void parse_function(CcParser* p) {
+static void parse_extern_fn(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     CcFn* fn;
     int arity = 0;
     size_t n;
-
+    expect(p, TOK_KW_EXTERN);
     expect(p, TOK_KW_FN);
     if (p->lx->tok != TOK_IDENT) {
         fail(p);
@@ -1190,9 +1200,67 @@ static void parse_function(CcParser* p) {
         n++;
     }
     fn->name[n] = 0;
-    fn->entry = p->em->code_len;
+    fn->entry = 0;
+    fn->defined = 0;
     fn->arity = 0;
+    expect(p, TOK_LPAREN);
+    if (p->lx->tok != TOK_RPAREN) {
+        for (;;) {
+            if (p->lx->tok != TOK_IDENT || arity >= CC_FN_ARGS) {
+                fail(p);
+                return;
+            }
+            arity++;
+            cc_lex_next(p->lx);
+            if (!accept(p, TOK_COMMA)) {
+                break;
+            }
+        }
+    }
+    expect(p, TOK_RPAREN);
+    expect(p, TOK_SEMI);
+    fn->arity = arity;
     p->em->nfns++;
+}
+
+static void parse_function(CcParser* p) {
+    char name[CC_IDENT_MAX + 1];
+    CcFn* fn;
+    int arity = 0;
+    size_t n;
+    int existing;
+
+    expect(p, TOK_KW_FN);
+    if (p->lx->tok != TOK_IDENT) {
+        fail(p);
+        return;
+    }
+    memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+    cc_lex_next(p->lx);
+    existing = cc_fn_find(p->em, name);
+    if (existing >= 0) {
+        if (p->em->fns[existing].defined) {
+            fail(p);
+            return;
+        }
+        fn = &p->em->fns[existing];
+    } else {
+        if (p->em->nfns >= CC_FN_MAX) {
+            fail(p);
+            return;
+        }
+        fn = &p->em->fns[p->em->nfns];
+        n = 0;
+        while (n < CC_IDENT_MAX && name[n] != '\0') {
+            fn->name[n] = name[n];
+            n++;
+        }
+        fn->name[n] = 0;
+        fn->arity = 0;
+        p->em->nfns++;
+    }
+    fn->entry = p->em->code_len;
+    fn->defined = 1;
 
     clear_locals(p->em);
     expect(p, TOK_LPAREN);
@@ -1214,6 +1282,10 @@ static void parse_function(CcParser* p) {
         }
     }
     expect(p, TOK_RPAREN);
+    if (existing >= 0 && fn->arity != arity) {
+        fail(p);
+        return;
+    }
     fn->arity = arity;
     cc_emit_fn_prologue(p->em, arity);
     p->em->in_fn = 1;
@@ -1223,6 +1295,47 @@ static void parse_function(CcParser* p) {
     cc_emit_mov_eax_imm(p->em, 0);
     cc_emit_leave_ret(p->em);
     clear_locals(p->em);
+}
+
+static void parse_defs(CcParser* p) {
+    int guard = 0;
+    while (!p->em->failed &&
+           (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
+            p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_ENUM ||
+            p->lx->tok == TOK_KW_EXTERN)) {
+        if (++guard > 64) {
+            p->em->failed = 1;
+            break;
+        }
+        if (p->lx->tok == TOK_KW_EXTERN) {
+            parse_extern_fn(p);
+        } else if (p->lx->tok == TOK_KW_FN) {
+            parse_function(p);
+        } else if (p->lx->tok == TOK_KW_STRUCT) {
+            parse_struct_def(p);
+        } else if (p->lx->tok == TOK_KW_ENUM) {
+            parse_enum_def(p);
+        } else {
+            parse_global_def(p);
+        }
+    }
+}
+
+static int resolve_calls(CcEmit* em) {
+    int i;
+    for (i = 0; i < em->ncalls; i++) {
+        int fi = em->calls[i].fn;
+        if (fi < 0 || fi >= em->nfns || !em->fns[fi].defined) {
+            return -1;
+        }
+        patch_rel32(em, em->calls[i].at, em->fns[fi].entry);
+    }
+    for (i = 0; i < em->nfns; i++) {
+        if (!em->fns[i].defined) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
@@ -1254,8 +1367,10 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nstructs = 0;
     em.nglobals = 0;
     em.nenums = 0;
+    em.ncalls = 0;
     em.failed = 0;
     cc_reloc_reset();
+    cc_link_reset();
 
     if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
         0) {
@@ -1281,27 +1396,43 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     p.lx = &lx;
     p.em = &em;
 
-    /* jmp entry; fn/struct/global defs; CRT _start or top-level */
+    /* jmp entry; fn/struct/global/extern defs; linked TUs; CRT _start */
     jmp_entry = emit_jmp32(&em);
+    parse_defs(&p);
     {
-        int guard = 0;
-        while (!em.failed &&
-               (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
-                lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM)) {
-            if (++guard > 64) {
+        int li;
+        static char link_raw[CC_SRC_MAX];
+        static char link_exp[CC_SRC_MAX];
+        for (li = 0; !em.failed && li < cc_link_count(); li++) {
+            const char* path = cc_link_at(li);
+            size_t raw_n = 0;
+            size_t exp_n = 0;
+            CcLexer llx;
+            if (!path || cc_read_source(path, link_raw, sizeof(link_raw),
+                                        &raw_n) != 0) {
                 em.failed = 1;
                 break;
             }
-            if (lx.tok == TOK_KW_FN) {
-                parse_function(&p);
-            } else if (lx.tok == TOK_KW_STRUCT) {
-                parse_struct_def(&p);
-            } else if (lx.tok == TOK_KW_ENUM) {
-                parse_enum_def(&p);
-            } else {
-                parse_global_def(&p);
+            if (cc_preprocess(link_raw, raw_n, link_exp, sizeof(link_exp),
+                              &exp_n) != 0) {
+                em.failed = 1;
+                break;
             }
+            cc_lex_init(&llx, link_exp, exp_n);
+            if (llx.tok == TOK_IDENT && strcmp(llx.text, "CXC_A2") == 0) {
+                cc_lex_next(&llx);
+            }
+            p.lx = &llx;
+            parse_defs(&p);
+            if (llx.tok != TOK_EOF) {
+                em.failed = 1;
+                break;
+            }
+            p.lx = &lx;
         }
+    }
+    if (resolve_calls(&em) != 0) {
+        return -1;
     }
     entry_at = em.code_len;
     patch_rel32(&em, jmp_entry, entry_at);
@@ -1311,7 +1442,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
         int main_i = cc_fn_find(&em, "main");
         if (main_i >= 0) {
             size_t call_at;
-            if (em.fns[main_i].arity != 0) {
+            if (em.fns[main_i].arity != 0 || !em.fns[main_i].defined) {
                 return -1;
             }
             call_at = cc_emit_call_rel32(&em);
@@ -1330,7 +1461,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                     break;
                 }
                 if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
-                    lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM) {
+                    lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM ||
+                    lx.tok == TOK_KW_EXTERN) {
                     em.failed = 1;
                     break;
                 }
