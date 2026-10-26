@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 129 / v2.20.0：机上 as+ld**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 130 / v2.21.0：ld+musl 字符串闭包**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -154,7 +154,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box string kit (M126) | `strcat`/`strchr`/`__strchrnul` 多跳闭包；曾用 `ONBOX_SKIT_PASS` |
 | on-box as subset (M127) | `lib.s`→SysV ET_REL；曾用 `ONBOX_ASM_PASS` |
 | on-box as+.rodata (M128) | `lib.s`+`msg.s` + `.asciz`/`lea`；曾用 `ONBOX_ASRO_PASS` |
-| on-box as+ld (M129) | `link.rsp`→mini-ld ET_EXEC；`ONBOX_LD_PASS` + `edge: 1` |
+| on-box as+ld (M129) | `link.rsp`→mini-ld ET_EXEC；曾用 `ONBOX_LD_PASS` |
+| on-box ld+musl (M130) | ld 链 musl string+io；`ONBOX_LDLIB_PASS` + `edge: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

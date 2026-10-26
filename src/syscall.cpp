@@ -69,7 +69,7 @@ constexpr char expected_cap_pass[] = "CAP_PASS\n";
 constexpr char expected_load128_pass[] = "LOAD128_PASS\n";
 constexpr char expected_heap_pass[] = "HEAP_PASS\n";
 constexpr char expected_time_pass[] = "TIME_PASS\n";
-constexpr char expected_onbox_cc_pass[] = "ONBOX_LD_PASS\n";
+constexpr char expected_onbox_cc_pass[] = "ONBOX_LDLIB_PASS\n";
 constexpr char expected_onbox_dmsg_prefix[] = "DMSG:";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr int64_t errno_inval = -22;  // -EINVAL
@@ -959,7 +959,7 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "2.20.0");
+    fill_uts_field(local.release, "2.21.0");
     fill_uts_field(local.version, "M126");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");

@@ -520,6 +520,12 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                     cc_emit_bytes(&em, "\x89\xFE", 2);
                 } else if (eq(t1, "%eax") && eq(t3, "%edi")) {
                     cc_emit_bytes(&em, "\x89\xC7", 2);
+                } else if ((eq(t1, "%rax") || eq(t1, "%eax")) &&
+                           (eq(t3, "%rdi") || eq(t3, "%edi"))) {
+                    cc_emit_bytes(&em, "\x48\x89\xC7", 3); /* mov rdi, rax */
+                } else if ((eq(t1, "%rax") || eq(t1, "%eax")) &&
+                           (eq(t3, "%rsi") || eq(t3, "%esi"))) {
+                    cc_emit_bytes(&em, "\x48\x89\xC6", 3); /* mov rsi, rax */
                 } else {
                     g_as_fail = AS_FAIL;
                     return -1;

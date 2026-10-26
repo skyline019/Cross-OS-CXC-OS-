@@ -816,6 +816,87 @@ int main(void) {
         }
     }
     {
+        /* M130: ld + musl string objs + io; edges. */
+        unsigned char* o = 0;
+        size_t on = 0;
+        unsigned char* elf = 0;
+        size_t en = 0;
+        FILE* f;
+        const char* paths[9];
+        const char* lib =
+            ".text\n.globl add\nadd:\nmov %edi, %eax\nadd %esi, %eax\nret\n"
+            ".globl bump\nbump:\nmov $42, %esi\ncall add\nret\n";
+        const char* main_s =
+            ".rodata\ns:\n.asciz \"LL\"\n.text\n.globl main\nmain:\n"
+            "lea s(%rip), %rax\nmov %rax, %rdi\ncall strlen\n"
+            "mov $0, %edi\ncall bump\nret\n";
+        const char* nomain =
+            ".text\n.globl bump\nbump:\nmov $1, %eax\nret\n";
+        if (as_compile(lib, strlen(lib), &o, &on) == 0 && o) {
+            f = fopen("disk/lib.o", "wb");
+            if (f) {
+                (void)fwrite(o, 1, on, f);
+                (void)fclose(f);
+            }
+        }
+        o = 0;
+        on = 0;
+        if (as_compile(main_s, strlen(main_s), &o, &on) == 0 && o) {
+            f = fopen("disk/main.o", "wb");
+            if (f) {
+                (void)fwrite(o, 1, on, f);
+                (void)fclose(f);
+            }
+        }
+        paths[0] = "disk/main.o";
+        paths[1] = "disk/lib.o";
+        paths[2] = "disk/scat.o";
+        paths[3] = "disk/schr.o";
+        paths[4] = "disk/snul.o";
+        paths[5] = "disk/scpy.o";
+        paths[6] = "disk/stpc.o";
+        paths[7] = "disk/sncmp.o";
+        paths[8] = "disk/io.elf";
+        if (ld_link(paths, 9, &elf, &en) != 0 || !elf || en < 64 ||
+            elf[16] != 2) {
+            fprintf(stderr, "FAIL ok m130-ldlib: ld_link\n");
+            fails++;
+        }
+        {
+            const char* badp[1];
+            badp[0] = "disk/nope.o";
+            if (ld_link(badp, 1, &elf, &en) == 0) {
+                fprintf(stderr, "FAIL edge m130: bad path accepted\n");
+                fails++;
+            }
+        }
+        {
+            const char* emp[1];
+            emp[0] = "";
+            if (ld_link(emp, 1, &elf, &en) == 0) {
+                fprintf(stderr, "FAIL edge m130: empty path accepted\n");
+                fails++;
+            }
+        }
+        o = 0;
+        on = 0;
+        if (as_compile(nomain, strlen(nomain), &o, &on) == 0 && o) {
+            f = fopen("disk/nomain.o", "wb");
+            if (f) {
+                (void)fwrite(o, 1, on, f);
+                (void)fclose(f);
+            }
+            {
+                const char* np[1];
+                np[0] = "disk/nomain.o";
+                if (ld_link(np, 1, &elf, &en) == 0) {
+                    fprintf(stderr, "FAIL edge m130: missing main accepted\n");
+                    fails++;
+                }
+            }
+        }
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;

@@ -183,7 +183,7 @@ static int assemble_write(const char* in_path, const char* out_path) {
 /* M129: parse disk/link.rsp (one path per line) → ld_link → out.elf. */
 static int link_rsp_write(const char* rsp_path, const char* out_path) {
     static char rsp_buf[CC_SRC_MAX];
-    static char path_store[CC_LINK_MAX][CC_IDENT_MAX + 8];
+    static char path_store[CC_LINK_MAX][CC_PATH_MAX];
     static const char* paths[CC_LINK_MAX];
     size_t rsp_len = 0;
     unsigned char* elf = 0;
