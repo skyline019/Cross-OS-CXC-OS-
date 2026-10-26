@@ -128,9 +128,8 @@ static void parse_call(CcParser* p, const char* name) {
         }
     }
     call_at = cc_emit_call_rel32(p->em);
-    if (p->em->fns[fi].defined) {
-        patch_rel32(p->em, call_at, p->em->fns[fi].entry);
-    } else {
+    /* obj_mode: leave e8 00..00 + record for .rela.text (gcc-like). */
+    if (p->em->obj_mode || !p->em->fns[fi].defined) {
         if (p->em->ncalls >= CC_CALL_MAX) {
             fail(p);
             return;
@@ -138,6 +137,8 @@ static void parse_call(CcParser* p, const char* name) {
         p->em->calls[p->em->ncalls].at = call_at;
         p->em->calls[p->em->ncalls].fn = fi;
         p->em->ncalls++;
+    } else {
+        patch_rel32(p->em, call_at, p->em->fns[fi].entry);
     }
     if (argc > 0 && !p->em->fns[fi].sysv) {
         /* add rsp, 8*argc */
@@ -1542,7 +1543,10 @@ static int resolve_calls(CcEmit* em) {
         if (fi < 0 || fi >= em->nfns || !em->fns[fi].defined) {
             return -1;
         }
-        patch_rel32(em, em->calls[i].at, em->fns[fi].entry);
+        if (!em->obj_mode) {
+            patch_rel32(em, em->calls[i].at, em->fns[fi].entry);
+        }
+        /* obj_mode: keep zeros; cc_build_rel_elf emits R_X86_64_PLT32. */
     }
     for (i = 0; i < em->nfns; i++) {
         if (!em->fns[i].defined) {

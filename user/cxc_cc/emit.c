@@ -461,7 +461,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_MMEM_PASS\n";
+    static const char pass[] = "ONBOX_ATOI_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
@@ -725,7 +725,7 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     return 0;
 }
 
-/* ET_REL for #lib: .text + STB_GLOBAL STT_FUNC exports (SysV bodies). */
+/* ET_REL for #lib: .text + optional .rela.text (M122) + exports. */
 int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     enum { MAX_SYM = CC_FN_MAX };
     int order[MAX_SYM];
@@ -733,9 +733,11 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     int nfn = 0;
     int i;
     int j;
+    int nrela;
     size_t strtab_len;
     size_t shstr_len;
     size_t off_text;
+    size_t off_rela;
     size_t off_shstr;
     size_t off_sym;
     size_t off_str;
@@ -744,7 +746,15 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     size_t total;
     size_t name_off;
     unsigned char* elf;
-    static const char shstr[] = "\0.text\0.shstrtab\0.symtab\0.strtab";
+    int shnum;
+    int shstrndx;
+    int sym_shndx;
+    int str_shndx;
+    /* With rela: .text .rela.text .shstrtab .symtab .strtab */
+    static const char shstr_rela[] =
+        "\0.text\0.rela.text\0.shstrtab\0.symtab\0.strtab";
+    static const char shstr_plain[] = "\0.text\0.shstrtab\0.symtab\0.strtab";
+    const char* shstr;
 
     if (!em || em->failed || em->code_len == 0 ||
         em->code_len > CC_CODE_MAX) {
@@ -755,6 +765,10 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         return -1;
     }
     if (em->nfns < 1 || em->nfns > CC_FN_MAX) {
+        return -1;
+    }
+    nrela = em->ncalls;
+    if (nrela < 0 || nrela > CC_CALL_MAX) {
         return -1;
     }
     for (i = 0; i < em->nfns; i++) {
@@ -769,7 +783,6 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     if (nfn < 1) {
         return -1;
     }
-    /* Sort by entry ascending for size calc. */
     for (i = 0; i < nfn - 1; i++) {
         for (j = i + 1; j < nfn; j++) {
             if (em->fns[order[j]].entry < em->fns[order[i]].entry) {
@@ -800,24 +813,42 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
         strtab_len += nl + 1;
     }
-    shstr_len = sizeof(shstr);
+    if (nrela > 0) {
+        shstr = shstr_rela;
+        shstr_len = sizeof(shstr_rela);
+        shnum = 6;
+        shstrndx = 3;
+        sym_shndx = 4;
+        str_shndx = 5;
+    } else {
+        shstr = shstr_plain;
+        shstr_len = sizeof(shstr_plain);
+        shnum = 5;
+        shstrndx = 2;
+        sym_shndx = 3;
+        str_shndx = 4;
+    }
     nsym = (size_t)nfn + 1;
     off_text = 64;
     if (em->code_len > sizeof(g_elf_buf) - 64) {
         return -1;
     }
-    off_shstr = off_text + em->code_len;
+    off_rela = off_text + em->code_len;
+    if (nrela > 0) {
+        off_shstr = off_rela + (size_t)nrela * 24;
+    } else {
+        off_shstr = off_rela;
+    }
     off_sym = (off_shstr + shstr_len + 7u) & ~(size_t)7;
     off_str = off_sym + nsym * 24;
     off_sh = (off_str + strtab_len + 7u) & ~(size_t)7;
-    total = off_sh + 5 * 64;
+    total = off_sh + (size_t)shnum * 64;
     if (total < off_sh || total > sizeof(g_elf_buf)) {
         return -1;
     }
     elf = g_elf_buf;
     memset(elf, 0, total);
 
-    /* ELF64 ET_REL header */
     elf[0] = 0x7f;
     elf[1] = 'E';
     elf[2] = 'L';
@@ -835,15 +866,41 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             elf[o + i] = (unsigned char)(shoff >> (8 * i));
         }
     }
-    elf[52] = 64; /* e_ehsize */
-    elf[58] = 64; /* e_shentsize */
-    elf[60] = 5;  /* e_shnum */
-    elf[62] = 2;  /* e_shstrndx */
+    elf[52] = 64;
+    elf[58] = 64;
+    elf[60] = (unsigned char)shnum;
+    elf[62] = (unsigned char)shstrndx;
 
     memcpy(elf + off_text, em->code, em->code_len);
+    if (nrela > 0) {
+        for (i = 0; i < nrela; i++) {
+            unsigned char* re = elf + off_rela + (size_t)i * 24;
+            int fi = em->calls[i].fn;
+            unsigned r_sym = 0;
+            unsigned long long r_off;
+            unsigned long long r_info;
+            long long r_add = -4;
+            int k;
+            for (j = 0; j < nfn; j++) {
+                if (order[j] == fi) {
+                    r_sym = (unsigned)(j + 1);
+                    break;
+                }
+            }
+            if (r_sym == 0) {
+                return -1;
+            }
+            r_off = (unsigned long long)em->calls[i].at;
+            r_info = ((unsigned long long)r_sym << 32) | 4ull; /* PLT32 */
+            for (k = 0; k < 8; k++) {
+                re[k] = (unsigned char)(r_off >> (8 * k));
+                re[8 + k] = (unsigned char)(r_info >> (8 * k));
+                re[16 + k] = (unsigned char)((unsigned long long)r_add >> (8 * k));
+            }
+        }
+    }
     memcpy(elf + off_shstr, shstr, shstr_len);
 
-    /* null symbol */
     memset(elf + off_sym, 0, 24);
     name_off = 1;
     elf[off_str] = 0;
@@ -861,8 +918,8 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             sy[1] = (unsigned char)(name_off >> 8);
             sy[2] = (unsigned char)(name_off >> 16);
             sy[3] = (unsigned char)(name_off >> 24);
-            sy[4] = (unsigned char)((1u << 4) | 2u); /* STB_GLOBAL STT_FUNC */
-            sy[6] = 1;                               /* .text shndx */
+            sy[4] = (unsigned char)((1u << 4) | 2u);
+            sy[6] = 1;
             {
                 unsigned long long v =
                     (unsigned long long)em->fns[order[i]].entry;
@@ -878,64 +935,84 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
     }
 
-    /* Section headers: 0 null, 1 .text, 2 .shstrtab, 3 .symtab, 4 .strtab */
     {
         unsigned char* sh = elf + off_sh;
-        /* 0 */
-        memset(sh, 0, 64);
-        /* 1 .text name=1 type=PROGBITS flags=6 */
+        int slot = 0;
+        memset(sh, 0, (size_t)shnum * 64);
+        /* 1 .text */
         {
             unsigned char* s = sh + 64;
             unsigned long long off = (unsigned long long)off_text;
             unsigned long long sz = (unsigned long long)em->code_len;
             int k;
             s[0] = 1;
-            s[4] = 1; /* SHT_PROGBITS */
-            s[8] = 6; /* ALLOC|EXEC */
-            for (k = 0; k < 8; k++) {
-                s[24 + k] = (unsigned char)(off >> (8 * k));
-                s[32 + k] = (unsigned char)(sz >> (8 * k));
-            }
-            s[48] = 1; /* addralign */
-        }
-        /* 2 .shstrtab name=7 */
-        {
-            unsigned char* s = sh + 128;
-            unsigned long long off = (unsigned long long)off_shstr;
-            unsigned long long sz = (unsigned long long)shstr_len;
-            int k;
-            s[0] = 7;
-            s[4] = 3; /* SHT_STRTAB */
+            s[4] = 1;
+            s[8] = 6;
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
                 s[32 + k] = (unsigned char)(sz >> (8 * k));
             }
             s[48] = 1;
         }
-        /* 3 .symtab name=17 link=4 info=1 entsize=24 */
-        {
-            unsigned char* s = sh + 192;
-            unsigned long long off = (unsigned long long)off_sym;
-            unsigned long long sz = (unsigned long long)(nsym * 24);
+        slot = 2;
+        if (nrela > 0) {
+            unsigned char* s = sh + (size_t)slot * 64;
+            unsigned long long off = (unsigned long long)off_rela;
+            unsigned long long sz = (unsigned long long)nrela * 24;
             int k;
-            s[0] = 17;
-            s[4] = 2; /* SHT_SYMTAB */
+            s[0] = 7; /* .rela.text */
+            s[4] = 4; /* SHT_RELA */
+            s[8] = 0x40; /* SHF_INFO_LINK */
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
                 s[32 + k] = (unsigned char)(sz >> (8 * k));
             }
-            s[40] = 4; /* link .strtab */
-            s[44] = 1; /* info first global */
-            s[48] = 8; /* addralign */
+            s[40] = (unsigned char)sym_shndx;
+            s[44] = 1; /* info = .text */
+            s[48] = 8;
             s[56] = 24;
+            slot++;
         }
-        /* 4 .strtab name=25 */
+        /* .shstrtab */
         {
-            unsigned char* s = sh + 256;
+            unsigned char* s = sh + (size_t)slot * 64;
+            unsigned long long off = (unsigned long long)off_shstr;
+            unsigned long long sz = (unsigned long long)shstr_len;
+            int k;
+            s[0] = (unsigned char)(nrela > 0 ? 18 : 7);
+            s[4] = 3;
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1;
+            slot++;
+        }
+        /* .symtab */
+        {
+            unsigned char* s = sh + (size_t)slot * 64;
+            unsigned long long off = (unsigned long long)off_sym;
+            unsigned long long sz = (unsigned long long)(nsym * 24);
+            int k;
+            s[0] = (unsigned char)(nrela > 0 ? 28 : 17);
+            s[4] = 2;
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[40] = (unsigned char)str_shndx;
+            s[44] = 1;
+            s[48] = 8;
+            s[56] = 24;
+            slot++;
+        }
+        /* .strtab */
+        {
+            unsigned char* s = sh + (size_t)slot * 64;
             unsigned long long off = (unsigned long long)off_str;
             unsigned long long sz = (unsigned long long)strtab_len;
             int k;
-            s[0] = 25;
+            s[0] = (unsigned char)(nrela > 0 ? 36 : 25);
             s[4] = 3;
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
@@ -943,6 +1020,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             }
             s[48] = 1;
         }
+        (void)sym_shndx;
     }
 
     *out = elf;

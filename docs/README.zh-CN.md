@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 121 / v2.12.0：机上 mini-cc musl mem/str 三联**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-11.md`](midpoint-assessment-11.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 122 / v2.13.0：机上 mini-cc 自产 `.rela` + musl atoi**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-11.md`](midpoint-assessment-11.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -146,7 +146,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box GOTPCREL (M118) | `-fPIC -fno-plt` 合成 GOT；曾用 `ONBOX_GOT_PASS` |
 | on-box musl labs (M119) | 真实 `labs.lo` / `.text.labs`；曾用 `ONBOX_MLAB_PASS` |
 | on-box musl isdigit (M120) | 多 `.text.*` + 节间 PLT32；曾用 `ONBOX_MDIG_PASS` |
-| on-box musl mem/str (M121) | `strlen`/`memcmp`/`memcpy` 三联；`ONBOX_MMEM_PASS` + `edge: 1` |
+| on-box musl mem/str (M121) | `strlen`/`memcmp`/`memcpy` 三联；曾用 `ONBOX_MMEM_PASS` |
+| on-box atoi+.rela (M122) | 自产 `.rela.text` + musl `atoi`；`ONBOX_ATOI_PASS` + `edge: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -336,4 +337,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **更大 musl / 机上工具链**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；第十一次中场见 [`midpoint-assessment-11.md`](midpoint-assessment-11.md)）。须保持 M13–M121 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **更大 musl / 机上工具链**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；第十一次中场见 [`midpoint-assessment-11.md`](midpoint-assessment-11.md)）。须保持 M13–M122 回归证据。

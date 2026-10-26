@@ -19,6 +19,7 @@ MEMBERS = {
     "strlen": "strlen.lo",
     "memcmp": "memcmp.lo",
     "memcpy": "memcpy.lo",
+    "atoi": "atoi.lo",
 }
 
 

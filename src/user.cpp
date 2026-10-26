@@ -3,6 +3,7 @@
 #include <cxc/host_bump_elf.hpp>
 #include <cxc/musl_isdigit_elf.hpp>
 #include <cxc/musl_labs_elf.hpp>
+#include <cxc/musl_atoi_elf.hpp>
 #include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
 #include <cxc/musl_strlen_elf.hpp>
@@ -1929,25 +1930,32 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M121: musl strlen/memcmp/memcpy #lib (+io cwrite); edge DMSG+DHINT.
+    // M122: self lib.c→.rela ET_REL + musl atoi; edge DMSG+DHINT.
+    static const char lib_text[] =
+        "CXC_A2\n"
+        "int add(int a, int b){\n"
+        "return a+b;\n"
+        "}\n"
+        "int bump(int x){\n"
+        "return add(x, 1);\n"
+        "}\n";
     static const char src_text[] =
         "CXC_A2\n"
+        "#lib \"lib.o\"\n"
         "#lib \"slen.o\"\n"
-        "#lib \"mcmp.o\"\n"
-        "#lib \"mcpy.o\"\n"
+        "#lib \"atoi.o\"\n"
         "#lib \"io.elf\"\n"
+        "import fn bump(x);\n"
         "import fn strlen(s);\n"
-        "import fn memcmp(a,b,n);\n"
-        "import fn memcpy(d,s,n);\n"
+        "import fn atoi(s);\n"
         "import fn cwrite(p,n);\n"
         "int main(void){\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:MM\\n\");\n"
-        "memcpy(\"WMSG:MM\\n\", \"WMSG:MM\\n\", 0);\n"
-        "cwrite(\"WMSG:MM\\n\", m);\n"
-        "n=memcmp(\"42\", \"42\", 2);\n"
-        "n=n+42;\n"
+        "m=strlen(\"WMSG:AT\\n\");\n"
+        "cwrite(\"WMSG:AT\\n\", m);\n"
+        "n=atoi(\"41\");\n"
+        "n=bump(n);\n"
         "print n;\n"
         "return n;\n"
         "}\n";
@@ -2160,7 +2168,45 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             return false;
         }
     }
+    {
+        const int64_t afd = fs::open_path(
+            "disk/atoi.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (afd < 0) {
+            result.failure = 67;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(afd), musl_atoi_elf,
+                         musl_atoi_elf_size) !=
+            static_cast<int64_t>(musl_atoi_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(afd));
+            result.failure = 68;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(afd)) != 0) {
+            result.failure = 69;
+            return false;
+        }
+    }
 
+    {
+        const int64_t lfd = fs::open_path(
+            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (lfd < 0) {
+            result.failure = 70;
+            return false;
+        }
+        const size_t lib_len = sizeof(lib_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(lfd), lib_text, lib_len) !=
+            static_cast<int64_t>(lib_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(lfd));
+            result.failure = 71;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(lfd)) != 0) {
+            result.failure = 72;
+            return false;
+        }
+    }
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (sfd < 0) {

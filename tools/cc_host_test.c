@@ -390,6 +390,22 @@ int main(void) {
             fprintf(stderr, "FAIL ok m114-cfn-obj: not ET_REL\n");
             fails++;
         } else {
+            /* M122: multi-fn obj must carry .rela.text (PLT32). */
+            int found_rela = 0;
+            size_t i;
+            for (i = 0; i + 10 < on; i++) {
+                if (o[i] == '.' && o[i + 1] == 'r' && o[i + 2] == 'e' &&
+                    o[i + 3] == 'l' && o[i + 4] == 'a' && o[i + 5] == '.' &&
+                    o[i + 6] == 't' && o[i + 7] == 'e' && o[i + 8] == 'x' &&
+                    o[i + 9] == 't') {
+                    found_rela = 1;
+                    break;
+                }
+            }
+            if (!found_rela) {
+                fprintf(stderr, "FAIL ok m122-rela: missing .rela.text\n");
+                fails++;
+            }
             f = fopen("disk/lib.o", "wb");
             if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
                 fprintf(stderr, "FAIL ok m114-cfn-obj: write lib.o\n");
@@ -495,6 +511,29 @@ int main(void) {
             "return n;\n"
             "}\n",
             "m121-musl-mem-trio") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"slen.o\"\n"
+            "#lib \"atoi.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn strlen(s);\n"
+            "import fn atoi(s);\n"
+            "import fn cwrite(p,n);\n"
+            "int main(void){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:AT\\n\");\n"
+            "cwrite(\"WMSG:AT\\n\", m);\n"
+            "n=atoi(\"41\");\n"
+            "n=bump(n);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m122-atoi-rela") != 0) {
         fails++;
     }
     if (expect_ok(
