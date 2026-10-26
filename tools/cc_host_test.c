@@ -963,6 +963,74 @@ int main(void) {
         }
     }
     {
+        /* M132: char truncate + const contract. */
+        if (expect_ok(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "const int k=40;\n"
+                "char c;\n"
+                "c=298;\n"
+                "return c;\n"
+                "}\n",
+                "m132-char-trunc") != 0) {
+            fails++;
+        }
+        if (expect_fail(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "const int k=1;\n"
+                "k=2;\n"
+                "return k;\n"
+                "}\n",
+                "m132-const-assign") != 0) {
+            fails++;
+        }
+        if (expect_fail(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "const int k;\n"
+                "return 0;\n"
+                "}\n",
+                "m132-const-noinit") != 0) {
+            fails++;
+        }
+        if (expect_fail(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "int a;\n"
+                "a=1\n"
+                "return a;\n"
+                "}\n",
+                "m132-missing-semi") != 0) {
+            fails++;
+        }
+        if (expect_fail(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "while(1){while(1){while(1){while(1){while(1){"
+                "return 1;}}}}}\n"
+                "return 0;\n"
+                "}\n",
+                "m132-deep-nest") != 0) {
+            fails++;
+        }
+        if (expect_fail(
+                "CXC_A2\n"
+                "fn main(){\n"
+                "int a0;int a1;int a2;int a3;int a4;int a5;int a6;int a7;\n"
+                "int a8;int a9;int b0;int b1;int b2;int b3;int b4;int b5;\n"
+                "int b6;int b7;int b8;int b9;int c0;int c1;int c2;int c3;\n"
+                "int c4;int c5;int c6;int c7;int c8;int c9;int d0;int d1;\n"
+                "int d2;int d3;int d4;int d5;int d6;int d7;int d8;int d9;\n"
+                "int e0;int e1;int e2;int e3;int e4;int e5;int e6;int e7;\n"
+                "int e8;int e9;int f0;int f1;int f2;int f3;int f4;int f5;\n"
+                "return 0;\n"
+                "}\n",
+                "m132-local-cap") != 0) {
+            fails++;
+        }
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;

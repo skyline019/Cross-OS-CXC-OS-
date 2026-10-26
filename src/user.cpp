@@ -1937,7 +1937,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M131: deferred lea + push/cmp/je; ld+musl; edge via cc.
+    // M132: frontend char truncate + const; as still planted; no link.rsp.
     static const char lib_s_text[] =
         ".text\n"
         ".globl add\n"
@@ -1968,21 +1968,20 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         ".rodata\n"
         "s:\n"
         ".asciz \"AD\"\n";
-    /* slen via io.elf (avoid DUP with musl_strlen.o). */
-    static const char link_rsp_text[] =
-        "disk/main.o\n"
-        "disk/lib.o\n"
-        "disk/scat.o\n"
-        "disk/schr.o\n"
-        "disk/snul.o\n"
-        "disk/scpy.o\n"
-        "disk/stpc.o\n"
-        "disk/sncmp.o\n"
-        "disk/io.elf\n";
     static const char src_text[] =
         "CXC_A2\n"
+        "#lib \"io.elf\"\n"
+        "import fn cwrite(p,n);\n"
+        "import fn strlen(s);\n"
         "fn main(){\n"
-        "return 0;\n"
+        "const int k=40;\n"
+        "char c;\n"
+        "int m;\n"
+        "c=298;\n"
+        "m=strlen(\"WMSG:CH\\n\");\n"
+        "cwrite(\"WMSG:CH\\n\", m);\n"
+        "print c;\n"
+        "return c;\n"
         "}\n";
     static const char bad_src[] =
         "CXC_A2\n"
@@ -2384,25 +2383,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             return false;
         }
     }
-    {
-        const int64_t rfd = fs::open_path(
-            "disk/link.rsp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (rfd < 0) {
-            result.failure = 97;
-            return false;
-        }
-        const size_t rsp_len = sizeof(link_rsp_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(rfd), link_rsp_text, rsp_len) !=
-            static_cast<int64_t>(rsp_len)) {
-            (void)fs::close_fd(static_cast<uint32_t>(rfd));
-            result.failure = 98;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(rfd)) != 0) {
-            result.failure = 99;
-            return false;
-        }
-    }
+    /* M132: no link.rsp — success path is frontend char/const via in.c. */
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (sfd < 0) {
@@ -2472,12 +2453,8 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: drop link.rsp so cc path runs; cross-#lib UND → exit 4 + DMSG.
+    // Edge: cross-#lib UND → exit 4 + DMSG (frontend already exercised).
     result.stage = 6;
-    if (fs::unlink_path("disk/link.rsp") != 0) {
-        result.failure = 100;
-        return false;
-    }
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (bfd < 0) {

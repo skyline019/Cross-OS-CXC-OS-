@@ -26,7 +26,26 @@ static void expect(CcParser* p, int tok) {
     }
 }
 
-static int accept_type(CcParser* p) {
+/* M132: optional const/unsigned + int|char|typedef. is_char/is_const out. */
+static int accept_type_ex(CcParser* p, int* is_char, int* is_const) {
+    if (is_char) {
+        *is_char = 0;
+    }
+    if (is_const) {
+        *is_const = 0;
+    }
+    if (accept(p, TOK_KW_CONST)) {
+        if (is_const) {
+            *is_const = 1;
+        }
+    }
+    (void)accept(p, TOK_KW_UNSIGNED); /* width ignored; word slots */
+    if (accept(p, TOK_KW_CHAR)) {
+        if (is_char) {
+            *is_char = 1;
+        }
+        return 1;
+    }
     if (accept(p, TOK_KW_INT)) {
         return 1;
     }
@@ -38,12 +57,51 @@ static int accept_type(CcParser* p) {
     return 0;
 }
 
+static int accept_type(CcParser* p) {
+    return accept_type_ex(p, 0, 0);
+}
+
 static int is_type_tok(CcParser* p) {
-    if (p->lx->tok == TOK_KW_INT) {
+    if (p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_CHAR ||
+        p->lx->tok == TOK_KW_CONST || p->lx->tok == TOK_KW_UNSIGNED) {
         return 1;
     }
     return p->lx->tok == TOK_IDENT &&
            cc_typedef_find(p->em, p->lx->text) >= 0;
+}
+
+static void emit_trunc_char(CcEmit* em) {
+    /* and eax, 0xff — explicit narrow truncate (word slot). */
+    cc_emit_bytes(em, "\x25\xFF\x00\x00\x00", 5);
+}
+
+static int store_local_checked(CcParser* p, int idx) {
+    if (idx < 0 || idx >= p->em->nlocals) {
+        fail(p);
+        return -1;
+    }
+    if (p->em->locals[idx].is_const) {
+        fail(p);
+        return -1;
+    }
+    if (p->em->locals[idx].is_char) {
+        emit_trunc_char(p->em);
+    }
+    cc_emit_store_local(p->em, p->em->locals[idx].slot);
+    return 0;
+}
+
+static int store_global_checked(CcParser* p, int gi) {
+    if (gi < 0 || gi >= p->em->nglobals) {
+        fail(p);
+        return -1;
+    }
+    if (p->em->globals[gi].is_const) {
+        fail(p);
+        return -1;
+    }
+    cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+    return 0;
 }
 
 static void parse_expr(CcParser* p);
@@ -884,7 +942,9 @@ static void parse_stmt(CcParser* p) {
         char name[CC_IDENT_MAX + 1];
         int idx;
         int slot;
-        if (!accept_type(p)) {
+        int is_char = 0;
+        int is_const = 0;
+        if (!accept_type_ex(p, &is_char, &is_const)) {
             fail(p);
             return;
         }
@@ -895,13 +955,26 @@ static void parse_stmt(CcParser* p) {
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
         if (accept(p, TOK_SEMI)) {
+            if (is_const) {
+                fail(p); /* const must be initialized */
+                return;
+            }
             if (cc_local_define(p->em, name, 1) < 0) {
                 fail(p);
+                return;
+            }
+            idx = cc_local_find(p->em, name);
+            if (idx >= 0) {
+                p->em->locals[idx].is_char = is_char;
             }
             return;
         }
         if (accept(p, TOK_LBRACK)) {
             long dim;
+            if (is_const || is_char) {
+                fail(p);
+                return;
+            }
             if (p->lx->tok != TOK_NUMBER) {
                 fail(p);
                 return;
@@ -929,9 +1002,14 @@ static void parse_stmt(CcParser* p) {
                 fail(p);
                 return;
             }
+            p->em->locals[idx].is_char = is_char;
+            p->em->locals[idx].is_const = is_const;
             slot = p->em->locals[idx].slot;
             parse_expr(p);
             expect(p, TOK_SEMI);
+            if (is_char) {
+                emit_trunc_char(p->em);
+            }
             cc_emit_store_local(p->em, slot);
             return;
         }
@@ -986,7 +1064,7 @@ static void parse_stmt(CcParser* p) {
                 } else {
                     cc_emit_bytes(p->em, "\x48\xFF\xC8", 3); /* dec rax */
                 }
-                cc_emit_store_local(p->em, p->em->locals[idx].slot);
+                (void)store_local_checked(p, idx);
                 return;
             }
             gi = cc_global_find(p->em, name);
@@ -1000,7 +1078,7 @@ static void parse_stmt(CcParser* p) {
             } else {
                 cc_emit_bytes(p->em, "\x48\xFF\xC8", 3);
             }
-            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+            (void)store_global_checked(p, gi);
             return;
         }
         if (p->lx->tok == TOK_PLUSEQ || p->lx->tok == TOK_MINUSEQ) {
@@ -1020,7 +1098,7 @@ static void parse_stmt(CcParser* p) {
                     cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
                     cc_emit_bytes(p->em, "\x48\x29\xD0", 3); /* sub rax, rdx */
                 }
-                cc_emit_store_local(p->em, p->em->locals[idx].slot);
+                (void)store_local_checked(p, idx);
                 return;
             }
             gi = cc_global_find(p->em, name);
@@ -1040,7 +1118,7 @@ static void parse_stmt(CcParser* p) {
                 cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
                 cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
             }
-            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+            (void)store_global_checked(p, gi);
             return;
         }
         if (accept(p, TOK_DOT)) {
@@ -1152,12 +1230,12 @@ static void parse_stmt(CcParser* p) {
                 fail(p);
                 return;
             }
-            cc_emit_store_local(p->em, p->em->locals[idx].slot);
+            (void)store_local_checked(p, idx);
             return;
         }
         gi = cc_global_find(p->em, name);
         if (gi >= 0) {
-            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+            (void)store_global_checked(p, gi);
             return;
         }
         slot = cc_local_slot(p->em, name, 1);
@@ -1314,10 +1392,13 @@ static void parse_global_or_c_fn(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     unsigned long long init = 0;
     int is_void = 0;
+    int is_char = 0;
+    int is_const = 0;
+    int gi;
 
     if (accept(p, TOK_KW_VOID)) {
         is_void = 1;
-    } else if (!accept_type(p)) {
+    } else if (!accept_type_ex(p, &is_char, &is_const)) {
         fail(p);
         return;
     }
@@ -1342,11 +1423,20 @@ static void parse_global_or_c_fn(CcParser* p) {
         }
         init = (unsigned long long)p->lx->number;
         cc_lex_next(p->lx);
+    } else if (is_const) {
+        fail(p); /* const global must be initialized */
+        return;
     }
     expect(p, TOK_SEMI);
-    if (cc_global_define(p->em, name, init) < 0) {
-        fail(p);
+    if (is_char) {
+        init &= 0xffull;
     }
+    gi = cc_global_define(p->em, name, init);
+    if (gi < 0) {
+        fail(p);
+        return;
+    }
+    p->em->globals[gi].is_const = is_const;
 }
 
 static void parse_struct_def(CcParser* p) {
@@ -1509,9 +1599,11 @@ static void parse_defs(CcParser* p) {
     int guard = 0;
     while (!p->em->failed &&
            (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
-            p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_ENUM ||
-            p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT ||
-            p->lx->tok == TOK_KW_TYPEDEF || p->lx->tok == TOK_KW_VOID ||
+            p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_CHAR ||
+            p->lx->tok == TOK_KW_CONST || p->lx->tok == TOK_KW_UNSIGNED ||
+            p->lx->tok == TOK_KW_ENUM || p->lx->tok == TOK_KW_EXTERN ||
+            p->lx->tok == TOK_KW_IMPORT || p->lx->tok == TOK_KW_TYPEDEF ||
+            p->lx->tok == TOK_KW_VOID ||
             (p->lx->tok == TOK_IDENT &&
              cc_typedef_find(p->em, p->lx->text) >= 0))) {
         if (++guard > 64) {

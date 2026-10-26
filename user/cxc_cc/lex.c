@@ -67,6 +67,12 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_TYPEDEF;
     } else if (strcmp(lx->text, "void") == 0) {
         lx->tok = TOK_KW_VOID;
+    } else if (strcmp(lx->text, "char") == 0) {
+        lx->tok = TOK_KW_CHAR;
+    } else if (strcmp(lx->text, "const") == 0) {
+        lx->tok = TOK_KW_CONST;
+    } else if (strcmp(lx->text, "unsigned") == 0) {
+        lx->tok = TOK_KW_UNSIGNED;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {
@@ -171,8 +177,8 @@ void cc_lex_next(CcLexer* lx) {
                     break;
                 }
                 v = v * 16 + d;
-                if (v > 255) {
-                    v = 255;
+                if (v > 0x7fffffffL) {
+                    v = 0x7fffffffL;
                 }
                 lx->pos++;
             }
@@ -183,8 +189,8 @@ void cc_lex_next(CcLexer* lx) {
         while (lx->pos < lx->len && lx->src[lx->pos] >= '0' &&
                lx->src[lx->pos] <= '9') {
             v = v * 10 + (lx->src[lx->pos] - '0');
-            if (v > 255) {
-                v = 255;
+            if (v > 0x7fffffffL) {
+                v = 0x7fffffffL;
             }
             lx->pos++;
         }

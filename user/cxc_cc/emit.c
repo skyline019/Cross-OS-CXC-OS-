@@ -48,6 +48,8 @@ int cc_local_define_st(CcEmit* em, const char* name, int count, int stype) {
     loc->slot = em->next_slot;
     loc->count = count;
     loc->stype = stype;
+    loc->is_char = 0;
+    loc->is_const = 0;
     em->next_slot += count;
     em->nlocals++;
     return loc->slot;
@@ -190,6 +192,7 @@ int cc_global_define(CcEmit* em, const char* name, unsigned long long init) {
     g->name[n] = 0;
     g->data_off = cc_data_push(em, words, 8);
     g->count = 1;
+    g->is_const = 0;
     em->nglobals++;
     return em->nglobals - 1;
 }
@@ -473,7 +476,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_ASDP_PASS\n";
+    static const char pass[] = "ONBOX_CHAR_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

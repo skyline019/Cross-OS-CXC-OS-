@@ -156,7 +156,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box as+.rodata (M128) | `lib.s`+`msg.s` + `.asciz`/`lea`；曾用 `ONBOX_ASRO_PASS` |
 | on-box as+ld (M129) | `link.rsp`→mini-ld ET_EXEC；曾用 `ONBOX_LD_PASS` |
 | on-box ld+musl (M130) | ld 链 musl string+io；曾用 `ONBOX_LDLIB_PASS` |
-| on-box as-deep (M131) | 延迟 lea + cmp/je/.data；`ONBOX_ASDP_PASS` + `edge: 1` |
+| on-box as-deep (M131) | 延迟 lea + cmp/je/.data；曾用 `ONBOX_ASDP_PASS` |
+| on-box char/const (M132) | `char` 截断 + `const`；`ONBOX_CHAR_PASS` + `edge: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

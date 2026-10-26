@@ -69,6 +69,9 @@ enum CcTok {
     TOK_KW_IMPORT,
     TOK_KW_TYPEDEF,
     TOK_KW_VOID,
+    TOK_KW_CHAR,
+    TOK_KW_CONST,
+    TOK_KW_UNSIGNED,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -120,12 +123,15 @@ typedef struct CcLocal {
     int slot;
     int count;
     int stype; /* -1, or struct type index */
+    int is_char;  /* M132: word slot + truncate on store */
+    int is_const; /* M132: reject assignment after init */
 } CcLocal;
 
 typedef struct CcGlobal {
     char name[CC_IDENT_MAX + 1];
     size_t data_off;
     int count;
+    int is_const;
 } CcGlobal;
 
 typedef struct CcLoop {
