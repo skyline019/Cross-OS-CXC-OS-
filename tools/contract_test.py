@@ -149,6 +149,8 @@ CHDIR_PASS = "CHDIR_PASS"
 CHDIR_PROBE_SUCCESS = "chdir: pass: 1"
 NEST_PASS = "NEST_PASS"
 NEST_PROBE_SUCCESS = "nest: pass: 1"
+CAP_PASS = "CAP_PASS"
+CAP_PROBE_SUCCESS = "cap: pass: 1"
 
 
 @dataclass
@@ -621,6 +623,11 @@ class ContractRunner:
         assert NEST_PROBE_SUCCESS.encode() in serial
         assert b"depth: 2" in serial
         assert b"orphan: 1" in serial
+        assert CAP_PASS.encode() in serial
+        assert CAP_PROBE_SUCCESS.encode() in serial
+        assert b"bytes: 98304" in serial
+        assert b"ceiling: 131072" in serial
+        assert b"file_bytes: 131072" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -629,7 +636,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M87 nested dirs"
+            "kernel PASS + net + M75–M88 CXCFS capacity"
         )
 
     def negative_evidence(self, work: Path) -> str:

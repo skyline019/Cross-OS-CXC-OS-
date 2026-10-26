@@ -31,9 +31,9 @@ FIRMWARE_CANDIDATES = [
 ]
 
 # M75+: second disk for virtio-blk / CXCFS (sector 0 magic CXCBLK01).
-# M79/M81: 4 MiB so 64×32 KiB file extents fit with headroom.
+# M88: 16 MiB so 64×128 KiB file extents fit with headroom.
 VIRTIO_BLK_MAGIC = b"CXCBLK01"
-VIRTIO_BLK_BYTES = 4 * 1024 * 1024
+VIRTIO_BLK_BYTES = 16 * 1024 * 1024
 
 
 def ensure_virtio_blk_image(path: Path) -> Path:

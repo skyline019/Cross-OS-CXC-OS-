@@ -670,6 +670,21 @@ bool run_nest_probe(const uint8_t* image, size_t image_size,
                     NestProbeResult& result);
 const NestProbeResult& nest_probe_result();
 
+struct CapProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t exit_code;
+};
+
+// M88: launch CAP.ELF — 96 KiB CXCFS write/read (128 KiB ceiling).
+bool run_cap_probe(const uint8_t* image, size_t image_size,
+                   CapProbeResult& result);
+const CapProbeResult& cap_probe_result();
+
 constexpr uint32_t max_exec_argc = 8;
 constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;

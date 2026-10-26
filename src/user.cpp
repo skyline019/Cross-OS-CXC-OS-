@@ -185,6 +185,7 @@ ForkWaitProbeResult fork_wait_probe{};
 PipeProbeResult pipe_probe{};
 ChdirProbeResult chdir_probe{};
 NestProbeResult nest_probe{};
+CapProbeResult cap_probe{};
 /* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
 constexpr uint64_t user_stack_base = 0x0000000000420000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1698,6 +1699,42 @@ bool run_nest_probe(const uint8_t* image, size_t image_size,
 
 const NestProbeResult& nest_probe_result() {
     return nest_probe;
+}
+
+bool run_cap_probe(const uint8_t* image, size_t image_size,
+                   CapProbeResult& result) {
+    result = CapProbeResult{};
+    result.stage = 1;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 1;
+        return false;
+    }
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(image, image_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 10 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_cap_pass;
+    result.stage = 2;
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 2;
+        return false;
+    }
+    syscall::clear_session();
+    cap_probe = result;
+    return true;
+}
+
+const CapProbeResult& cap_probe_result() {
+    return cap_probe;
 }
 
 }  // namespace cxc::user

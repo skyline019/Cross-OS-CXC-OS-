@@ -150,7 +150,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M85** | `pipe`/`dup`/`dup2`；fork 克隆 fd 表 | 串口 `PIPE_PASS`；EPIPE + dup 边缘 |
 | **M86** | `chdir`/`getcwd`；相对路径 + `.`/`..` | 串口 `CHDIR_PASS`；ENOENT/ERANGE |
 | **M87** | 多级 `mkdir`（ramfs+CXCFS）；孤儿边缘 | 串口 `NEST_PASS`；persist |
-| **M88+** | 更大文件容量 / 工具链 → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M88** | CXCFS 128 KiB/文件；16 MiB virtio；`max_io=4096` | 串口 `CAP_PASS`；96 KiB 回读 |
+| **M89+** | 机上工具链 / 更大 ELF → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

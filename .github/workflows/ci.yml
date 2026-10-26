@@ -245,6 +245,11 @@ jobs:
           grep -F 'nest: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'depth: 2' build/uefi/qemu-test/serial.log
           grep -F 'orphan: 1' build/uefi/qemu-test/serial.log
+          grep -F 'CAP_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'cap: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'bytes: 98304' build/uefi/qemu-test/serial.log
+          grep -F 'ceiling: 131072' build/uefi/qemu-test/serial.log
+          grep -F 'file_bytes: 131072' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

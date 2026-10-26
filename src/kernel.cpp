@@ -103,6 +103,8 @@ uint64_t chdir_elf_physical = 0;
 uint64_t chdir_elf_size = 0;
 uint64_t nest_elf_physical = 0;
 uint64_t nest_elf_size = 0;
+uint64_t cap_elf_physical = 0;
+uint64_t cap_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1536,8 +1538,8 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::panic("M79 user musl blkdir probe failed");
     }
 
-    // Capacity: 24 KiB file on CXCFS (M81 32 KiB ceiling).
-    static uint8_t big_pattern[24 * 1024];
+    // Capacity: 96 KiB file on CXCFS (M88 128 KiB ceiling).
+    static uint8_t big_pattern[96 * 1024];
     for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
         big_pattern[i] = static_cast<uint8_t>(i ^ 0x3c);
     }
@@ -1545,35 +1547,35 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         fs::open_path("disk/big.bin", fs::o_wronly | fs::o_creat | fs::o_trunc,
                       0644);
     if (big_fd < 0) {
-        log::panic("M81 disk/big.bin create failed");
+        log::panic("M88 disk/big.bin create failed");
     }
     if (fs::write_fd(static_cast<uint32_t>(big_fd), big_pattern,
                      sizeof(big_pattern)) !=
         static_cast<int64_t>(sizeof(big_pattern))) {
-        log::panic("M81 disk/big.bin write failed");
+        log::panic("M88 disk/big.bin write failed");
     }
     if (fs::close_fd(static_cast<uint32_t>(big_fd)) != 0) {
-        log::panic("M81 disk/big.bin close failed");
+        log::panic("M88 disk/big.bin close failed");
     }
     cxcfs::MountResult after_big{};
     if (!cxcfs::remount(after_big)) {
-        log::panic("M81 remount after big.bin failed");
+        log::panic("M88 remount after big.bin failed");
     }
     const int64_t big_in = fs::open_path("disk/big.bin", fs::o_rdonly, 0);
     if (big_in < 0) {
-        log::panic("M81 disk/big.bin reopen failed");
+        log::panic("M88 disk/big.bin reopen failed");
     }
-    static uint8_t big_read[24 * 1024];
+    static uint8_t big_read[96 * 1024];
     memset(big_read, 0, sizeof(big_read));
     if (fs::read_fd(static_cast<uint32_t>(big_in), big_read,
                     sizeof(big_read)) !=
         static_cast<int64_t>(sizeof(big_pattern))) {
-        log::panic("M81 disk/big.bin read size failed");
+        log::panic("M88 disk/big.bin read size failed");
     }
     (void)fs::close_fd(static_cast<uint32_t>(big_in));
     for (uint32_t i = 0; i < sizeof(big_pattern); ++i) {
         if (big_read[i] != big_pattern[i]) {
-            log::panic("M81 disk/big.bin content mismatch");
+            log::panic("M88 disk/big.bin content mismatch");
         }
     }
 
@@ -1924,6 +1926,31 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" depth: 2 orphan: 1\n");
     log::line("NEST_PASS");
 
+    // M88: userspace 96 KiB CXCFS write/read (ceiling 128 KiB).
+    user::CapProbeResult cap_probe{};
+    const auto* cap_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + cap_elf_physical);
+    if (cap_elf_physical == 0 || cap_elf_size == 0 ||
+        !user::run_cap_probe(cap_image, static_cast<size_t>(cap_elf_size),
+                             cap_probe)) {
+        log::write("[debug] cap stage: ");
+        log::decimal(cap_probe.stage);
+        log::write(", failure: ");
+        log::decimal(cap_probe.failure);
+        log::write(", pass: ");
+        log::decimal(cap_probe.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(cap_probe.exit_code);
+        log::write('\n');
+        log::panic("M88 capacity probe failed");
+    }
+    log::write("[ok] cap: pass: ");
+    log::decimal(cap_probe.wrote_pass);
+    log::write(" bytes: 98304 ceiling: ");
+    log::decimal(cxcfs::max_file_bytes);
+    log::write('\n');
+    log::line("CAP_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2151,6 +2178,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP NEST.ELF")) {
         log::panic("cannot relocate ESP NEST.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(cap_elf_physical, cap_elf_size,
+                                 "ESP CAP.ELF")) {
+        log::panic("cannot relocate ESP CAP.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2167,7 +2198,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.88.0 - nested dirs (A2/M87)");
+    cxc::log::line("CXC/OS 0.89.0 - CXCFS capacity (A2/M88)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2734,6 +2765,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP NEST.ELF bytes: ");
     cxc::log::decimal(cxc::nest_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 cap_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'C',  u'A', u'P', u'.',  u'E',  u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, cap_path,
+                                      64 * 1024, cxc::cap_elf_physical,
+                                      cxc::cap_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP CAP.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP CAP.ELF bytes: ");
+    cxc::log::decimal(cxc::cap_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(
