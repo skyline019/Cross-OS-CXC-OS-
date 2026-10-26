@@ -163,8 +163,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M98** | input/print（`disk/io.in`）+ 边缘 | 曾用 `ONBOX_IORW_PASS` |
 | **M99** | fn 定义/调用/递归 + 边缘 | 曾用 `ONBOX_FUNC_PASS` |
 | **M100** | struct/指针子集 + 边缘 | 曾用 `ONBOX_DATA_PASS` |
-| **M101** | `#include` / `for` / `ptr[i]` + 边缘 | `ONBOX_INCL_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M102+** | CRT/musl 链接 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M101** | `#include` / `for` / `ptr[i]` + 边缘 | 曾用 `ONBOX_INCL_PASS` |
+| **M102** | CRT `main`/globals/字符串/`do`/`+=` + 边缘 | `ONBOX_CRT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M103+** | musl 真链接 / 多目标 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

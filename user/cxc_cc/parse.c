@@ -100,9 +100,24 @@ static void parse_primary(CcParser* p) {
         cc_lex_next(p->lx);
         return;
     }
+    if (p->lx->tok == TOK_STR) {
+        size_t data_at;
+        char buf[CC_STR_MAX + 1];
+        size_t n = p->lx->str_len;
+        if (n > CC_STR_MAX) {
+            n = CC_STR_MAX;
+        }
+        memcpy(buf, p->lx->str, n);
+        buf[n] = 0;
+        data_at = cc_data_push(p->em, buf, n + 1);
+        cc_lex_next(p->lx);
+        cc_emit_lea_data(p->em, data_at);
+        return;
+    }
     if (p->lx->tok == TOK_IDENT) {
         char name[CC_IDENT_MAX + 1];
         int idx;
+        int gi;
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
         if (p->lx->tok == TOK_LPAREN) {
@@ -111,7 +126,12 @@ static void parse_primary(CcParser* p) {
         }
         idx = cc_local_find(p->em, name);
         if (idx < 0) {
-            fail(p);
+            gi = cc_global_find(p->em, name);
+            if (gi < 0) {
+                fail(p);
+                return;
+            }
+            cc_emit_load_global(p->em, p->em->globals[gi].data_off);
             return;
         }
         if (accept(p, TOK_LBRACK)) {
@@ -173,6 +193,7 @@ static void parse_primary(CcParser* p) {
 static void parse_addr_of(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     int idx;
+    int gi;
     if (p->lx->tok != TOK_IDENT) {
         fail(p);
         return;
@@ -181,7 +202,12 @@ static void parse_addr_of(CcParser* p) {
     cc_lex_next(p->lx);
     idx = cc_local_find(p->em, name);
     if (idx < 0) {
-        fail(p);
+        gi = cc_global_find(p->em, name);
+        if (gi < 0) {
+            fail(p);
+            return;
+        }
+        cc_emit_lea_data(p->em, p->em->globals[gi].data_off);
         return;
     }
     if (accept(p, TOK_DOT)) {
@@ -458,6 +484,25 @@ static void parse_stmt(CcParser* p) {
         loop_pop(p->em, p->em->code_len);
         return;
     }
+    if (accept(p, TOK_KW_DO)) {
+        size_t body = p->em->code_len;
+        size_t jnz_at;
+        if (loop_push(p->em, body) != 0) {
+            return;
+        }
+        parse_stmt(p);
+        expect(p, TOK_KW_WHILE);
+        expect(p, TOK_LPAREN);
+        loop_patch_continues(p->em, p->em->code_len);
+        parse_expr(p);
+        expect(p, TOK_RPAREN);
+        expect(p, TOK_SEMI);
+        cc_emit_bytes(p->em, "\x85\xC0", 2);
+        jnz_at = emit_jne32(p->em);
+        patch_rel32(p->em, jnz_at, body);
+        loop_pop(p->em, p->em->code_len);
+        return;
+    }
     if (accept(p, TOK_KW_FOR)) {
         size_t cond_at;
         size_t je_at;
@@ -582,6 +627,17 @@ static void parse_stmt(CcParser* p) {
     if (accept(p, TOK_KW_WRITE)) {
         char lit[CC_LIT_MAX + 1];
         size_t n = 0;
+        if (p->lx->tok == TOK_STR) {
+            while (n < CC_LIT_MAX && n < p->lx->str_len) {
+                lit[n] = p->lx->str[n];
+                n++;
+            }
+            lit[n] = 0;
+            cc_lex_next(p->lx);
+            expect(p, TOK_SEMI);
+            cc_emit_write_lit2(p->em, lit);
+            return;
+        }
         if (p->lx->tok != TOK_IDENT) {
             fail(p);
             return;
@@ -632,11 +688,13 @@ static void parse_stmt(CcParser* p) {
         }
         return;
     }
+    accept(p, TOK_KW_INT);
     if (p->lx->tok == TOK_IDENT) {
         char name[CC_IDENT_MAX + 1];
         int idx;
         int slot;
         int st;
+        int gi;
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
         st = cc_struct_find(p->em, name);
@@ -653,6 +711,81 @@ static void parse_stmt(CcParser* p) {
                                    st) < 0) {
                 fail(p);
             }
+            return;
+        }
+        if (accept(p, TOK_SEMI)) {
+            if (cc_local_define(p->em, name, 1) < 0) {
+                fail(p);
+            }
+            return;
+        }
+        if (p->lx->tok == TOK_PLUSPLUS || p->lx->tok == TOK_MINUSMINUS) {
+            int inc = (p->lx->tok == TOK_PLUSPLUS);
+            cc_lex_next(p->lx);
+            expect(p, TOK_SEMI);
+            idx = cc_local_find(p->em, name);
+            if (idx >= 0 && p->em->locals[idx].count == 1) {
+                cc_emit_load_local(p->em, p->em->locals[idx].slot);
+                if (inc) {
+                    cc_emit_bytes(p->em, "\x48\xFF\xC0", 3); /* inc rax */
+                } else {
+                    cc_emit_bytes(p->em, "\x48\xFF\xC8", 3); /* dec rax */
+                }
+                cc_emit_store_local(p->em, p->em->locals[idx].slot);
+                return;
+            }
+            gi = cc_global_find(p->em, name);
+            if (gi < 0) {
+                fail(p);
+                return;
+            }
+            cc_emit_load_global(p->em, p->em->globals[gi].data_off);
+            if (inc) {
+                cc_emit_bytes(p->em, "\x48\xFF\xC0", 3);
+            } else {
+                cc_emit_bytes(p->em, "\x48\xFF\xC8", 3);
+            }
+            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+            return;
+        }
+        if (p->lx->tok == TOK_PLUSEQ || p->lx->tok == TOK_MINUSEQ) {
+            int add = (p->lx->tok == TOK_PLUSEQ);
+            cc_lex_next(p->lx);
+            idx = cc_local_find(p->em, name);
+            if (idx >= 0 && p->em->locals[idx].count == 1) {
+                cc_emit_load_local(p->em, p->em->locals[idx].slot);
+                cc_emit_push_rax(p->em);
+                parse_expr(p);
+                expect(p, TOK_SEMI);
+                cc_emit_pop_rcx(p->em);
+                if (add) {
+                    cc_emit_bytes(p->em, "\x48\x01\xC8", 3); /* add rax, rcx */
+                } else {
+                    cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax */
+                    cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
+                    cc_emit_bytes(p->em, "\x48\x29\xD0", 3); /* sub rax, rdx */
+                }
+                cc_emit_store_local(p->em, p->em->locals[idx].slot);
+                return;
+            }
+            gi = cc_global_find(p->em, name);
+            if (gi < 0) {
+                fail(p);
+                return;
+            }
+            cc_emit_load_global(p->em, p->em->globals[gi].data_off);
+            cc_emit_push_rax(p->em);
+            parse_expr(p);
+            expect(p, TOK_SEMI);
+            cc_emit_pop_rcx(p->em);
+            if (add) {
+                cc_emit_bytes(p->em, "\x48\x01\xC8", 3);
+            } else {
+                cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+                cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+                cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+            }
+            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
             return;
         }
         if (accept(p, TOK_DOT)) {
@@ -758,6 +891,20 @@ static void parse_stmt(CcParser* p) {
         if (p->em->failed) {
             return;
         }
+        idx = cc_local_find(p->em, name);
+        if (idx >= 0) {
+            if (p->em->locals[idx].count != 1) {
+                fail(p);
+                return;
+            }
+            cc_emit_store_local(p->em, p->em->locals[idx].slot);
+            return;
+        }
+        gi = cc_global_find(p->em, name);
+        if (gi >= 0) {
+            cc_emit_store_global(p->em, p->em->globals[gi].data_off);
+            return;
+        }
         slot = cc_local_slot(p->em, name, 1);
         if (slot < 0) {
             fail(p);
@@ -773,6 +920,30 @@ static void clear_locals(CcEmit* em) {
     em->nlocals = 0;
     em->next_slot = 0;
     em->nloops = 0;
+}
+
+static void parse_global_def(CcParser* p) {
+    char name[CC_IDENT_MAX + 1];
+    unsigned long long init = 0;
+    expect(p, TOK_KW_INT);
+    if (p->lx->tok != TOK_IDENT) {
+        fail(p);
+        return;
+    }
+    memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+    cc_lex_next(p->lx);
+    if (accept(p, TOK_ASSIGN)) {
+        if (p->lx->tok != TOK_NUMBER) {
+            fail(p);
+            return;
+        }
+        init = (unsigned long long)p->lx->number;
+        cc_lex_next(p->lx);
+    }
+    expect(p, TOK_SEMI);
+    if (cc_global_define(p->em, name, init) < 0) {
+        fail(p);
+    }
 }
 
 static void parse_struct_def(CcParser* p) {
@@ -909,6 +1080,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nfns = 0;
     em.in_fn = 0;
     em.nstructs = 0;
+    em.nglobals = 0;
     em.failed = 0;
     cc_reloc_reset();
 
@@ -936,20 +1108,23 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     p.lx = &lx;
     p.em = &em;
 
-    /* jmp entry; fn/struct defs; entry: prologue + top-level */
+    /* jmp entry; fn/struct/global defs; CRT _start or top-level */
     jmp_entry = emit_jmp32(&em);
     {
         int guard = 0;
         while (!em.failed &&
-               (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT)) {
-            if (++guard > 32) {
+               (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
+                lx.tok == TOK_KW_INT)) {
+            if (++guard > 64) {
                 em.failed = 1;
                 break;
             }
             if (lx.tok == TOK_KW_FN) {
                 parse_function(&p);
-            } else {
+            } else if (lx.tok == TOK_KW_STRUCT) {
                 parse_struct_def(&p);
+            } else {
+                parse_global_def(&p);
             }
         }
     }
@@ -958,17 +1133,34 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     clear_locals(&em);
     cc_emit_prologue(&em);
     {
-        int guard = 0;
-        while (!em.failed && lx.tok != TOK_EOF) {
-            if (++guard > 512) {
-                em.failed = 1;
-                break;
+        int main_i = cc_fn_find(&em, "main");
+        if (main_i >= 0) {
+            size_t call_at;
+            if (em.fns[main_i].arity != 0) {
+                return -1;
             }
-            if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT) {
-                em.failed = 1;
-                break;
+            call_at = cc_emit_call_rel32(&em);
+            patch_rel32(&em, call_at, em.fns[main_i].entry);
+            cc_emit_bytes(&em, "\x89\xC3", 2); /* mov ebx, eax */
+            cc_emit_write_pass(&em);
+            cc_emit_exit_rax(&em);
+            if (lx.tok != TOK_EOF) {
+                return -1;
             }
-            parse_stmt(&p);
+        } else {
+            int guard = 0;
+            while (!em.failed && lx.tok != TOK_EOF) {
+                if (++guard > 512) {
+                    em.failed = 1;
+                    break;
+                }
+                if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
+                    lx.tok == TOK_KW_INT) {
+                    em.failed = 1;
+                    break;
+                }
+                parse_stmt(&p);
+            }
         }
     }
     if (em.failed) {

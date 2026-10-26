@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M101/A2: #include + for + edge reject → ONBOX_INCL_PASS.
+// M102/A2: CRT main/globals/do/+=/strings + edge → ONBOX_CRT_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

@@ -101,6 +101,40 @@ int cc_struct_field(CcEmit* em, int stype, const char* field) {
     return -1;
 }
 
+int cc_global_find(CcEmit* em, const char* name) {
+    int i;
+    for (i = 0; i < em->nglobals; i++) {
+        if (strcmp(em->globals[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int cc_global_define(CcEmit* em, const char* name, unsigned long long init) {
+    CcGlobal* g;
+    size_t n = 0;
+    unsigned char words[8];
+    int i;
+    if (em->nglobals >= CC_GLOBAL_MAX || cc_global_find(em, name) >= 0 ||
+        cc_local_find(em, name) >= 0) {
+        return -1;
+    }
+    for (i = 0; i < 8; i++) {
+        words[i] = (unsigned char)(init >> (8 * i));
+    }
+    g = &em->globals[em->nglobals];
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        g->name[n] = name[n];
+        n++;
+    }
+    g->name[n] = 0;
+    g->data_off = cc_data_push(em, words, 8);
+    g->count = 1;
+    em->nglobals++;
+    return em->nglobals - 1;
+}
+
 void cc_emit_byte(CcEmit* em, unsigned char b) {
     if (em->failed || em->code_len >= em->code_cap) {
         em->failed = 1;
@@ -271,7 +305,7 @@ typedef struct CcReloc {
     size_t data_off;
 } CcReloc;
 
-enum { CC_RELOC_MAX = 32 };
+enum { CC_RELOC_MAX = 64 };
 
 static CcReloc g_relocs[CC_RELOC_MAX];
 static int g_nrelocs;
@@ -287,6 +321,28 @@ void cc_reloc_add(size_t code_off, size_t data_off) {
     g_relocs[g_nrelocs].code_off = code_off;
     g_relocs[g_nrelocs].data_off = data_off;
     g_nrelocs++;
+}
+
+void cc_emit_lea_data(CcEmit* em, size_t data_off) {
+    size_t lea_disp_at;
+    cc_emit_bytes(em, "\x48\x8D\x05", 3); /* lea rax, [rip+disp] */
+    lea_disp_at = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_reloc_add(lea_disp_at, data_off);
+}
+
+void cc_emit_load_global(CcEmit* em, size_t data_off) {
+    cc_emit_lea_data(em, data_off);
+    cc_emit_bytes(em, "\x48\x8B\x00", 3); /* mov rax, [rax] */
+}
+
+void cc_emit_store_global(CcEmit* em, size_t data_off) {
+    /* value in rax → [global] */
+    cc_emit_push_rax(em);
+    cc_emit_lea_data(em, data_off);
+    cc_emit_bytes(em, "\x48\x89\xC1", 3); /* mov rcx, rax (addr) */
+    cc_emit_byte(em, 0x58);               /* pop rax (value) */
+    cc_emit_bytes(em, "\x48\x89\x01", 3); /* mov [rcx], rax */
 }
 
 void cc_emit_write_lit2(CcEmit* em, const char* lit) {
@@ -322,7 +378,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_INCL_PASS\n";
+    static const char pass[] = "ONBOX_CRT_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

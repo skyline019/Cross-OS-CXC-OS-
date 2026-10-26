@@ -17,7 +17,7 @@
 | 第九次 | M85–M94 | [`midpoint-assessment-9.md`](midpoint-assessment-9.md) |
 | 第十次（计划） | 约 M95–M104 | `midpoint-assessment-10.md`（届时新建） |
 
-当前基线：**M101 / v1.2.0**（机上 mini-cc：`#include`/`for`/`ptr[i]`+edge；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M104**。
+当前基线：**M102 / v1.3.0**（机上 mini-cc：CRT `main`/globals/`do`/`+=`+edge；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M104**。
 
 ## 中场窗口必做
 

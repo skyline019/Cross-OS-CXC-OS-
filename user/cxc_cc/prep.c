@@ -41,7 +41,12 @@ static int read_file(const char* path, char* buf, size_t cap, size_t* out_n) {
         return -1;
     }
     while (n < cap - 1) {
-        ssize_t r = read(fd, buf + n, cap - 1 - n);
+        size_t want = cap - 1 - n;
+        ssize_t r;
+        if (want > 4096) {
+            want = 4096;
+        }
+        r = read(fd, buf + n, want);
         if (r < 0) {
             close(fd);
             return -1;
@@ -64,7 +69,7 @@ static int expand(const char* in, size_t in_len, char* out, size_t out_cap,
 static int handle_include(const char* path, size_t path_len, char* out,
                           size_t out_cap, size_t* out_n, int depth) {
     char full[128];
-    char file_buf[CC_SRC_MAX];
+    static char file_buf[CC_SRC_MAX];
     size_t file_len = 0;
     size_t i;
     if (depth >= CC_INCLUDE_DEPTH || path_len == 0 || path_len >= 96) {

@@ -137,6 +137,36 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#include \"lib.cx\"\n"
+            "int g=10;\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=g;\n"
+            "do{\n"
+            "n+=1;\n"
+            "}while(n<30);\n"
+            "n=add(n,12);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"CR\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m102-crt") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "n=0;\n"
+            "n+=21;\n"
+            "n++;\n"
+            "n++;\n"
+            "return n;\n",
+            "m102-asgn") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -155,6 +185,15 @@ int main(void) {
     if (expect_fail(
             "CXC_A2\n#include \"missing.cx\"\nreturn 0;\n",
             "bad-include") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nfn main(a){\nreturn a;\n}\n",
+            "bad-main-arity") != 0) {
+        fails++;
+    }
+    if (expect_fail("CXC_A2\nint g=1;\nint g=2;\nreturn 0;\n",
+                    "bad-dup-global") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

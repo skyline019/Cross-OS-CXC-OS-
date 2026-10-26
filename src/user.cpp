@@ -1919,7 +1919,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M101: #include + for → 42; then edge reject.
+    // M102: CRT main + global + do/+= + string write → 42; edge reject.
     static const char lib_text[] =
         "fn add(a,b){\n"
         "return a+b;\n"
@@ -1927,16 +1927,20 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     static const char src_text[] =
         "CXC_A2\n"
         "#include \"lib.cx\"\n"
-        "n=0;\n"
-        "for(i=0;i<3;i=i+1){\n"
-        "n=n+10;\n"
-        "}\n"
+        "int g=10;\n"
+        "fn main(){\n"
+        "int n;\n"
+        "n=g;\n"
+        "do{\n"
+        "n+=1;\n"
+        "}while(n<30);\n"
         "n=add(n,12);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write IN;\n"
+        "write \"CR\";\n"
         "}\n"
-        "return n;\n";
+        "return n;\n"
+        "}\n";
     static const char bad_src[] = "CXC_A2\nreturn ;\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;

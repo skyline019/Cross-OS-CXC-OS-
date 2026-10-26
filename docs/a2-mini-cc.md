@@ -1,7 +1,7 @@
 # A2 机上迷你编译器（cxc-cc）路线
 
 **目标**：不依赖宿主机，在 CXC/OS 上用**完整内部编译器**编译并运行合理范围内的程序（通向 g++/gcc）。  
-**当前基线**：M101 — freestanding C `cxc-cc`：控制流/数组/I/O/函数/struct/指针 + **`#include` / `for` / `ptr[i]`**。
+**当前基线**：M102 — freestanding C `cxc-cc`：既有控制流/I/O/fn/struct/include/for + **CRT `main`、globals、字符串、`do`/`+=`/`++`**。
 
 ## 1. 语言分期（合同只增不减）
 
@@ -11,18 +11,19 @@
 | M98 | `input`/`print`；`write LIT` | 曾用 `ONBOX_IORW_PASS` |
 | M99 | `fn` 定义/调用/递归 | 曾用 `ONBOX_FUNC_PASS` |
 | M100 | `struct`；`v.f`；`&`/`*` 子集 | 曾用 `ONBOX_DATA_PASS` |
-| **M101（本窗）** | `#include "path"`（`disk/`）；`for`；`ptr[i]` 字宽索引 | `NMSG:42` + `WMSG:IN` + `ONBOX_INCL_PASS` + `edge: 1` |
-| M102+ | 与 musl/CRT 链接；逼近可编译真实 C | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| M101 | `#include "path"`；`for`；`ptr[i]` | 曾用 `ONBOX_INCL_PASS` |
+| **M102（本窗）** | `fn main` CRT 入口；`int g=N;` 全局；`"str"`；`do`/`while`；`+=`/`++`/`--` | `NMSG:42` + `WMSG:CR` + `ONBOX_CRT_PASS` + `edge: 1` |
+| M103+ | 与 musl 真链接 / 多目标文件；逼近可编译真实 C | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 **未宣称 A2**：在机上 g++/gcc 合同另立之前，不宣称完整工具链。
 
 ## 2. 实现形态
 
-- 布局：`jmp entry` → `fn`/`struct` 定义 → `entry` 顶层
-- `#include` 在词法前展开（深度上限 4）；相对路径默认 `disk/`
-- `for(init;cond;step)`：step 词法保存后于 body 之后发射；`continue` 落到 step
-- struct 实例占连续栈槽；指针为字宽地址；`ptr[i]` 为 `*(ptr + i)`（8 字节步长）
-- 宿主 `cc_host_test` 覆盖 for/include/ptr 索引 + 非法 include/字段/解引用
+- 有 `fn main(){...}` 时：`_start` → call main → `ONBOX_*_PASS` → exit(eax)
+- 无 `main` 时：保持顶层语句入口（宿主回归兼容）
+- 全局：`int name[=N];` 落在 `.data`（与 write 字符串同段 RIP-relative）
+- `write "CR"` 与 `write CR` 均可；`int` 可作局部声明噪声
+- 宿主 `cc_host_test` 覆盖 CRT/复合赋值 + 非法 main 元数/重复全局
 
 ## 3. 纪律
 

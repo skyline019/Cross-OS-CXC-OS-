@@ -5,9 +5,16 @@
 extern int execve(const char* path, char* const argv[], char* const envp[]);
 
 static int read_all(int fd, char* buf, size_t cap, size_t* out_n) {
+    /* Kernel max_io is 4096; request at most that per read. */
+    enum { CHUNK = 4096 };
     size_t n = 0;
     while (n < cap) {
-        ssize_t r = read(fd, buf + n, cap - n);
+        size_t want = cap - n;
+        ssize_t r;
+        if (want > CHUNK) {
+            want = CHUNK;
+        }
+        r = read(fd, buf + n, want);
         if (r < 0) {
             return -1;
         }

@@ -1,0 +1,5 @@
+feat: M102 mini-cc CRT main/globals/do/+= ONBOX_CRT_PASS (v1.3.0)
+
+Add CRT-style fn main entry, int globals, string literals, do-while,
+and +=/++/--; chunk reads under kernel max_io=4096; contract/CI evidence
+is WMSG:CR + ONBOX_CRT_PASS + crt:1 + edge:1.

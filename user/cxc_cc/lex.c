@@ -19,6 +19,8 @@ void cc_lex_init(CcLexer* lx, const char* src, size_t len) {
     lx->tok = TOK_EOF;
     lx->number = 0;
     lx->text[0] = 0;
+    lx->str[0] = 0;
+    lx->str_len = 0;
     cc_lex_next(lx);
 }
 
@@ -29,6 +31,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_ELSE;
     } else if (strcmp(lx->text, "while") == 0) {
         lx->tok = TOK_KW_WHILE;
+    } else if (strcmp(lx->text, "do") == 0) {
+        lx->tok = TOK_KW_DO;
     } else if (strcmp(lx->text, "return") == 0) {
         lx->tok = TOK_KW_RETURN;
     } else if (strcmp(lx->text, "write") == 0) {
@@ -43,6 +47,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_STRUCT;
     } else if (strcmp(lx->text, "for") == 0) {
         lx->tok = TOK_KW_FOR;
+    } else if (strcmp(lx->text, "int") == 0) {
+        lx->tok = TOK_KW_INT;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {
@@ -61,6 +67,26 @@ void cc_lex_next(CcLexer* lx) {
         return;
     }
     const char c = lx->src[lx->pos];
+    if (c == '"') {
+        size_t n = 0;
+        lx->pos++;
+        while (lx->pos < lx->len && lx->src[lx->pos] != '"' &&
+               lx->src[lx->pos] != '\n') {
+            if (n < CC_STR_MAX) {
+                lx->str[n++] = lx->src[lx->pos];
+            }
+            lx->pos++;
+        }
+        if (lx->pos >= lx->len || lx->src[lx->pos] != '"') {
+            lx->tok = TOK_EOF;
+            return;
+        }
+        lx->pos++;
+        lx->str[n] = 0;
+        lx->str_len = n;
+        lx->tok = TOK_STR;
+        return;
+    }
     if (is_alpha(c)) {
         size_t n = 0;
         while (lx->pos < lx->len && is_alnum(lx->src[lx->pos])) {
@@ -107,9 +133,25 @@ void cc_lex_next(CcLexer* lx) {
     } else if (c == '.') {
         lx->tok = TOK_DOT;
     } else if (c == '+') {
-        lx->tok = TOK_PLUS;
+        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
+            lx->pos++;
+            lx->tok = TOK_PLUSEQ;
+        } else if (lx->pos < lx->len && lx->src[lx->pos] == '+') {
+            lx->pos++;
+            lx->tok = TOK_PLUSPLUS;
+        } else {
+            lx->tok = TOK_PLUS;
+        }
     } else if (c == '-') {
-        lx->tok = TOK_MINUS;
+        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
+            lx->pos++;
+            lx->tok = TOK_MINUSEQ;
+        } else if (lx->pos < lx->len && lx->src[lx->pos] == '-') {
+            lx->pos++;
+            lx->tok = TOK_MINUSMINUS;
+        } else {
+            lx->tok = TOK_MINUS;
+        }
     } else if (c == '*') {
         lx->tok = TOK_STAR;
     } else if (c == '/') {
