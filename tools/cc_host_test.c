@@ -452,6 +452,29 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "#lib \"dig.o\"\n"
+            "#lib \"labs.o\"\n"
+            "import fn isdigit(c);\n"
+            "import fn labs(x);\n"
+            "import fn cwrite(p,n);\n"
+            "import fn strlen(s);\n"
+            "int main(void){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:MD\\n\");\n"
+            "cwrite(\"WMSG:MD\\n\", m);\n"
+            "n=isdigit(50);\n"
+            "n=n+41;\n"
+            "n=labs(0-n);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m120-musl-isdigit-multi") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "#lib \"lib.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"

@@ -1,4 +1,4 @@
-/* Import ET_REL: .text(.name)+.rodata, PC32/PLT32/32/GOTPCREL; musl .text.* (M119). */
+/* Import ET_REL: multi .text.* + .rodata; PC32/PLT32/32/GOTPCREL (M120). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST
@@ -117,6 +117,10 @@ static int copy_ident(char* dst, const char* src, size_t strsz, unsigned off) {
         nl++;
     }
     dst[nl] = 0;
+    /* Reject truncated names (musl __isdigit_l etc.). */
+    if (nl == CC_IDENT_MAX && off + nl < strsz && src[off + nl] != 0) {
+        return -1;
+    }
     return nl == 0 ? -1 : 0;
 }
 
@@ -169,20 +173,23 @@ int cc_import_elf(CcEmit* em, const char* path) {
     unsigned symn = 0;
     unsigned stroff = 0;
     unsigned strsz = 0;
-    unsigned text_i = 0;
-    unsigned text_off = 0;
-    unsigned text_sz = 0;
+    unsigned tex_off[CC_TEXT_SEC_MAX];
+    unsigned tex_sz[CC_TEXT_SEC_MAX];
+    size_t tex_base[CC_TEXT_SEC_MAX];
+    int sec_tex[48];
+    int ntex = 0;
     unsigned rodata_i = 0;
     unsigned rodata_off = 0;
     unsigned rodata_sz = 0;
     int have_rodata = 0;
-    unsigned rela_off = 0;
-    unsigned rela_sz = 0;
-    unsigned rela_entsz = 24;
-    int have_rela = 0;
-    size_t text_base;
+    unsigned rela_off[CC_RELA_SEC_MAX];
+    unsigned rela_sz[CC_RELA_SEC_MAX];
+    unsigned rela_entsz[CC_RELA_SEC_MAX];
+    unsigned rela_info[CC_RELA_SEC_MAX];
+    int nrela_sec = 0;
     size_t rodata_base = 0;
     const char* strbase;
+    int si;
     if (!em || !path || cc_read_source(path, (char*)buf, sizeof(buf), &n) !=
                             0) {
         em->fail_code = CC_FAIL_ELF;
@@ -208,11 +215,15 @@ int cc_import_elf(CcEmit* em, const char* path) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
+    for (si = 0; si < 48; si++) {
+        sec_tex[si] = -1;
+    }
     for (i = 0; i < shnum; i++) {
         const unsigned char* sh = buf + shoff + i * shentsize;
         unsigned typ = u32(sh + 4);
         unsigned flags = (unsigned)u64(sh + 8);
         unsigned link = u32(sh + 40);
+        unsigned info = u32(sh + 44);
         unsigned entsz = (unsigned)u64(sh + 56);
         unsigned off = (unsigned)u64(sh + 24);
         unsigned sz = (unsigned)u64(sh + 32);
@@ -233,12 +244,15 @@ int cc_import_elf(CcEmit* em, const char* path) {
                 stroff = (unsigned)u64(strsh + 24);
                 strsz = (unsigned)u64(strsh + 32);
             }
-        } else if (typ == SHT_PROGBITS && (flags & SHF_EXECINSTR) && sz > 0 &&
-                   text_sz == 0) {
-            /* musl uses .text.sym (empty .text first); take first non-empty. */
-            text_i = i;
-            text_off = off;
-            text_sz = sz;
+        } else if (typ == SHT_PROGBITS && (flags & SHF_EXECINSTR) && sz > 0) {
+            if (ntex >= CC_TEXT_SEC_MAX || i >= 48) {
+                em->fail_code = CC_FAIL_ELF;
+                return -1;
+            }
+            tex_off[ntex] = off;
+            tex_sz[ntex] = sz;
+            sec_tex[i] = ntex;
+            ntex++;
         } else if (typ == SHT_PROGBITS && (flags & SHF_ALLOC) &&
                    !(flags & SHF_EXECINSTR) && sz > 0 && !have_rodata) {
             rodata_i = i;
@@ -246,10 +260,15 @@ int cc_import_elf(CcEmit* em, const char* path) {
             rodata_sz = sz;
             have_rodata = 1;
         } else if (typ == SHT_RELA) {
-            rela_off = off;
-            rela_sz = sz;
-            rela_entsz = entsz ? entsz : 24;
-            have_rela = 1;
+            if (nrela_sec >= CC_RELA_SEC_MAX) {
+                em->fail_code = CC_FAIL_ELF;
+                return -1;
+            }
+            rela_off[nrela_sec] = off;
+            rela_sz[nrela_sec] = sz;
+            rela_entsz[nrela_sec] = entsz ? entsz : 24;
+            rela_info[nrela_sec] = info;
+            nrela_sec++;
         }
     }
     if (symn == 0 || symn > 64 || stroff >= n || strsz > n - stroff) {
@@ -260,10 +279,16 @@ int cc_import_elf(CcEmit* em, const char* path) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
-    if (text_sz == 0 || text_sz > 4096 || text_off > n ||
-        n - text_off < text_sz) {
+    if (ntex < 1) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
+    }
+    for (si = 0; si < ntex; si++) {
+        if (tex_sz[si] > 4096 || tex_off[si] > n ||
+            n - tex_off[si] < tex_sz[si]) {
+            em->fail_code = CC_FAIL_ELF;
+            return -1;
+        }
     }
     if (have_rodata) {
         if (rodata_sz > 1024 || rodata_off > n || n - rodata_off < rodata_sz) {
@@ -271,20 +296,25 @@ int cc_import_elf(CcEmit* em, const char* path) {
             return -1;
         }
     }
-    if (have_rela) {
-        if (rela_entsz < 24 || rela_sz > 4096 || rela_sz % rela_entsz != 0 ||
-            rela_off > n || n - rela_off < rela_sz) {
+    for (si = 0; si < nrela_sec; si++) {
+        unsigned entsz = rela_entsz[si];
+        unsigned rsz = rela_sz[si];
+        unsigned roff = rela_off[si];
+        if (entsz < 24 || rsz > 4096 || rsz % entsz != 0 || roff > n ||
+            n - roff < rsz) {
             em->fail_code = CC_FAIL_ELF;
             return -1;
         }
     }
 
-    /* Place .text then .rodata into RX image (exports feed later UND). */
-    text_base = em->code_len;
-    cc_emit_bytes(em, buf + text_off, text_sz);
-    if (em->failed) {
-        em->fail_code = CC_FAIL_ELF;
-        return -1;
+    /* Place all non-empty EXECINSTR sections, then .rodata. */
+    for (si = 0; si < ntex; si++) {
+        tex_base[si] = em->code_len;
+        cc_emit_bytes(em, buf + tex_off[si], tex_sz[si]);
+        if (em->failed) {
+            em->fail_code = CC_FAIL_ELF;
+            return -1;
+        }
     }
     if (have_rodata) {
         rodata_base = em->code_len;
@@ -296,15 +326,27 @@ int cc_import_elf(CcEmit* em, const char* path) {
     }
     strbase = (const char*)(buf + stroff);
 
-    if (have_rela) {
+    for (si = 0; si < nrela_sec; si++) {
         unsigned ri;
-        unsigned nrela = rela_sz / rela_entsz;
+        unsigned entsz = rela_entsz[si];
+        unsigned nrela = rela_sz[si] / entsz;
+        int apply_slot;
+        unsigned apply_sz;
+        size_t apply_base;
         if (nrela > 64) {
             em->fail_code = CC_FAIL_RELOC;
             return -1;
         }
+        if (rela_info[si] >= 48 || sec_tex[rela_info[si]] < 0) {
+            em->fail_code = CC_FAIL_RELOC;
+            return -1;
+        }
+        apply_slot = sec_tex[rela_info[si]];
+        apply_base = tex_base[apply_slot];
+        apply_sz = tex_sz[apply_slot];
         for (ri = 0; ri < nrela; ri++) {
-            const unsigned char* re = buf + rela_off + ri * rela_entsz;
+            const unsigned char* re =
+                buf + rela_off[si] + ri * entsz;
             unsigned long long r_off = u64(re);
             unsigned long long r_info = u64(re + 8);
             long long r_add = (long long)u64(re + 16);
@@ -319,12 +361,13 @@ int cc_import_elf(CcEmit* em, const char* path) {
             size_t s_at;
             long long disp;
             unsigned long long absva;
+            int tslot;
             if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32 &&
                 r_type != R_X86_64_32 && r_type != R_X86_64_GOTPCREL) {
                 em->fail_code = CC_FAIL_RELOC;
                 return -1;
             }
-            if (r_off + 4 > text_sz || r_sym == 0 || r_sym >= symn) {
+            if (r_off + 4 > apply_sz || r_sym == 0 || r_sym >= symn) {
                 em->fail_code = CC_FAIL_RELOC;
                 return -1;
             }
@@ -332,14 +375,15 @@ int cc_import_elf(CcEmit* em, const char* path) {
             t_shndx = u16(tsy + 6);
             t_val = u64(tsy + 8);
             t_name_off = u32(tsy);
-            p_at = text_base + (size_t)r_off;
+            p_at = apply_base + (size_t)r_off;
             ident[0] = 0;
-            if (t_shndx == text_i) {
-                if (t_val > text_sz) {
+            if (t_shndx < 48 && sec_tex[t_shndx] >= 0) {
+                tslot = sec_tex[t_shndx];
+                if (t_val > tex_sz[tslot]) {
                     em->fail_code = CC_FAIL_RELOC;
                     return -1;
                 }
-                s_at = text_base + (size_t)t_val;
+                s_at = tex_base[tslot] + (size_t)t_val;
             } else if (have_rodata && t_shndx == rodata_i) {
                 if (t_val > rodata_sz) {
                     em->fail_code = CC_FAIL_RELOC;
@@ -360,8 +404,8 @@ int cc_import_elf(CcEmit* em, const char* path) {
                 return -1;
             }
             if (r_type == R_X86_64_32) {
-                absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at +
-                        (unsigned long long)r_add;
+                absva = (unsigned long long)CC_LOAD_VA +
+                        (unsigned long long)s_at + (unsigned long long)r_add;
                 if (absva > 0xffffffffULL) {
                     em->fail_code = CC_FAIL_RELOC;
                     return -1;
@@ -370,7 +414,6 @@ int cc_import_elf(CcEmit* em, const char* path) {
             } else if (r_type == R_X86_64_GOTPCREL) {
                 size_t g_at;
                 if (ident[0] == 0) {
-                    /* Local/section target: synthesize a unique slot key. */
                     ident[0] = '@';
                     ident[1] = 'L';
                     ident[2] = 0;
@@ -407,19 +450,21 @@ int cc_import_elf(CcEmit* em, const char* path) {
         unsigned type = info & 0xf;
         char ident[CC_IDENT_MAX + 1];
         int fi;
+        int tslot;
         size_t entry;
-        if (bind != 1 || type != 2 || shndx != text_i) {
+        if (bind != 1 || type != 2 || shndx >= 48 || sec_tex[shndx] < 0) {
             continue;
         }
+        tslot = sec_tex[shndx];
         if (copy_ident(ident, strbase, strsz, name_off) != 0) {
+            continue; /* skip long/weak-adjacent names */
+        }
+        if (value > tex_sz[tslot] || size == 0 ||
+            size > tex_sz[tslot] - value) {
             em->fail_code = CC_FAIL_ELF;
             return -1;
         }
-        if (value > text_sz || size == 0 || size > text_sz - value) {
-            em->fail_code = CC_FAIL_ELF;
-            return -1;
-        }
-        entry = text_base + (size_t)value;
+        entry = tex_base[tslot] + (size_t)value;
         if (export_add(em, ident, entry) != 0) {
             em->fail_code = CC_FAIL_DUP;
             return -1;

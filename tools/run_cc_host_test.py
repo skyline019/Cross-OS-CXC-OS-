@@ -99,6 +99,9 @@ def main() -> int:
         (disk / "host.o").write_bytes(host.read_bytes())
         musl = ROOT / "user" / "prebuilt" / "musl_labs.o"
         (disk / "musl.o").write_bytes(musl.read_bytes())
+        (disk / "labs.o").write_bytes(musl.read_bytes())
+        dig = ROOT / "user" / "prebuilt" / "musl_isdigit.o"
+        (disk / "dig.o").write_bytes(dig.read_bytes())
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)
