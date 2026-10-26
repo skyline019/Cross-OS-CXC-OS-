@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    /* M127: prefer disk/lib.s → as; else M113 disk/lib.c → cc_compile_obj. */
+    /* M127–M128: disk/lib.s|msg.s → as; else M113 disk/lib.c. */
     {
         int sfd = open("disk/lib.s", O_RDONLY, 0);
         if (sfd >= 0) {
@@ -208,6 +208,19 @@ int main(int argc, char** argv) {
                 if (rc != 0) {
                     _exit(9);
                 }
+            }
+        }
+    }
+    {
+        int mfd = open("disk/msg.s", O_RDONLY, 0);
+        if (mfd >= 0) {
+            close(mfd);
+            rc = assemble_write("disk/msg.s", "disk/msg.o");
+            if (rc == -4) {
+                _exit(4);
+            }
+            if (rc != 0) {
+                _exit(9);
             }
         }
     }

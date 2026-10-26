@@ -686,13 +686,34 @@ int main(void) {
             "mov $42, %esi\n"
             "call add\n"
             "ret\n";
+        const char* msrc =
+            ".rodata\n"
+            "xa:\n"
+            ".asciz \"XA\"\n"
+            ".text\n"
+            ".globl msg\n"
+            "msg:\n"
+            "lea xa(%rip), %rax\n"
+            "ret\n";
         if (as_compile(asrc, strlen(asrc), &o, &on) != 0 || !o || on < 64) {
-            fprintf(stderr, "FAIL ok m127-as-obj: as_compile\n");
+            fprintf(stderr, "FAIL ok m128-as-obj: as_compile lib\n");
             fails++;
         } else {
             f = fopen("disk/lib.o", "wb");
             if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
-                fprintf(stderr, "FAIL ok m127-as-obj: write lib.o\n");
+                fprintf(stderr, "FAIL ok m128-as-obj: write lib.o\n");
+                fails++;
+            }
+        }
+        o = 0;
+        on = 0;
+        if (as_compile(msrc, strlen(msrc), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m128-as-obj: as_compile msg\n");
+            fails++;
+        } else {
+            f = fopen("disk/msg.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m128-as-obj: write msg.o\n");
                 fails++;
             }
         }
@@ -700,6 +721,7 @@ int main(void) {
     if (expect_ok(
             "CXC_A2\n"
             "#lib \"lib.o\"\n"
+            "#lib \"msg.o\"\n"
             "#lib \"scat.o\"\n"
             "#lib \"schr.o\"\n"
             "#lib \"snul.o\"\n"
@@ -709,6 +731,7 @@ int main(void) {
             "#lib \"slen.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"
+            "import fn msg();\n"
             "import fn strcpy(d,s);\n"
             "import fn strcat(d,s);\n"
             "import fn strchr(s,c);\n"
@@ -720,9 +743,9 @@ int main(void) {
             "int p;\n"
             "int n;\n"
             "int m;\n"
-            "m=strlen(\"WMSG:AS\\n\");\n"
-            "cwrite(\"WMSG:AS\\n\", m);\n"
-            "strcpy(&buf[0], \"XA\");\n"
+            "m=strlen(\"WMSG:RO\\n\");\n"
+            "cwrite(\"WMSG:RO\\n\", m);\n"
+            "strcpy(&buf[0], msg());\n"
             "strcat(&buf[0], \"YZ\");\n"
             "p=strchr(&buf[0], 65);\n"
             "n=strncmp(p, \"AYZ\", 3);\n"
@@ -730,7 +753,7 @@ int main(void) {
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m127-as-string-kit") != 0) {
+            "m128-as-rodata-kit") != 0) {
         fails++;
     }
     {

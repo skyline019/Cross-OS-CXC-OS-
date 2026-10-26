@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 127 / v2.18.0：机上 as 子集 + 字符串闭包**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 128 / v2.19.0：多文件 as + .rodata/lea**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -152,7 +152,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box strcpy/stpcpy (M124) | 跨 `#lib` `strcpy`→`__stpcpy` + `strncmp`；曾用 `ONBOX_SCPY_PASS`；[`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 | on-box deferred UND (M125) | `#lib` 序无关 UND + 自产 `.o` UND；曾用 `ONBOX_LUND_PASS` |
 | on-box string kit (M126) | `strcat`/`strchr`/`__strchrnul` 多跳闭包；曾用 `ONBOX_SKIT_PASS` |
-| on-box as subset (M127) | `lib.s`→SysV ET_REL + 字符串闭包；`ONBOX_ASM_PASS` + `edge: 1` |
+| on-box as subset (M127) | `lib.s`→SysV ET_REL；曾用 `ONBOX_ASM_PASS` |
+| on-box as+.rodata (M128) | `lib.s`+`msg.s` + `.asciz`/`lea`；`ONBOX_ASRO_PASS` + `edge: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

@@ -1937,7 +1937,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M127: on-box as lib.s→ET_REL + musl string-kit; edge.
+    // M128: multi-file as + .rodata/.asciz/lea + string-kit; edge.
     static const char lib_s_text[] =
         ".text\n"
         ".globl add\n"
@@ -1950,9 +1950,19 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "mov $42, %esi\n"
         "call add\n"
         "ret\n";
+    static const char msg_s_text[] =
+        ".rodata\n"
+        "xa:\n"
+        ".asciz \"XA\"\n"
+        ".text\n"
+        ".globl msg\n"
+        "msg:\n"
+        "lea xa(%rip), %rax\n"
+        "ret\n";
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"lib.o\"\n"
+        "#lib \"msg.o\"\n"
         "#lib \"scat.o\"\n"
         "#lib \"schr.o\"\n"
         "#lib \"snul.o\"\n"
@@ -1962,6 +1972,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "#lib \"slen.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
+        "import fn msg();\n"
         "import fn strcpy(d,s);\n"
         "import fn strcat(d,s);\n"
         "import fn strchr(s,c);\n"
@@ -1973,9 +1984,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "int p;\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:AS\\n\");\n"
-        "cwrite(\"WMSG:AS\\n\", m);\n"
-        "strcpy(&buf[0], \"XA\");\n"
+        "m=strlen(\"WMSG:RO\\n\");\n"
+        "cwrite(\"WMSG:RO\\n\", m);\n"
+        "strcpy(&buf[0], msg());\n"
         "strcat(&buf[0], \"YZ\");\n"
         "p=strchr(&buf[0], 65);\n"
         "n=strncmp(p, \"AYZ\", 3);\n"
@@ -2361,6 +2372,25 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(lfd)) != 0) {
             result.failure = 72;
+            return false;
+        }
+    }
+    {
+        const int64_t mfd = fs::open_path(
+            "disk/msg.s", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (mfd < 0) {
+            result.failure = 94;
+            return false;
+        }
+        const size_t msg_len = sizeof(msg_s_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(mfd), msg_s_text, msg_len) !=
+            static_cast<int64_t>(msg_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(mfd));
+            result.failure = 95;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(mfd)) != 0) {
+            result.failure = 96;
             return false;
         }
     }
