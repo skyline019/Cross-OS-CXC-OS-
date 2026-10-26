@@ -160,6 +160,7 @@ CXC_OS_SELF_TEST_PASS
 | on-box char/const (M132) | `char` 截断 + `const`；曾用 `ONBOX_CHAR_PASS` |
 | on-box merge (M133) | as+cc+ld+musl；`ONBOX_MERG_PASS` + `edge: 1` |
 | midfield-13 (M134) | 混沌套件 + 评估；[`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
+| on-box musl-kit (M136) | atoi/scmp/labs/dig 进 MERG；`ONBOX_MKIT_PASS` + `edge: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

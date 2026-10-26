@@ -20,7 +20,7 @@
 | 第十二次 | 约 M115–M124 | [`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 | 第十三次 | 约 M125–M134 | [`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
 
-当前基线：**M134 / v2.25.0**（第十三次中场：整链合流 + host 混沌；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M144**。
+当前基线：**M136 / v2.26.0**（机上 mini-cc：扩大 musl kit；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M144**。
 
 ## 中场窗口必做
 

@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M134/A2: midfield-13 merge probe → ONBOX_MERG_PASS (+ host chaos).
+// M136/A2: expanded musl kit (atoi/scmp/labs/dig) → ONBOX_MKIT_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

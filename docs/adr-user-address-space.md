@@ -197,6 +197,7 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M132** | `char` 截断 + `const` | 曾用 `ONBOX_CHAR_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M133** | as+cc+ld+musl 合流 | `ONBOX_MERG_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M134** | 第十三次中场 + host chaos | 合同锁定 MERG + [`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
+| **M136** | 扩大 musl kit | `ONBOX_MKIT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M131+** | as/前端加深 → 第十三次中场 | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考

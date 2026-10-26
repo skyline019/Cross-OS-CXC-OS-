@@ -280,7 +280,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
     unsigned tex_off[CC_TEXT_SEC_MAX];
     unsigned tex_sz[CC_TEXT_SEC_MAX];
     size_t tex_base[CC_TEXT_SEC_MAX];
-    int sec_tex[48];
+    int sec_tex[64];
     int ntex = 0;
     unsigned rodata_i = 0;
     unsigned rodata_off = 0;
@@ -311,7 +311,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
     shoff = (unsigned)u64(buf + 40);
     shentsize = u16(buf + 58);
     shnum = u16(buf + 60);
-    if (shentsize < 64 || shnum < 2 || shnum > 48) {
+    if (shentsize < 64 || shnum < 2 || shnum > 64) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
@@ -319,7 +319,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
-    for (si = 0; si < 48; si++) {
+    for (si = 0; si < 64; si++) {
         sec_tex[si] = -1;
     }
     for (i = 0; i < shnum; i++) {
@@ -349,7 +349,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
                 strsz = (unsigned)u64(strsh + 32);
             }
         } else if (typ == SHT_PROGBITS && (flags & SHF_EXECINSTR) && sz > 0) {
-            if (ntex >= CC_TEXT_SEC_MAX || i >= 48) {
+            if (ntex >= CC_TEXT_SEC_MAX || i >= 64) {
                 em->fail_code = CC_FAIL_ELF;
                 return -1;
             }
@@ -375,7 +375,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
             nrela_sec++;
         }
     }
-    if (symn == 0 || symn > 64 || stroff >= n || strsz > n - stroff) {
+    if (symn == 0 || symn > 128 || stroff >= n || strsz > n - stroff) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
@@ -441,7 +441,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
             em->fail_code = CC_FAIL_RELOC;
             return -1;
         }
-        if (rela_info[si] >= 48 || sec_tex[rela_info[si]] < 0) {
+        if (rela_info[si] >= 64 || sec_tex[rela_info[si]] < 0) {
             em->fail_code = CC_FAIL_RELOC;
             return -1;
         }
@@ -479,7 +479,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
             t_name_off = u32(tsy);
             p_at = apply_base + (size_t)r_off;
             ident[0] = 0;
-            if (t_shndx < 48 && sec_tex[t_shndx] >= 0) {
+            if (t_shndx < 64 && sec_tex[t_shndx] >= 0) {
                 tslot = sec_tex[t_shndx];
                 if (t_val > tex_sz[tslot]) {
                     em->fail_code = CC_FAIL_RELOC;
@@ -529,7 +529,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
         int fi;
         int tslot;
         size_t entry;
-        if (bind != 1 || type != 2 || shndx >= 48 || sec_tex[shndx] < 0) {
+        if (bind != 1 || type != 2 || shndx >= 64 || sec_tex[shndx] < 0) {
             continue;
         }
         tslot = sec_tex[shndx];

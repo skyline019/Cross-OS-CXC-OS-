@@ -476,7 +476,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_MERG_PASS\n";
+    static const char pass[] = "ONBOX_MKIT_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
