@@ -1,4 +1,4 @@
-/* Import ET_REL FUNC symbols into the current emit image (M106). */
+/* Import ET_REL FUNC symbols into the current emit image (M106/M107). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST

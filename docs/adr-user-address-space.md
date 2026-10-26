@@ -168,8 +168,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M103** | `switch`/`?:`/`%`/`'c'` + 边缘 | 曾用 `ONBOX_CASE_PASS` |
 | **M104** | `enum`/`sizeof`/`<<`/`0x` + 边缘；第十次中场 | 曾用 `ONBOX_ENUM_PASS` |
 | **M105** | `#link` / `extern fn` 多 TU + 边缘 | 曾用 `ONBOX_LINK_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M106** | `#lib` / `import fn` planted ET_REL SysV + 边缘 | `ONBOX_LIB_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M107+** | 更多 planted musl/CRT 符号 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M106** | `#lib` / `import fn` planted ET_REL SysV + 边缘 | 曾用 `ONBOX_LIB_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M107** | 多符号 `#lib`（add/mul/mac）+ SysV 至 4 参 + 边缘 | `ONBOX_MATH_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M108+** | ET_REL PC32 + 更多 planted musl/CRT → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

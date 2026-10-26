@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): CRT/enum + #link + #lib ET_REL import SysV. */
+/* CXC mini-cc (A2): CRT/enum + #link + #lib multi-symbol ET_REL SysV. */
 #pragma once
 
 #ifdef CC_HOST

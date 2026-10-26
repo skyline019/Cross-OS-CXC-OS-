@@ -86,14 +86,20 @@ static void parse_call(CcParser* p, const char* name) {
         return;
     }
     if (p->em->fns[fi].sysv) {
-        if (argc >= 1) {
-            cc_emit_byte(p->em, 0x5F); /* pop rdi  arg0 */
+        /* Args were pushed L→R; pop into SysV regs (last arg on top). */
+        if (argc >= 4) {
+            cc_emit_byte(p->em, 0x59); /* pop rcx */
+        }
+        if (argc >= 3) {
+            cc_emit_byte(p->em, 0x5A); /* pop rdx */
         }
         if (argc >= 2) {
             cc_emit_byte(p->em, 0x5E); /* pop rsi */
-            cc_emit_bytes(p->em, "\x48\x87\xFE", 3); /* xchg rdi, rsi */
         }
-        if (argc >= 3) {
+        if (argc >= 1) {
+            cc_emit_byte(p->em, 0x5F); /* pop rdi */
+        }
+        if (argc > 4) {
             fail(p);
             return;
         }

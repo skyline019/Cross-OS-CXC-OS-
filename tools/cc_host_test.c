@@ -273,6 +273,34 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn add(a,b);\n"
+            "import fn mul(a,b);\n"
+            "import fn mac(a,b,c);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=mac(mul(add(5,2),3),2,0);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"MH\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m107-math") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn mac(a,b,c);\n"
+            "fn main(){\n"
+            "return mac(6,7,0);\n"
+            "}\n",
+            "m107-mac") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -329,6 +357,14 @@ int main(void) {
             "import fn add(a,b);\n"
             "fn main(){\nreturn add(1,2);\n}\n",
             "bad-missing-lib") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn mac(a,b,c);\n"
+            "fn main(){\nreturn mac(1,2);\n}\n",
+            "bad-mac-arity") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

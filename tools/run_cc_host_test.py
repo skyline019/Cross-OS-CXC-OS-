@@ -87,7 +87,7 @@ def main() -> int:
         (disk / "lib.c").write_text(
             "fn add(a,b){\nreturn a+b;\n}\n", encoding="utf-8"
         )
-        rt = ROOT / "user" / "prebuilt" / "rtadd.elf"
+        rt = ROOT / "user" / "prebuilt" / "rtmath.elf"
         (disk / "rt.elf").write_bytes(rt.read_bytes())
         if use_wsl:
             work_u = to_build_path(work, True)

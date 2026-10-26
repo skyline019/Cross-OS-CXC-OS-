@@ -1,5 +1,5 @@
 #include <cxc/user.hpp>
-#include <cxc/rtadd_elf.hpp>
+#include <cxc/rtmath_elf.hpp>
 
 #include <cxc/cpu.hpp>
 #include <cxc/cxcfs.hpp>
@@ -1920,17 +1920,19 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M106: #lib ET_REL + import SysV add → 42; edge reject.
+    // M107: multi-symbol #lib + SysV add/mul/mac → 42; edge reject.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"rt.elf\"\n"
         "import fn add(a,b);\n"
+        "import fn mul(a,b);\n"
+        "import fn mac(a,b,c);\n"
         "fn main(){\n"
         "int n;\n"
-        "n=add(10,32);\n"
+        "n=mac(mul(add(5,2),3),2,0);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"LB\";\n"
+        "write \"MH\";\n"
         "}\n"
         "return n;\n"
         "}\n";
@@ -1954,8 +1956,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             result.failure = 16;
             return false;
         }
-        if (fs::write_fd(static_cast<uint32_t>(lfd), rtadd_elf, rtadd_elf_size) !=
-            static_cast<int64_t>(rtadd_elf_size)) {
+        if (fs::write_fd(static_cast<uint32_t>(lfd), rtmath_elf,
+                         rtmath_elf_size) !=
+            static_cast<int64_t>(rtmath_elf_size)) {
             (void)fs::close_fd(static_cast<uint32_t>(lfd));
             result.failure = 17;
             return false;
