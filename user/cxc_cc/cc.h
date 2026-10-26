@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): fn/struct/include/for + CRT main/globals/strings/do/+=. */
+/* CXC mini-cc (A2): CRT + switch/?:/%/char. */
 #pragma once
 
 #ifdef CC_HOST
@@ -50,6 +50,9 @@ enum CcTok {
     TOK_KW_STRUCT,
     TOK_KW_FOR,
     TOK_KW_INT,
+    TOK_KW_SWITCH,
+    TOK_KW_CASE,
+    TOK_KW_DEFAULT,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -59,11 +62,14 @@ enum CcTok {
     TOK_SEMI,
     TOK_COMMA,
     TOK_DOT,
+    TOK_COLON,
+    TOK_QUESTION,
     TOK_ASSIGN,
     TOK_PLUS,
     TOK_MINUS,
     TOK_STAR,
     TOK_SLASH,
+    TOK_PERCENT,
     TOK_BANG,
     TOK_AMP,
     TOK_EQ,
@@ -110,6 +116,7 @@ typedef struct CcLoop {
     int nbrk;
     size_t cont_patch[CC_BREAK_MAX];
     int ncont;
+    int is_switch;
 } CcLoop;
 
 typedef struct CcFn {

@@ -49,6 +49,12 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_FOR;
     } else if (strcmp(lx->text, "int") == 0) {
         lx->tok = TOK_KW_INT;
+    } else if (strcmp(lx->text, "switch") == 0) {
+        lx->tok = TOK_KW_SWITCH;
+    } else if (strcmp(lx->text, "case") == 0) {
+        lx->tok = TOK_KW_CASE;
+    } else if (strcmp(lx->text, "default") == 0) {
+        lx->tok = TOK_KW_DEFAULT;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {
@@ -85,6 +91,21 @@ void cc_lex_next(CcLexer* lx) {
         lx->str[n] = 0;
         lx->str_len = n;
         lx->tok = TOK_STR;
+        return;
+    }
+    if (c == '\'') {
+        lx->pos++;
+        if (lx->pos >= lx->len) {
+            lx->tok = TOK_EOF;
+            return;
+        }
+        lx->number = (unsigned char)lx->src[lx->pos++];
+        if (lx->pos >= lx->len || lx->src[lx->pos] != '\'') {
+            lx->tok = TOK_EOF;
+            return;
+        }
+        lx->pos++;
+        lx->tok = TOK_NUMBER;
         return;
     }
     if (is_alpha(c)) {
@@ -132,6 +153,12 @@ void cc_lex_next(CcLexer* lx) {
         lx->tok = TOK_COMMA;
     } else if (c == '.') {
         lx->tok = TOK_DOT;
+    } else if (c == '?') {
+        lx->tok = TOK_QUESTION;
+    } else if (c == ':') {
+        lx->tok = TOK_COLON;
+    } else if (c == '%') {
+        lx->tok = TOK_PERCENT;
     } else if (c == '+') {
         if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
             lx->pos++;

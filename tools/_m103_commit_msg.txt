@@ -1,0 +1,4 @@
+feat: M103 mini-cc switch/?:/%/char ONBOX_CASE_PASS (v1.4.0)
+
+Add switch/case/default (no fallthrough), ternary, modulo, and char
+literals; contract/CI evidence is WMSG:CS + ONBOX_CASE_PASS + case:1 + edge:1.

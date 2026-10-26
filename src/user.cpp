@@ -1919,7 +1919,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M102: CRT main + global + do/+= + string write → 42; edge reject.
+    // M103: switch/?:/% → 42; edge reject.
     static const char lib_text[] =
         "fn add(a,b){\n"
         "return a+b;\n"
@@ -1927,17 +1927,27 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     static const char src_text[] =
         "CXC_A2\n"
         "#include \"lib.cx\"\n"
-        "int g=10;\n"
+        "int k=2;\n"
         "fn main(){\n"
         "int n;\n"
-        "n=g;\n"
-        "do{\n"
-        "n+=1;\n"
-        "}while(n<30);\n"
-        "n=add(n,12);\n"
+        "n=k;\n"
+        "switch(n){\n"
+        "case 1:\n"
+        "n=0;\n"
+        "break;\n"
+        "case 2:\n"
+        "n=40;\n"
+        "break;\n"
+        "default:\n"
+        "n=1;\n"
+        "break;\n"
+        "}\n"
+        "n=n>0?n+2:0;\n"
+        "n=n%100;\n"
+        "n=add(n,0);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"CR\";\n"
+        "write \"CS\";\n"
         "}\n"
         "return n;\n"
         "}\n";

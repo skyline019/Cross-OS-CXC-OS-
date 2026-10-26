@@ -157,6 +157,36 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "int k=2;\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=k;\n"
+            "switch(n){\n"
+            "case 1:\n"
+            "n=0;\n"
+            "break;\n"
+            "case 2:\n"
+            "n=40;\n"
+            "break;\n"
+            "default:\n"
+            "n=1;\n"
+            "break;\n"
+            "}\n"
+            "n=n>0?n+2:0;\n"
+            "n=n%100;\n"
+            "c='*';\n"
+            "n=n+(c-42);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"CS\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m103-case") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "n=0;\n"
             "n+=21;\n"
             "n++;\n"
@@ -194,6 +224,12 @@ int main(void) {
     }
     if (expect_fail("CXC_A2\nint g=1;\nint g=2;\nreturn 0;\n",
                     "bad-dup-global") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nswitch(1){\ndefault:\nbreak;\ndefault:\nbreak;\n}\n"
+            "return 0;\n",
+            "bad-dup-default") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

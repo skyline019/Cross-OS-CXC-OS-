@@ -269,7 +269,8 @@ static void parse_unary(CcParser* p) {
 
 static void parse_mul(CcParser* p) {
     parse_unary(p);
-    while (p->lx->tok == TOK_STAR || p->lx->tok == TOK_SLASH) {
+    while (p->lx->tok == TOK_STAR || p->lx->tok == TOK_SLASH ||
+           p->lx->tok == TOK_PERCENT) {
         int op = p->lx->tok;
         cc_lex_next(p->lx);
         cc_emit_push_rax(p->em);
@@ -280,10 +281,14 @@ static void parse_mul(CcParser* p) {
             cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
             cc_emit_bytes(p->em, "\x48\x0F\xAF\xC2", 4);
         } else {
+            /* / or % : dividend in stack, divisor in rax */
             cc_emit_bytes(p->em, "\x48\x89\xC1", 3);
             cc_emit_byte(p->em, 0x58);
             cc_emit_bytes(p->em, "\x48\x99", 2);
             cc_emit_bytes(p->em, "\x48\xF7\xF9", 3);
+            if (op == TOK_PERCENT) {
+                cc_emit_bytes(p->em, "\x48\x89\xD0", 3); /* mov rax, rdx */
+            }
         }
     }
 }
@@ -358,8 +363,25 @@ static void parse_or(CcParser* p) {
     }
 }
 
-static void parse_expr(CcParser* p) {
+static void parse_ternary(CcParser* p) {
+    size_t je_at;
+    size_t jmp_end;
     parse_or(p);
+    if (!accept(p, TOK_QUESTION)) {
+        return;
+    }
+    cc_emit_bytes(p->em, "\x85\xC0", 2);
+    je_at = emit_je32(p->em);
+    parse_ternary(p);
+    jmp_end = emit_jmp32(p->em);
+    patch_rel32(p->em, je_at, p->em->code_len);
+    expect(p, TOK_COLON);
+    parse_ternary(p);
+    patch_rel32(p->em, jmp_end, p->em->code_len);
+}
+
+static void parse_expr(CcParser* p) {
+    parse_ternary(p);
 }
 
 static void parse_stmt(CcParser* p);
@@ -372,7 +394,7 @@ static void parse_block(CcParser* p) {
     expect(p, TOK_RBRACE);
 }
 
-static int loop_push(CcEmit* em, size_t cont_at) {
+static int loop_push(CcEmit* em, size_t cont_at, int is_switch) {
     CcLoop* lp;
     if (em->nloops >= CC_LOOP_MAX) {
         em->failed = 1;
@@ -382,6 +404,7 @@ static int loop_push(CcEmit* em, size_t cont_at) {
     lp->cont_at = cont_at;
     lp->nbrk = 0;
     lp->ncont = 0;
+    lp->is_switch = is_switch;
     return 0;
 }
 
@@ -469,7 +492,7 @@ static void parse_stmt(CcParser* p) {
         size_t je_at;
         size_t back;
         expect(p, TOK_LPAREN);
-        if (loop_push(p->em, loop) != 0) {
+        if (loop_push(p->em, loop, 0) != 0) {
             return;
         }
         parse_expr(p);
@@ -487,7 +510,7 @@ static void parse_stmt(CcParser* p) {
     if (accept(p, TOK_KW_DO)) {
         size_t body = p->em->code_len;
         size_t jnz_at;
-        if (loop_push(p->em, body) != 0) {
+        if (loop_push(p->em, body, 0) != 0) {
             return;
         }
         parse_stmt(p);
@@ -531,7 +554,7 @@ static void parse_stmt(CcParser* p) {
             }
             cc_emit_store_local(p->em, slot);
         }
-        if (loop_push(p->em, 0) != 0) {
+        if (loop_push(p->em, 0, 0) != 0) {
             return;
         }
         cond_at = p->em->code_len;
@@ -608,20 +631,91 @@ static void parse_stmt(CcParser* p) {
         return;
     }
     if (accept(p, TOK_KW_CONTINUE)) {
-        CcLoop* lp;
+        CcLoop* lp = 0;
         size_t at;
+        int i;
         expect(p, TOK_SEMI);
-        if (p->em->nloops <= 0) {
-            fail(p);
-            return;
+        for (i = p->em->nloops - 1; i >= 0; i--) {
+            if (!p->em->loops[i].is_switch) {
+                lp = &p->em->loops[i];
+                break;
+            }
         }
-        lp = &p->em->loops[p->em->nloops - 1];
-        if (lp->ncont >= CC_BREAK_MAX) {
+        if (!lp || lp->ncont >= CC_BREAK_MAX) {
             fail(p);
             return;
         }
         at = emit_jmp32(p->em);
         lp->cont_patch[lp->ncont++] = at;
+        return;
+    }
+    if (accept(p, TOK_KW_SWITCH)) {
+        size_t je_skip;
+        size_t jmp_end;
+        int saw_default = 0;
+        expect(p, TOK_LPAREN);
+        parse_expr(p);
+        expect(p, TOK_RPAREN);
+        cc_emit_push_rax(p->em); /* scrutinee */
+        if (loop_push(p->em, 0, 1) != 0) {
+            return;
+        }
+        expect(p, TOK_LBRACE);
+        while (!p->em->failed && p->lx->tok != TOK_RBRACE &&
+               p->lx->tok != TOK_EOF) {
+            if (accept(p, TOK_KW_CASE)) {
+                long imm;
+                if (p->lx->tok != TOK_NUMBER) {
+                    fail(p);
+                    return;
+                }
+                imm = p->lx->number;
+                cc_lex_next(p->lx);
+                expect(p, TOK_COLON);
+                /* mov rax,[rsp]; cmp rax,imm; jne skip */
+                cc_emit_bytes(p->em, "\x48\x8B\x04\x24", 4);
+                cc_emit_bytes(p->em, "\x48\x3D", 2);
+                cc_emit_u32(p->em, (unsigned)imm);
+                je_skip = emit_jne32(p->em);
+                while (!p->em->failed && p->lx->tok != TOK_KW_CASE &&
+                       p->lx->tok != TOK_KW_DEFAULT &&
+                       p->lx->tok != TOK_RBRACE && p->lx->tok != TOK_EOF) {
+                    parse_stmt(p);
+                }
+                /* no fallthrough */
+                jmp_end = emit_jmp32(p->em);
+                {
+                    CcLoop* lp = &p->em->loops[p->em->nloops - 1];
+                    if (lp->nbrk < CC_BREAK_MAX) {
+                        lp->brk_at[lp->nbrk++] = jmp_end;
+                    } else {
+                        fail(p);
+                        return;
+                    }
+                }
+                patch_rel32(p->em, je_skip, p->em->code_len);
+                continue;
+            }
+            if (accept(p, TOK_KW_DEFAULT)) {
+                if (saw_default) {
+                    fail(p);
+                    return;
+                }
+                saw_default = 1;
+                expect(p, TOK_COLON);
+                while (!p->em->failed && p->lx->tok != TOK_KW_CASE &&
+                       p->lx->tok != TOK_KW_DEFAULT &&
+                       p->lx->tok != TOK_RBRACE && p->lx->tok != TOK_EOF) {
+                    parse_stmt(p);
+                }
+                continue;
+            }
+            fail(p);
+            return;
+        }
+        expect(p, TOK_RBRACE);
+        loop_pop(p->em, p->em->code_len);
+        cc_emit_bytes(p->em, "\x48\x83\xC4\x08", 4); /* add rsp, 8 */
         return;
     }
     if (accept(p, TOK_KW_WRITE)) {
