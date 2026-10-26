@@ -734,6 +734,25 @@ bool run_time_probe(const uint8_t* image, size_t image_size,
                     TimeProbeResult& result);
 const TimeProbeResult& time_probe_result();
 
+struct OnboxCcProbeResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t wrote_src;
+    uint32_t wrote_cc;
+    uint32_t remount_ok;
+    uint32_t loaded;
+    uint32_t entered;
+    uint32_t exited;
+    uint32_t wrote_pass;
+    uint64_t exit_code;
+};
+
+// M92/A2: plant in.c + cxc-cc on disk/, stub execve → compile → run out.elf.
+bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
+                        const uint8_t* cc_image, size_t cc_size,
+                        OnboxCcProbeResult& result);
+const OnboxCcProbeResult& onbox_cc_probe_result();
+
 constexpr uint32_t max_exec_argc = 8;
 constexpr uint32_t max_exec_envc = 8;
 constexpr size_t max_exec_arg_bytes = 128;

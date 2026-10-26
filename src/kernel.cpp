@@ -113,6 +113,10 @@ uint64_t heap_elf_physical = 0;
 uint64_t heap_elf_size = 0;
 uint64_t time_elf_physical = 0;
 uint64_t time_elf_size = 0;
+uint64_t onbox_stub_elf_physical = 0;
+uint64_t onbox_stub_elf_size = 0;
+uint64_t onbox_cc_elf_physical = 0;
+uint64_t onbox_cc_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -2043,6 +2047,39 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
+    // M92/A2: on-box compile pipeline — in.c → cxc-cc → out.elf → run.
+    user::OnboxCcProbeResult onbox{};
+    const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + onbox_stub_elf_physical);
+    const auto* onbox_cc = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + onbox_cc_elf_physical);
+    if (onbox_stub_elf_physical == 0 || onbox_stub_elf_size == 0 ||
+        onbox_cc_elf_physical == 0 || onbox_cc_elf_size == 0 ||
+        !user::run_onbox_cc_probe(
+            onbox_stub, static_cast<size_t>(onbox_stub_elf_size), onbox_cc,
+            static_cast<size_t>(onbox_cc_elf_size), onbox)) {
+        log::write("[debug] onbox-cc stage: ");
+        log::decimal(onbox.stage);
+        log::write(", failure: ");
+        log::decimal(onbox.failure);
+        log::write(", src: ");
+        log::decimal(onbox.wrote_src);
+        log::write(", cc: ");
+        log::decimal(onbox.wrote_cc);
+        log::write(", remount: ");
+        log::decimal(onbox.remount_ok);
+        log::write(", pass: ");
+        log::decimal(onbox.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(onbox.exit_code);
+        log::write('\n');
+        log::panic("M92 on-box compile pipeline failed");
+    }
+    log::write("[ok] onbox-cc: pass: ");
+    log::decimal(onbox.wrote_pass);
+    log::write(" src: 1 cc: 1 run: 1\n");
+    log::line("ONBOX_CC_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2290,6 +2327,14 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP TIME.ELF")) {
         log::panic("cannot relocate ESP TIME.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(onbox_stub_elf_physical, onbox_stub_elf_size,
+                                 "ESP ONBXST.ELF")) {
+        log::panic("cannot relocate ESP ONBXST.ELF into PMM");
+    }
+    if (!relocate_esp_elf_to_pmm(onbox_cc_elf_physical, onbox_cc_elf_size,
+                                 "ESP ONBXCC.ELF")) {
+        log::panic("cannot relocate ESP ONBXCC.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2306,7 +2351,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.92.0 - access/time (A2/M91)");
+    cxc::log::line("CXC/OS 0.93.0 - on-box cc pipeline (A2/M92)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2953,6 +2998,38 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP TIME.ELF bytes: ");
     cxc::log::decimal(cxc::time_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 onbox_stub_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'O',  u'N', u'B', u'X', u'S',  u'T', u'.', u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, onbox_stub_path, 64 * 1024,
+        cxc::onbox_stub_elf_physical, cxc::onbox_stub_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP ONBXST.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP ONBXST.ELF bytes: ");
+    cxc::log::decimal(cxc::onbox_stub_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 onbox_cc_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'O',  u'N', u'B', u'X', u'C',  u'C', u'.', u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(
+        image_handle, system_table, onbox_cc_path, 64 * 1024,
+        cxc::onbox_cc_elf_physical, cxc::onbox_cc_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP ONBXCC.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP ONBXCC.ELF bytes: ");
+    cxc::log::decimal(cxc::onbox_cc_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

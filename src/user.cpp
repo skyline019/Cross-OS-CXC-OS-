@@ -189,6 +189,7 @@ CapProbeResult cap_probe{};
 Load128ProbeResult load128_probe{};
 HeapProbeResult heap_probe{};
 TimeProbeResult time_probe{};
+OnboxCcProbeResult onbox_cc_probe{};
 /* M90: above brk (≤0x509000) and mmap (≤0x700000) windows. */
 constexpr uint64_t user_stack_base = 0x0000000000800000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
@@ -1897,6 +1898,98 @@ bool run_time_probe(const uint8_t* image, size_t image_size,
 
 const TimeProbeResult& time_probe_result() {
     return time_probe;
+}
+
+bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
+                        const uint8_t* cc_image, size_t cc_size,
+                        OnboxCcProbeResult& result) {
+    static const char src_text[] = "CXC_A2\nint main(void){return 0;}\n";
+    result = OnboxCcProbeResult{};
+    result.stage = 1;
+    if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||
+        cc_size == 0 || !cxcfs::is_mounted()) {
+        result.failure = 1;
+        return false;
+    }
+    if (cc_size > cxcfs::max_file_bytes) {
+        result.failure = 2;
+        return false;
+    }
+
+    const int64_t sfd = fs::open_path(
+        "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+    if (sfd < 0) {
+        result.failure = 3;
+        return false;
+    }
+    const size_t src_len = sizeof(src_text) - 1;
+    if (fs::write_fd(static_cast<uint32_t>(sfd), src_text, src_len) !=
+        static_cast<int64_t>(src_len)) {
+        (void)fs::close_fd(static_cast<uint32_t>(sfd));
+        result.failure = 4;
+        return false;
+    }
+    if (fs::close_fd(static_cast<uint32_t>(sfd)) != 0) {
+        result.failure = 5;
+        return false;
+    }
+    result.wrote_src = 1;
+    result.stage = 2;
+
+    const int64_t cfd = fs::open_path(
+        "disk/cxc-cc", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+    if (cfd < 0) {
+        result.failure = 6;
+        return false;
+    }
+    if (fs::write_fd(static_cast<uint32_t>(cfd), cc_image, cc_size) !=
+        static_cast<int64_t>(cc_size)) {
+        (void)fs::close_fd(static_cast<uint32_t>(cfd));
+        result.failure = 7;
+        return false;
+    }
+    if (fs::close_fd(static_cast<uint32_t>(cfd)) != 0) {
+        result.failure = 8;
+        return false;
+    }
+    result.wrote_cc = 1;
+    result.stage = 3;
+
+    cxcfs::MountResult remounted{};
+    if (!cxcfs::remount(remounted)) {
+        result.failure = 9;
+        return false;
+    }
+    result.remount_ok = 1;
+    result.stage = 4;
+
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(stub_image, stub_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 20 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_onbox_cc_pass;
+    result.stage = 5;
+
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 10;
+        return false;
+    }
+    syscall::clear_session();
+    onbox_cc_probe = result;
+    return true;
+}
+
+const OnboxCcProbeResult& onbox_cc_probe_result() {
+    return onbox_cc_probe;
 }
 
 }  // namespace cxc::user

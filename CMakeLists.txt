@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.92.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.93.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1339,6 +1339,30 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_ONBOX_STUB_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_onbox_stub.elf")
+add_custom_command(
+    OUTPUT "${CXC_USER_ONBOX_STUB_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_stub_elf.py"
+        --output "${CXC_USER_ONBOX_STUB_ELF}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_stub_elf.py"
+    COMMENT "Building ESP ONBXST.ELF on-box cc stub"
+    VERBATIM
+)
+
+set(CXC_USER_ONBOX_CC_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_onbox_cc.elf")
+add_custom_command(
+    OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
+        --output "${CXC_USER_ONBOX_CC_ELF}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
+    COMMENT "Building ESP ONBXCC.ELF on-box compiler"
+    VERBATIM
+)
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -1384,6 +1408,8 @@ add_custom_command(
         --extra "L128    ELF" "${CXC_USER_LOAD128_ELF}"
         --extra "HEAP    ELF" "${CXC_USER_HEAP_ELF}"
         --extra "TIME    ELF" "${CXC_USER_TIME_ELF}"
+        --extra "ONBXST  ELF" "${CXC_USER_ONBOX_STUB_ELF}"
+        --extra "ONBXCC  ELF" "${CXC_USER_ONBOX_CC_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -1426,6 +1452,8 @@ add_custom_command(
         "${CXC_USER_LOAD128_ELF}"
         "${CXC_USER_HEAP_ELF}"
         "${CXC_USER_TIME_ELF}"
+        "${CXC_USER_ONBOX_STUB_ELF}"
+        "${CXC_USER_ONBOX_CC_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -1466,6 +1494,8 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_load128_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_time_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_stub_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

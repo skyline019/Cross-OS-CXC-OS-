@@ -263,6 +263,11 @@ jobs:
           grep -F 'access: 1' build/uefi/qemu-test/serial.log
           grep -F 'clock: 1' build/uefi/qemu-test/serial.log
           grep -F 'gettimeofday: 1' build/uefi/qemu-test/serial.log
+          grep -F 'ONBOX_CC_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'onbox-cc: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'src: 1' build/uefi/qemu-test/serial.log
+          grep -F 'cc: 1' build/uefi/qemu-test/serial.log
+          grep -F 'run: 1' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log
