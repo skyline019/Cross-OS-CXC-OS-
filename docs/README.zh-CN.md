@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 89 / v0.90.0：ELF 加载 128 KiB**（A2 主靶；见 [`product-goals.md`](product-goals.md)、[`midpoint-assessment-8.md`](midpoint-assessment-8.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 90 / v0.91.0：brk/mmap 各 1 MiB**（A2 主靶；见 [`product-goals.md`](product-goals.md)、[`midpoint-assessment-8.md`](midpoint-assessment-8.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -115,6 +115,7 @@ CXC_OS_SELF_TEST_PASS
 | nested dirs (M87) | ramfs/CXCFS 多级 `mkdir`；孤儿父目录边缘；持久回读；`NEST_PASS` |
 | capacity (M88) | CXCFS 128 KiB/文件；16 MiB virtio；`max_io=4096`；96 KiB 回读；`CAP_PASS` |
 | ELF load 128KiB (M89) | 静态加载器与 CXCFS 对齐；`disk/` 100 KiB `execve`；`LOAD128_PASS` |
+| heap/mmap 1MiB (M90) | 用户栈 `0x800000`；`brk`/`mmap` 各 256 页；768+512 KiB 探针；`HEAP_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -302,4 +303,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **更大堆/mmap 或 access/time syscall**；边缘纳入测试契约；下一正式中场约 **M94**）。须保持 M13–M89 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A1→A2（下一刀 **access/time syscall 或更大堆**；边缘纳入测试契约；下一正式中场约 **M94**）。须保持 M13–M90 回归证据。

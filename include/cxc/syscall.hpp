@@ -50,13 +50,14 @@ constexpr uint64_t arch_get_gs = 0x1004;
 
 constexpr uint64_t ring3_probe_magic = 0xc0de0001ull;
 
-// Above musl-gcc fopen .data/.bss (M71 LIBFOP ends ~0x408bb0); stack at 0x420000.
+// Above musl-gcc fopen .data/.bss (M71 LIBFOP ends ~0x408bb0).
+// M90: stack moved to 0x800000 so brk can grow past the old 64 KiB window.
 constexpr uint64_t default_brk_base = 0x0000000000409000ull;
-constexpr uint64_t brk_max_pages = 16;
+constexpr uint64_t brk_max_pages = 256;  // 1 MiB
 
-// Anonymous mmap bump region (above brk window).
+// Anonymous mmap bump region (above brk window; below user stack).
 constexpr uint64_t default_mmap_base = 0x0000000000600000ull;
-constexpr uint64_t mmap_max_pages = 16;
+constexpr uint64_t mmap_max_pages = 256;  // 1 MiB
 
 constexpr uint64_t prot_read = 1;
 constexpr uint64_t prot_write = 2;
@@ -115,6 +116,7 @@ struct Session {
     uint32_t saw_nest_pass;
     uint32_t saw_cap_pass;
     uint32_t saw_load128_pass;
+    uint32_t saw_heap_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t pid;

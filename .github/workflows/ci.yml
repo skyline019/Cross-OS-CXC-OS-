@@ -253,6 +253,11 @@ jobs:
           grep -F 'LOAD128_PASS' build/uefi/qemu-test/serial.log
           grep -F 'load128: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'elf_bytes: 102400' build/uefi/qemu-test/serial.log
+          grep -F 'HEAP_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'heap: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'brk_kib: 768' build/uefi/qemu-test/serial.log
+          grep -F 'mmap_kib: 512' build/uefi/qemu-test/serial.log
+          grep -F 'ceiling_kib: 1024' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

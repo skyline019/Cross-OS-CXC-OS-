@@ -187,8 +187,9 @@ ChdirProbeResult chdir_probe{};
 NestProbeResult nest_probe{};
 CapProbeResult cap_probe{};
 Load128ProbeResult load128_probe{};
-/* Above brk window (0x409000 + 16 pages → 0x419000) and musl .data. */
-constexpr uint64_t user_stack_base = 0x0000000000420000ull;
+HeapProbeResult heap_probe{};
+/* M90: above brk (≤0x509000) and mmap (≤0x700000) windows. */
+constexpr uint64_t user_stack_base = 0x0000000000800000ull;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 constexpr uint64_t privilege_stack_pages = 8;
 
@@ -1823,6 +1824,42 @@ bool run_load128_probe(const uint8_t* stub_image, size_t stub_size,
 
 const Load128ProbeResult& load128_probe_result() {
     return load128_probe;
+}
+
+bool run_heap_probe(const uint8_t* image, size_t image_size,
+                    HeapProbeResult& result) {
+    result = HeapProbeResult{};
+    result.stage = 1;
+    if (image == nullptr || image_size == 0) {
+        result.failure = 1;
+        return false;
+    }
+    uint64_t entry = 0;
+    uint32_t stage = 0;
+    uint32_t failure = 0;
+    if (!launch_user_elf(image, image_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 10 + failure;
+        return false;
+    }
+    result.loaded = 1;
+    result.entered = 1;
+    result.exited = 1;
+    result.exit_code = syscall::session().exit_code;
+    result.wrote_pass = syscall::session().saw_heap_pass;
+    result.stage = 2;
+    if (result.exit_code != 0 || result.wrote_pass == 0) {
+        syscall::clear_session();
+        result.failure = 2;
+        return false;
+    }
+    syscall::clear_session();
+    heap_probe = result;
+    return true;
+}
+
+const HeapProbeResult& heap_probe_result() {
+    return heap_probe;
 }
 
 }  // namespace cxc::user

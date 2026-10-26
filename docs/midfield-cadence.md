@@ -16,7 +16,7 @@
 | 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
 | 第九次（计划） | 约 M85–M94 | `midpoint-assessment-9.md`（届时新建） |
 
-当前基线：**M89 / v0.90.0**（ELF 加载 128 KiB；A2 主线；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M94**。
+当前基线：**M90 / v0.91.0**（brk/mmap 各 1 MiB；A2 主线；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M94**。
 
 ## 中场窗口必做
 

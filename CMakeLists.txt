@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.90.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.91.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1315,6 +1315,18 @@ add_custom_command(
     VERBATIM
 )
 
+set(CXC_USER_HEAP_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_heap.elf")
+add_custom_command(
+    OUTPUT "${CXC_USER_HEAP_ELF}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
+        --output "${CXC_USER_HEAP_ELF}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
+    COMMENT "Building ESP HEAP.ELF brk/mmap expand probe"
+    VERBATIM
+)
+
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
     OUTPUT "${CXC_ESP_IMAGE}"
@@ -1358,6 +1370,7 @@ add_custom_command(
         --extra "CAP     ELF" "${CXC_USER_CAP_ELF}"
         --extra "L128S   ELF" "${CXC_USER_LOAD128_STUB_ELF}"
         --extra "L128    ELF" "${CXC_USER_LOAD128_ELF}"
+        --extra "HEAP    ELF" "${CXC_USER_HEAP_ELF}"
         --output "${CXC_ESP_IMAGE}"
     DEPENDS
         cxc_kernel
@@ -1398,6 +1411,7 @@ add_custom_command(
         "${CXC_USER_CAP_ELF}"
         "${CXC_USER_LOAD128_STUB_ELF}"
         "${CXC_USER_LOAD128_ELF}"
+        "${CXC_USER_HEAP_ELF}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_esp.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_ext_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cross_elf.py"
@@ -1436,6 +1450,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_cap_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_load128_stub_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_load128_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"
