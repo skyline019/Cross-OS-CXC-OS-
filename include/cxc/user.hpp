@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M99/A2: fn def/call + edge reject → ONBOX_FUNC_PASS.
+// M100/A2: struct/pointer + edge reject → ONBOX_DATA_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

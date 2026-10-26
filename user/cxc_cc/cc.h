@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): control, arrays, I/O, functions. Freestanding. */
+/* CXC mini-cc (A2): control, arrays, I/O, functions, struct/pointer. */
 #pragma once
 
 #ifdef CC_HOST
@@ -23,6 +23,8 @@ enum {
     CC_BREAK_MAX = 8,
     CC_FN_MAX = 8,
     CC_FN_ARGS = 4,
+    CC_STRUCT_MAX = 4,
+    CC_STRUCT_FIELDS = 4,
     CC_LOAD_VA = 0x400000
 };
 
@@ -41,6 +43,7 @@ enum CcTok {
     TOK_KW_BREAK,
     TOK_KW_CONTINUE,
     TOK_KW_FN,
+    TOK_KW_STRUCT,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -49,12 +52,14 @@ enum CcTok {
     TOK_RBRACK,
     TOK_SEMI,
     TOK_COMMA,
+    TOK_DOT,
     TOK_ASSIGN,
     TOK_PLUS,
     TOK_MINUS,
     TOK_STAR,
     TOK_SLASH,
     TOK_BANG,
+    TOK_AMP,
     TOK_EQ,
     TOK_NE,
     TOK_LT,
@@ -78,6 +83,7 @@ typedef struct CcLocal {
     char name[CC_IDENT_MAX + 1];
     int slot;
     int count;
+    int stype; /* -1, or struct type index */
 } CcLocal;
 
 typedef struct CcLoop {
@@ -91,6 +97,12 @@ typedef struct CcFn {
     int arity;
     size_t entry;
 } CcFn;
+
+typedef struct CcStruct {
+    char name[CC_IDENT_MAX + 1];
+    char fields[CC_STRUCT_FIELDS][CC_IDENT_MAX + 1];
+    int nfields;
+} CcStruct;
 
 typedef struct CcEmit {
     unsigned char* code;
@@ -108,6 +120,8 @@ typedef struct CcEmit {
     CcFn fns[CC_FN_MAX];
     int nfns;
     int in_fn;
+    CcStruct structs[CC_STRUCT_MAX];
+    int nstructs;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -115,8 +129,11 @@ void cc_lex_next(CcLexer* lx);
 
 int cc_local_find(CcEmit* em, const char* name);
 int cc_local_define(CcEmit* em, const char* name, int count);
+int cc_local_define_st(CcEmit* em, const char* name, int count, int stype);
 int cc_local_slot(CcEmit* em, const char* name, int create);
 int cc_fn_find(CcEmit* em, const char* name);
+int cc_struct_find(CcEmit* em, const char* name);
+int cc_struct_field(CcEmit* em, int stype, const char* field);
 
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
@@ -132,8 +149,12 @@ void cc_emit_push_rax(CcEmit* em);
 void cc_emit_pop_rcx(CcEmit* em);
 void cc_emit_store_local(CcEmit* em, int slot);
 void cc_emit_load_local(CcEmit* em, int slot);
+void cc_emit_lea_local(CcEmit* em, int slot);
 void cc_emit_index_load(CcEmit* em, int base_slot);
 void cc_emit_index_store(CcEmit* em, int base_slot);
+void cc_emit_index_lea(CcEmit* em, int base_slot);
+void cc_emit_load_indirect(CcEmit* em);
+void cc_emit_store_indirect(CcEmit* em);
 void cc_emit_prologue(CcEmit* em);
 void cc_emit_fn_prologue(CcEmit* em, int arity);
 void cc_emit_leave_ret(CcEmit* em);

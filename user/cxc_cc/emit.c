@@ -26,7 +26,7 @@ int cc_local_find(CcEmit* em, const char* name) {
     return -1;
 }
 
-int cc_local_define(CcEmit* em, const char* name, int count) {
+int cc_local_define_st(CcEmit* em, const char* name, int count, int stype) {
     CcLocal* loc;
     size_t n = 0;
     if (count < 1 || em->nlocals >= CC_LOCAL_MAX ||
@@ -44,9 +44,14 @@ int cc_local_define(CcEmit* em, const char* name, int count) {
     loc->name[n] = 0;
     loc->slot = em->next_slot;
     loc->count = count;
+    loc->stype = stype;
     em->next_slot += count;
     em->nlocals++;
     return loc->slot;
+}
+
+int cc_local_define(CcEmit* em, const char* name, int count) {
+    return cc_local_define_st(em, name, count, -1);
 }
 
 int cc_local_slot(CcEmit* em, const char* name, int create) {
@@ -67,6 +72,29 @@ int cc_fn_find(CcEmit* em, const char* name) {
     int i;
     for (i = 0; i < em->nfns; i++) {
         if (strcmp(em->fns[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int cc_struct_find(CcEmit* em, const char* name) {
+    int i;
+    for (i = 0; i < em->nstructs; i++) {
+        if (strcmp(em->structs[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int cc_struct_field(CcEmit* em, int stype, const char* field) {
+    int i;
+    if (stype < 0 || stype >= em->nstructs) {
+        return -1;
+    }
+    for (i = 0; i < em->structs[stype].nfields; i++) {
+        if (strcmp(em->structs[stype].fields[i], field) == 0) {
             return i;
         }
     }
@@ -156,6 +184,12 @@ void cc_emit_load_local(CcEmit* em, int slot) {
     cc_emit_i32(em, -((slot + 1) * 8));
 }
 
+void cc_emit_lea_local(CcEmit* em, int slot) {
+    /* lea rax, [rbp - (slot+1)*8] */
+    cc_emit_bytes(em, "\x48\x8D\x85", 3);
+    cc_emit_i32(em, -((slot + 1) * 8));
+}
+
 void cc_emit_index_load(CcEmit* em, int base_slot) {
     /* rax = index; element at rbp-(base+1+index)*8 */
     cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base+1)*8] */
@@ -172,6 +206,24 @@ void cc_emit_index_store(CcEmit* em, int base_slot) {
     cc_emit_bytes(em, "\x48\xC1\xE1\x03", 4); /* shl rcx, 3 */
     cc_emit_bytes(em, "\x48\x29\xCE", 3);     /* sub rsi, rcx */
     cc_emit_bytes(em, "\x48\x89\x06", 3);     /* mov [rsi], rax */
+}
+
+void cc_emit_index_lea(CcEmit* em, int base_slot) {
+    /* rax = index → address of element in rax */
+    cc_emit_bytes(em, "\x48\x8D\xB5", 3);
+    cc_emit_i32(em, -((base_slot + 1) * 8));
+    cc_emit_bytes(em, "\x48\xC1\xE0\x03", 4);
+    cc_emit_bytes(em, "\x48\x29\xC6", 3);
+    cc_emit_bytes(em, "\x48\x89\xF0", 3); /* mov rax, rsi */
+}
+
+void cc_emit_load_indirect(CcEmit* em) {
+    cc_emit_bytes(em, "\x48\x8B\x00", 3); /* mov rax, [rax] */
+}
+
+void cc_emit_store_indirect(CcEmit* em) {
+    /* value in rax, address in rcx */
+    cc_emit_bytes(em, "\x48\x89\x01", 3); /* mov [rcx], rax */
 }
 
 void cc_emit_prologue(CcEmit* em) {
@@ -270,7 +322,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_FUNC_PASS\n";
+    static const char pass[] = "ONBOX_DATA_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

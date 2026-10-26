@@ -157,9 +157,9 @@ HEAP_PASS = "HEAP_PASS"
 HEAP_PROBE_SUCCESS = "heap: pass: 1"
 TIME_PASS = "TIME_PASS"
 TIME_PROBE_SUCCESS = "time: pass: 1"
-ONBOX_FUNC_PASS = "ONBOX_FUNC_PASS"
+ONBOX_DATA_PASS = "ONBOX_DATA_PASS"
 ONBOX_CC_PROBE_SUCCESS = "onbox-cc: pass: 1"
-ONBOX_WMSG = "WMSG:FN"
+ONBOX_WMSG = "WMSG:ST"
 ONBOX_NMSG = "NMSG:42"
 
 
@@ -669,7 +669,7 @@ class ContractRunner:
         assert b"access: 1" in serial
         assert b"clock: 1" in serial
         assert b"gettimeofday: 1" in serial
-        assert ONBOX_FUNC_PASS.encode() in serial
+        assert ONBOX_DATA_PASS.encode() in serial
         assert ONBOX_CC_PROBE_SUCCESS.encode() in serial
         assert ONBOX_WMSG.encode() in serial
         assert ONBOX_NMSG.encode() in serial
@@ -678,7 +678,7 @@ class ContractRunner:
         assert b"run: 1" in serial
         assert b"exit: 42" in serial
         assert b"write: 1" in serial
-        assert b"func: 1" in serial
+        assert b"data: 1" in serial
         assert b"edge: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
@@ -688,7 +688,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M99 on-box mini-cc func+edge"
+            "kernel PASS + net + M75–M100 on-box mini-cc data+edge"
         )
 
     def negative_evidence(self, work: Path) -> str:

@@ -92,6 +92,31 @@ int main(void) {
             "m99-recur") != 0) {
         fails++;
     }
+    if (expect_ok(
+            "CXC_A2\n"
+            "struct Pt {\n"
+            "x;\n"
+            "y;\n"
+            "};\n"
+            "Pt p;\n"
+            "p.x=5;\n"
+            "p.y=7;\n"
+            "q=&p.x;\n"
+            "*q=*q+1;\n"
+            "n=p.x*p.y;\n"
+            "print n;\n"
+            "return n;\n",
+            "m100-data") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nstruct Pt { x; };\nPt p;\np.z=1;\nreturn 0;\n",
+            "bad-field") != 0) {
+        fails++;
+    }
+    if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {
+        fails++;
+    }
     if (expect_fail("CXC_A2\ninput ;\n", "bad-input") != 0) {
         fails++;
     }

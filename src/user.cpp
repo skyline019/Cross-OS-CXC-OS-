@@ -1919,19 +1919,22 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M99: fn add/mul nested calls → 42; then edge reject.
+    // M100: struct + pointer → 42; then edge reject.
     static const char src_text[] =
         "CXC_A2\n"
-        "fn add(a,b){\n"
-        "return a+b;\n"
-        "}\n"
-        "fn mul(a,b){\n"
-        "return a*b;\n"
-        "}\n"
-        "n=mul(add(3,4),6);\n"
+        "struct Pt {\n"
+        "x;\n"
+        "y;\n"
+        "};\n"
+        "Pt p;\n"
+        "p.x=5;\n"
+        "p.y=7;\n"
+        "q=&p.x;\n"
+        "*q=*q+1;\n"
+        "n=p.x*p.y;\n"
         "print n;\n"
         "if(n==42){\n"
-        "write FN;\n"
+        "write ST;\n"
         "}\n"
         "return n;\n";
     static const char bad_src[] = "CXC_A2\nreturn ;\n";
