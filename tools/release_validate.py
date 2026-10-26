@@ -143,7 +143,7 @@ def profile_ci(work_dir: Path, seed: int, build_type: str, image: Path | None) -
     run_qemu(image, work_dir / "qemu-test")
 
     for name, extra in (
-        ("qemu-64m", ["--memory", "64M"]),
+        ("qemu-128m", ["--memory", "128M"]),
         ("qemu-256m", ["--memory", "256M"]),
         ("qemu-512m-dma-mask", ["--cpu", "qemu64,+x2apic", "--memory", "512M"]),
         ("qemu-xapic", ["--cpu", "qemu64,-x2apic"]),

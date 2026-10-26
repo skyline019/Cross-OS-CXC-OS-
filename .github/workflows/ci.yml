@@ -256,8 +256,9 @@ jobs:
 
       - name: Memory layout matrix
         run: |
+          # M88+: CXCFS 64×128 KiB cache grows BOOTX64; 64M no longer boots.
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --memory 64M --work-dir build/qemu-64m
+            --check --memory 128M --work-dir build/qemu-128m
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
             --check --memory 256M --work-dir build/qemu-256m
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \

@@ -808,7 +808,7 @@ class ContractRunner:
     def run_full(self, loops: int, chaos_runs: int) -> None:
         self.success("correct-xapic", ["正确"])
         self.success("composite-smp16-512", ["复合", "复杂"], "qemu64,+x2apic", 16, "512M")
-        self.success("capability-up-64", ["能力矩阵"], "qemu64,+x2apic", 1, "64M")
+        self.success("capability-up-128", ["能力矩阵"], "qemu64,+x2apic", 1, "128M")
         self.success("capability-smp8-xapic", ["能力矩阵"], "qemu64,-x2apic", 8, "256M")
 
         self.negative("failure-no-edu", ["--no-edu"], expect="CXC_OS_PANIC: EDU")
