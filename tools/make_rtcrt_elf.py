@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ET_REL CRT: ans() calls UND twice via PC32 (cross-#lib). M109."""
+"""ET_REL CRT: ans() calls UND twice via PC32 (cross-#lib). M109+."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ from pathlib import Path
 
 # ans: mov rdi, 21; call twice; ret
 ANS = bytes.fromhex("48C7C715000000E800000000C3")
-# PC32 field sits after the E8 opcode (mov rdi,imm32 is 7 bytes).
-CALL_FIELD = 8
+CALL_FIELD = 8  # PC32 after E8
 
 R_X86_64_PC32 = 2
 SHT_PROGBITS = 1
@@ -22,18 +21,16 @@ SHN_UNDEF = 0
 
 def build() -> bytes:
     text = ANS
-    # strtab: \0 ans \0 twice \0
     strtab = b"\x00ans\x00twice\x00"
     shstr = b"\x00.text\x00.rela.text\x00.shstrtab\x00.symtab\x00.strtab\x00"
 
     ehdr_sz = 64
     off_text = ehdr_sz
-    # syms: null, ans (DEFINED), twice (UND)
     nsym = 3
     rela = struct.pack(
         "<QQq",
         CALL_FIELD,
-        (2 << 32) | R_X86_64_PC32,  # sym index 2 = twice UND
+        (2 << 32) | R_X86_64_PC32,
         -4,
     )
     off_rela = off_text + len(text)
@@ -59,8 +56,6 @@ def build() -> bytes:
             entsz,
         )
 
-    # 0 null, 1 .text, 2 .rela.text, 3 .shstrtab, 4 .symtab, 5 .strtab
-    # shstr: 1=.text 7=.rela.text 18=.shstrtab 28=.symtab 36=.strtab
     shdrs = b"".join(
         [
             bytes(64),
@@ -72,7 +67,6 @@ def build() -> bytes:
         ]
     )
 
-    # null + ans GLOBAL FUNC shndx=1 + twice GLOBAL FUNC UND
     symtab = (
         bytes(24)
         + struct.pack("<IBBHQQ", 1, (1 << 4) | 2, 0, 1, 0, len(text))

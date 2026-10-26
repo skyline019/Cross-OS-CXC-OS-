@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): #link + #lib cross-object UND PC32/PLT32 + CRT plant. */
+/* CXC mini-cc (A2): #lib CRT cwrite + string escapes + cross-#lib UND. */
 #pragma once
 
 #ifdef CC_HOST

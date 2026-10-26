@@ -86,10 +86,27 @@ void cc_lex_next(CcLexer* lx) {
         lx->pos++;
         while (lx->pos < lx->len && lx->src[lx->pos] != '"' &&
                lx->src[lx->pos] != '\n') {
-            if (n < CC_STR_MAX) {
-                lx->str[n++] = lx->src[lx->pos];
+            char ch = lx->src[lx->pos++];
+            if (ch == '\\') {
+                if (lx->pos >= lx->len) {
+                    lx->tok = TOK_EOF;
+                    return;
+                }
+                ch = lx->src[lx->pos++];
+                if (ch == 'n') {
+                    ch = '\n';
+                } else if (ch == 't') {
+                    ch = '\t';
+                } else if (ch == '\\' || ch == '"') {
+                    /* keep ch */
+                } else {
+                    lx->tok = TOK_EOF;
+                    return;
+                }
             }
-            lx->pos++;
+            if (n < CC_STR_MAX) {
+                lx->str[n++] = ch;
+            }
         }
         if (lx->pos >= lx->len || lx->src[lx->pos] != '"') {
             lx->tok = TOK_EOF;

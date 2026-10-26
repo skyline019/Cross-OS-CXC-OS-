@@ -345,6 +345,34 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "#lib \"crt.elf\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn ans();\n"
+            "import fn cwrite(p,n);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=ans();\n"
+            "cwrite(\"WMSG:IO\\n\", 8);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m110-libc") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"io.elf\"\n"
+            "import fn cwrite(p,n);\n"
+            "fn main(){\n"
+            "cwrite(\"AB\", 2);\n"
+            "return 0;\n"
+            "}\n",
+            "m110-cwrite") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -417,6 +445,12 @@ int main(void) {
             "import fn ans();\n"
             "fn main(){\nreturn ans();\n}\n",
             "bad-cross-und") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\n"
+            "fn main(){\nreturn \"bad\\q\";\n}\n",
+            "bad-escape") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

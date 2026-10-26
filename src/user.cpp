@@ -1,5 +1,6 @@
 #include <cxc/user.hpp>
 #include <cxc/rtcrt_elf.hpp>
+#include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
 
 #include <cxc/cpu.hpp>
@@ -1921,19 +1922,19 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M109: cross-#lib UND (crt ans→twice) + math → 42; edge + DMSG.
+    // M110: call-stmt + cwrite IO lib + \\n escape + cross-#lib; edge DMSG.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"rt.elf\"\n"
         "#lib \"crt.elf\"\n"
+        "#lib \"io.elf\"\n"
         "import fn ans();\n"
+        "import fn cwrite(p,n);\n"
         "fn main(){\n"
         "int n;\n"
         "n=ans();\n"
+        "cwrite(\"WMSG:IO\\n\", 8);\n"
         "print n;\n"
-        "if(n==42){\n"
-        "write \"XL\";\n"
-        "}\n"
         "return n;\n"
         "}\n";
     static const char bad_src[] =
@@ -1990,6 +1991,24 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(crtfd)) != 0) {
             result.failure = 42;
+            return false;
+        }
+    }
+    {
+        const int64_t iofd = fs::open_path(
+            "disk/io.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (iofd < 0) {
+            result.failure = 43;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(iofd), rtio_elf, rtio_elf_size) !=
+            static_cast<int64_t>(rtio_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(iofd));
+            result.failure = 44;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(iofd)) != 0) {
+            result.failure = 45;
             return false;
         }
     }

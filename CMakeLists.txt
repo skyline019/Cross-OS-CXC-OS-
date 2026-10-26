@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.0.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.1.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1552,6 +1552,9 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtcrt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtcrt_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/rtcrt_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtio.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtio_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/rtio_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

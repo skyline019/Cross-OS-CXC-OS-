@@ -91,6 +91,8 @@ def main() -> int:
         (disk / "rt.elf").write_bytes(rt.read_bytes())
         crt = ROOT / "user" / "prebuilt" / "rtcrt.elf"
         (disk / "crt.elf").write_bytes(crt.read_bytes())
+        io = ROOT / "user" / "prebuilt" / "rtio.elf"
+        (disk / "io.elf").write_bytes(io.read_bytes())
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

@@ -7,6 +7,9 @@ typedef struct CcParser {
 
 static void fail(CcParser* p) {
     p->em->failed = 1;
+    if (p->em->fail_code == 0) {
+        p->em->fail_code = 30; /* parse fail (debug) */
+    }
 }
 
 static int accept(CcParser* p, int tok) {
@@ -865,6 +868,12 @@ static void parse_stmt(CcParser* p) {
         int gi;
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
+        /* Expression statement: call(...); (libc-style side effects). */
+        if (p->lx->tok == TOK_LPAREN) {
+            parse_call(p, name);
+            expect(p, TOK_SEMI);
+            return;
+        }
         st = cc_struct_find(p->em, name);
         if (st >= 0) {
             char inst[CC_IDENT_MAX + 1];
