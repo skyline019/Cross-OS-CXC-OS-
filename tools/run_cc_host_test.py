@@ -126,6 +126,15 @@ def main() -> int:
         (disk / "sncmp.o").write_bytes(
             (ROOT / "user" / "prebuilt" / "musl_strncmp.o").read_bytes()
         )
+        (disk / "scat.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strcat.o").read_bytes()
+        )
+        (disk / "schr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strchr.o").read_bytes()
+        )
+        (disk / "snul.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strchrnul.o").read_bytes()
+        )
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

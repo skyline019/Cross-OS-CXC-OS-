@@ -24,6 +24,9 @@ MEMBERS = {
     "strncmp": "strncmp.lo",
     "strcpy": "strcpy.lo",
     "stpcpy": "stpcpy.lo",
+    "strcat": "strcat.lo",
+    "strchr": "strchr.lo",
+    "strchrnul": "strchrnul.lo",
 }
 
 

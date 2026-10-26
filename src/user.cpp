@@ -7,6 +7,9 @@
 #include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
 #include <cxc/musl_strcmp_elf.hpp>
+#include <cxc/musl_strcat_elf.hpp>
+#include <cxc/musl_strchr_elf.hpp>
+#include <cxc/musl_strchrnul_elf.hpp>
 #include <cxc/musl_strcpy_elf.hpp>
 #include <cxc/musl_stpcpy_elf.hpp>
 #include <cxc/musl_strncmp_elf.hpp>
@@ -1934,10 +1937,9 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M125: deferred UND + self ET_REL UND; scpy before stpc; edge.
+    // M126: musl strcat+strchr closure (multi-hop UND); edge.
     static const char lib_text[] =
         "CXC_A2\n"
-        "import fn strncmp(a,b,n);\n"
         "int add(int a, int b){\n"
         "return a+b;\n"
         "}\n"
@@ -1945,33 +1947,38 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "return add(x, 42);\n"
         "}\n"
         "int msg(void){\n"
-        "return \"LU\";\n"
-        "}\n"
-        "int chk(void){\n"
-        "return strncmp(msg(), \"LU\", 2);\n"
+        "return \"XA\";\n"
         "}\n";
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"lib.o\"\n"
+        "#lib \"scat.o\"\n"
+        "#lib \"schr.o\"\n"
+        "#lib \"snul.o\"\n"
         "#lib \"scpy.o\"\n"
         "#lib \"stpc.o\"\n"
         "#lib \"sncmp.o\"\n"
         "#lib \"slen.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
-        "import fn chk();\n"
         "import fn msg();\n"
         "import fn strcpy(d,s);\n"
+        "import fn strcat(d,s);\n"
+        "import fn strchr(s,c);\n"
+        "import fn strncmp(a,b,n);\n"
         "import fn strlen(s);\n"
         "import fn cwrite(p,n);\n"
         "int main(void){\n"
-        "int buf[4];\n"
+        "int buf[8];\n"
+        "int p;\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:LU\\n\");\n"
-        "cwrite(\"WMSG:LU\\n\", m);\n"
+        "m=strlen(\"WMSG:SK\\n\");\n"
+        "cwrite(\"WMSG:SK\\n\", m);\n"
         "strcpy(&buf[0], msg());\n"
-        "n=chk();\n"
+        "strcat(&buf[0], \"YZ\");\n"
+        "p=strchr(&buf[0], 65);\n"
+        "n=strncmp(p, \"AYZ\", 3);\n"
         "n=bump(n);\n"
         "print n;\n"
         "return n;\n"
@@ -2277,6 +2284,63 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(nfd)) != 0) {
             result.failure = 84;
+            return false;
+        }
+    }
+    {
+        const int64_t tfd = fs::open_path(
+            "disk/scat.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (tfd < 0) {
+            result.failure = 85;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(tfd), musl_strcat_elf,
+                         musl_strcat_elf_size) !=
+            static_cast<int64_t>(musl_strcat_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(tfd));
+            result.failure = 86;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(tfd)) != 0) {
+            result.failure = 87;
+            return false;
+        }
+    }
+    {
+        const int64_t rfd = fs::open_path(
+            "disk/schr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (rfd < 0) {
+            result.failure = 88;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(rfd), musl_strchr_elf,
+                         musl_strchr_elf_size) !=
+            static_cast<int64_t>(musl_strchr_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(rfd));
+            result.failure = 89;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(rfd)) != 0) {
+            result.failure = 90;
+            return false;
+        }
+    }
+    {
+        const int64_t ufd2 = fs::open_path(
+            "disk/snul.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ufd2 < 0) {
+            result.failure = 91;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ufd2), musl_strchrnul_elf,
+                         musl_strchrnul_elf_size) !=
+            static_cast<int64_t>(musl_strchrnul_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ufd2));
+            result.failure = 92;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ufd2)) != 0) {
+            result.failure = 93;
             return false;
         }
     }

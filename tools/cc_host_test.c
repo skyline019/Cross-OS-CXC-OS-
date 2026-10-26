@@ -671,6 +671,69 @@ int main(void) {
         fails++;
     }
     {
+        unsigned char* o = 0;
+        size_t on = 0;
+        FILE* f;
+        const char* lib =
+            "CXC_A2\n"
+            "int add(int a, int b){\n"
+            "return a+b;\n"
+            "}\n"
+            "int bump(int x){\n"
+            "return add(x, 42);\n"
+            "}\n"
+            "int msg(void){\n"
+            "return \"XA\";\n"
+            "}\n";
+        if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m126-skit-obj: compile_obj\n");
+            fails++;
+        } else {
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m126-skit-obj: write lib.o\n");
+                fails++;
+            }
+        }
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"scat.o\"\n"
+            "#lib \"schr.o\"\n"
+            "#lib \"snul.o\"\n"
+            "#lib \"scpy.o\"\n"
+            "#lib \"stpc.o\"\n"
+            "#lib \"sncmp.o\"\n"
+            "#lib \"slen.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn msg();\n"
+            "import fn strcpy(d,s);\n"
+            "import fn strcat(d,s);\n"
+            "import fn strchr(s,c);\n"
+            "import fn strncmp(a,b,n);\n"
+            "import fn strlen(s);\n"
+            "import fn cwrite(p,n);\n"
+            "int main(void){\n"
+            "int buf[8];\n"
+            "int p;\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:SK\\n\");\n"
+            "cwrite(\"WMSG:SK\\n\", m);\n"
+            "strcpy(&buf[0], msg());\n"
+            "strcat(&buf[0], \"YZ\");\n"
+            "p=strchr(&buf[0], 65);\n"
+            "n=strncmp(p, \"AYZ\", 3);\n"
+            "n=bump(n);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m126-strcat-strchr-kit") != 0) {
+        fails++;
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;
