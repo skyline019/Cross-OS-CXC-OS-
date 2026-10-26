@@ -1919,22 +1919,22 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M100: struct + pointer → 42; then edge reject.
+    // M101: #include + for → 42; then edge reject.
+    static const char lib_text[] =
+        "fn add(a,b){\n"
+        "return a+b;\n"
+        "}\n";
     static const char src_text[] =
         "CXC_A2\n"
-        "struct Pt {\n"
-        "x;\n"
-        "y;\n"
-        "};\n"
-        "Pt p;\n"
-        "p.x=5;\n"
-        "p.y=7;\n"
-        "q=&p.x;\n"
-        "*q=*q+1;\n"
-        "n=p.x*p.y;\n"
+        "#include \"lib.cx\"\n"
+        "n=0;\n"
+        "for(i=0;i<3;i=i+1){\n"
+        "n=n+10;\n"
+        "}\n"
+        "n=add(n,12);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write ST;\n"
+        "write IN;\n"
         "}\n"
         "return n;\n";
     static const char bad_src[] = "CXC_A2\nreturn ;\n";
@@ -1948,6 +1948,26 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     if (cc_size > cxcfs::max_file_bytes) {
         result.failure = 2;
         return false;
+    }
+
+    {
+        const int64_t lfd = fs::open_path(
+            "disk/lib.cx", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (lfd < 0) {
+            result.failure = 16;
+            return false;
+        }
+        const size_t lib_len = sizeof(lib_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(lfd), lib_text, lib_len) !=
+            static_cast<int64_t>(lib_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(lfd));
+            result.failure = 17;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(lfd)) != 0) {
+            result.failure = 18;
+            return false;
+        }
     }
 
     const int64_t sfd = fs::open_path(

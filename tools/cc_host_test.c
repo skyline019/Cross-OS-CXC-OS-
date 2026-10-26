@@ -109,9 +109,52 @@ int main(void) {
             "m100-data") != 0) {
         fails++;
     }
+    if (expect_ok(
+            "CXC_A2\n"
+            "n=0;\n"
+            "for(i=0;i<3;i=i+1){\n"
+            "n=n+10;\n"
+            "}\n"
+            "return n+12;\n",
+            "m101-for") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#include \"lib.cx\"\n"
+            "n=0;\n"
+            "for(i=0;i<3;i=i+1){\n"
+            "n=n+10;\n"
+            "}\n"
+            "n=add(n,12);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write IN;\n"
+            "}\n"
+            "return n;\n",
+            "m101-incl") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "a[3];\n"
+            "a[0]=7;\n"
+            "a[1]=14;\n"
+            "a[2]=21;\n"
+            "p=&a[0];\n"
+            "n=p[0]+p[1]+p[2];\n"
+            "return n;\n",
+            "m101-ptr-idx") != 0) {
+        fails++;
+    }
     if (expect_fail(
             "CXC_A2\nstruct Pt { x; };\nPt p;\np.z=1;\nreturn 0;\n",
             "bad-field") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\n#include \"missing.cx\"\nreturn 0;\n",
+            "bad-include") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

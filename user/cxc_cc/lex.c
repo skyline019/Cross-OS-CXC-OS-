@@ -41,6 +41,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_FN;
     } else if (strcmp(lx->text, "struct") == 0) {
         lx->tok = TOK_KW_STRUCT;
+    } else if (strcmp(lx->text, "for") == 0) {
+        lx->tok = TOK_KW_FOR;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {

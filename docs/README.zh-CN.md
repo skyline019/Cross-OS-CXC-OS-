@@ -125,7 +125,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box lang (M97) | `break`/`continue`/`&&`/`||`/`!`/`-`/数组；曾用 `ONBOX_LANG_PASS` |
 | on-box iorw (M98) | `input`/`print` + `disk/io.in`；曾用 `ONBOX_IORW_PASS` |
 | on-box func (M99) | `fn` 定义/调用/递归；曾用 `ONBOX_FUNC_PASS` |
-| on-box data (M100) | `struct`/`&`/`*`；`ONBOX_DATA_PASS` + `edge: 1`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
+| on-box data (M100) | `struct`/`&`/`*`；曾用 `ONBOX_DATA_PASS` + `edge: 1` |
+| on-box incl (M101) | `#include`/`for`/`ptr[i]`；`ONBOX_INCL_PASS` + `edge: 1`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -314,4 +315,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **多文件/CRT 链接**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；下一正式中场约 **M104**）。须保持 M13–M100 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **CRT/musl 链接**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；下一正式中场约 **M104**）。须保持 M13–M101 回归证据。

@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): control, arrays, I/O, functions, struct/pointer. */
+/* CXC mini-cc (A2): control, arrays, I/O, fn/struct, #include/for/ptr[i]. */
 #pragma once
 
 #ifdef CC_HOST
@@ -44,6 +44,7 @@ enum CcTok {
     TOK_KW_CONTINUE,
     TOK_KW_FN,
     TOK_KW_STRUCT,
+    TOK_KW_FOR,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -90,6 +91,8 @@ typedef struct CcLoop {
     size_t cont_at;
     size_t brk_at[CC_BREAK_MAX];
     int nbrk;
+    size_t cont_patch[CC_BREAK_MAX];
+    int ncont;
 } CcLoop;
 
 typedef struct CcFn {
@@ -166,6 +169,9 @@ void cc_emit_input_slot(CcEmit* em, int slot);
 void cc_emit_exit_rax(CcEmit* em);
 void cc_reloc_reset(void);
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
+
+int cc_preprocess(const char* in, size_t in_len, char* out, size_t out_cap,
+                  size_t* out_len);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);

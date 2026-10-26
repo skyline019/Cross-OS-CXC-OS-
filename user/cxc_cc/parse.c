@@ -115,13 +115,29 @@ static void parse_primary(CcParser* p) {
             return;
         }
         if (accept(p, TOK_LBRACK)) {
-            if (p->em->locals[idx].count < 1) {
+            if (p->em->locals[idx].stype >= 0) {
                 fail(p);
                 return;
             }
-            parse_expr(p);
-            expect(p, TOK_RBRACK);
-            cc_emit_index_load(p->em, p->em->locals[idx].slot);
+            if (p->em->locals[idx].count > 1) {
+                parse_expr(p);
+                expect(p, TOK_RBRACK);
+                cc_emit_index_load(p->em, p->em->locals[idx].slot);
+                return;
+            }
+            if (p->em->locals[idx].count == 1) {
+                /* pointer word index: *(p + i) with 8-byte scale */
+                cc_emit_load_local(p->em, p->em->locals[idx].slot);
+                cc_emit_push_rax(p->em);
+                parse_expr(p);
+                expect(p, TOK_RBRACK);
+                cc_emit_bytes(p->em, "\x48\xC1\xE0\x03", 4); /* shl rax, 3 */
+                cc_emit_pop_rcx(p->em);
+                cc_emit_bytes(p->em, "\x48\x01\xC8", 3); /* add rax, rcx */
+                cc_emit_load_indirect(p->em);
+                return;
+            }
+            fail(p);
             return;
         }
         if (accept(p, TOK_DOT)) {
@@ -339,7 +355,21 @@ static int loop_push(CcEmit* em, size_t cont_at) {
     lp = &em->loops[em->nloops++];
     lp->cont_at = cont_at;
     lp->nbrk = 0;
+    lp->ncont = 0;
     return 0;
+}
+
+static void loop_patch_continues(CcEmit* em, size_t target) {
+    CcLoop* lp;
+    int i;
+    if (em->nloops <= 0) {
+        return;
+    }
+    lp = &em->loops[em->nloops - 1];
+    for (i = 0; i < lp->ncont; i++) {
+        patch_rel32(em, lp->cont_patch[i], target);
+    }
+    lp->ncont = 0;
 }
 
 static void loop_pop(CcEmit* em, size_t exit_at) {
@@ -421,8 +451,96 @@ static void parse_stmt(CcParser* p) {
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         parse_stmt(p);
+        loop_patch_continues(p->em, loop);
         back = emit_jmp32(p->em);
         patch_rel32(p->em, back, loop);
+        patch_rel32(p->em, je_at, p->em->code_len);
+        loop_pop(p->em, p->em->code_len);
+        return;
+    }
+    if (accept(p, TOK_KW_FOR)) {
+        size_t cond_at;
+        size_t je_at;
+        size_t step_at;
+        size_t back;
+        char name[CC_IDENT_MAX + 1];
+        int slot;
+        CcLexer step_lx;
+        CcLexer after_paren;
+        int depth;
+        expect(p, TOK_LPAREN);
+        if (!accept(p, TOK_SEMI)) {
+            if (p->lx->tok != TOK_IDENT) {
+                fail(p);
+                return;
+            }
+            memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+            cc_lex_next(p->lx);
+            expect(p, TOK_ASSIGN);
+            parse_expr(p);
+            expect(p, TOK_SEMI);
+            slot = cc_local_slot(p->em, name, 1);
+            if (slot < 0) {
+                fail(p);
+                return;
+            }
+            cc_emit_store_local(p->em, slot);
+        }
+        if (loop_push(p->em, 0) != 0) {
+            return;
+        }
+        cond_at = p->em->code_len;
+        if (accept(p, TOK_SEMI)) {
+            cc_emit_mov_eax_imm(p->em, 1);
+        } else {
+            parse_expr(p);
+            expect(p, TOK_SEMI);
+        }
+        cc_emit_bytes(p->em, "\x85\xC0", 2);
+        je_at = emit_je32(p->em);
+        /* Save step clause, skip to ')' then parse body, then emit step. */
+        step_lx = *p->lx;
+        depth = 1;
+        while (!p->em->failed && p->lx->tok != TOK_EOF && depth > 0) {
+            if (p->lx->tok == TOK_LPAREN) {
+                depth++;
+            } else if (p->lx->tok == TOK_RPAREN) {
+                depth--;
+                if (depth == 0) {
+                    cc_lex_next(p->lx);
+                    break;
+                }
+            }
+            cc_lex_next(p->lx);
+        }
+        if (depth != 0) {
+            fail(p);
+            return;
+        }
+        parse_stmt(p);
+        after_paren = *p->lx;
+        *p->lx = step_lx;
+        step_at = p->em->code_len;
+        loop_patch_continues(p->em, step_at);
+        if (p->lx->tok != TOK_RPAREN) {
+            if (p->lx->tok != TOK_IDENT) {
+                fail(p);
+                return;
+            }
+            memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+            cc_lex_next(p->lx);
+            expect(p, TOK_ASSIGN);
+            parse_expr(p);
+            slot = cc_local_slot(p->em, name, 1);
+            if (slot < 0) {
+                fail(p);
+                return;
+            }
+            cc_emit_store_local(p->em, slot);
+        }
+        *p->lx = after_paren;
+        back = emit_jmp32(p->em);
+        patch_rel32(p->em, back, cond_at);
         patch_rel32(p->em, je_at, p->em->code_len);
         loop_pop(p->em, p->em->code_len);
         return;
@@ -445,14 +563,20 @@ static void parse_stmt(CcParser* p) {
         return;
     }
     if (accept(p, TOK_KW_CONTINUE)) {
+        CcLoop* lp;
         size_t at;
         expect(p, TOK_SEMI);
         if (p->em->nloops <= 0) {
             fail(p);
             return;
         }
+        lp = &p->em->loops[p->em->nloops - 1];
+        if (lp->ncont >= CC_BREAK_MAX) {
+            fail(p);
+            return;
+        }
         at = emit_jmp32(p->em);
-        patch_rel32(p->em, at, p->em->loops[p->em->nloops - 1].cont_at);
+        lp->cont_patch[lp->ncont++] = at;
         return;
     }
     if (accept(p, TOK_KW_WRITE)) {
@@ -584,18 +708,42 @@ static void parse_stmt(CcParser* p) {
                 return;
             }
             idx = cc_local_find(p->em, name);
-            if (idx < 0 || p->em->locals[idx].count < 1) {
+            if (idx < 0) {
                 fail(p);
                 return;
             }
-            parse_expr(p);
-            expect(p, TOK_RBRACK);
-            expect(p, TOK_ASSIGN);
-            cc_emit_push_rax(p->em);
-            parse_expr(p);
-            expect(p, TOK_SEMI);
-            cc_emit_pop_rcx(p->em);
-            cc_emit_index_store(p->em, p->em->locals[idx].slot);
+            if (p->em->locals[idx].stype >= 0) {
+                fail(p);
+                return;
+            }
+            if (p->em->locals[idx].count > 1) {
+                parse_expr(p);
+                expect(p, TOK_RBRACK);
+                expect(p, TOK_ASSIGN);
+                cc_emit_push_rax(p->em);
+                parse_expr(p);
+                expect(p, TOK_SEMI);
+                cc_emit_pop_rcx(p->em);
+                cc_emit_index_store(p->em, p->em->locals[idx].slot);
+                return;
+            }
+            if (p->em->locals[idx].count == 1) {
+                parse_expr(p);
+                expect(p, TOK_RBRACK);
+                expect(p, TOK_ASSIGN);
+                cc_emit_push_rax(p->em); /* index */
+                cc_emit_load_local(p->em, p->em->locals[idx].slot);
+                cc_emit_pop_rcx(p->em);
+                cc_emit_bytes(p->em, "\x48\xC1\xE1\x03", 4); /* shl rcx, 3 */
+                cc_emit_bytes(p->em, "\x48\x01\xC8", 3);     /* add rax, rcx */
+                cc_emit_push_rax(p->em); /* addr */
+                parse_expr(p);
+                expect(p, TOK_SEMI);
+                cc_emit_pop_rcx(p->em);
+                cc_emit_store_indirect(p->em);
+                return;
+            }
+            fail(p);
             return;
         }
         expect(p, TOK_ASSIGN);
@@ -742,9 +890,11 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     size_t i;
     size_t jmp_entry;
     size_t entry_at;
+    size_t expanded_len = 0;
     static CcEmit em;
     static unsigned char code_buf[CC_CODE_MAX];
     static unsigned char data_buf[CC_DATA_MAX];
+    static char expanded[CC_SRC_MAX];
 
     memset(&em, 0, sizeof(em));
     em.code_cap = CC_CODE_MAX;
@@ -761,6 +911,13 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nstructs = 0;
     em.failed = 0;
     cc_reloc_reset();
+
+    if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
+        0) {
+        return -1;
+    }
+    src = expanded;
+    len = expanded_len;
 
     if (len < sizeof(magic) - 1) {
         return -1;

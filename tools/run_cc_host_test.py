@@ -18,6 +18,7 @@ SOURCES = [
     CC_DIR / "lex.c",
     CC_DIR / "parse.c",
     CC_DIR / "emit.c",
+    CC_DIR / "prep.c",
 ]
 
 
@@ -76,8 +77,32 @@ def main() -> int:
             *[to_build_path(p, use_wsl) for p in SOURCES],
         ]
         subprocess.check_call(cmd)
-        run_cmd = [*prefix, to_build_path(out, use_wsl)] if use_wsl else [str(out)]
-        result = subprocess.run(run_cmd, check=False, capture_output=True, text=True)
+        # M101: plant disk/lib.cx for #include host coverage (run cwd = work).
+        disk = work / "disk"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "lib.cx").write_text(
+            "fn add(a,b){\nreturn a+b;\n}\n", encoding="utf-8"
+        )
+        if use_wsl:
+            work_u = to_build_path(work, True)
+            out_u = to_build_path(out, True)
+            run_cmd = [
+                *prefix,
+                "sh",
+                "-c",
+                f"cd '{work_u}' && '{out_u}'",
+            ]
+            result = subprocess.run(
+                run_cmd, check=False, capture_output=True, text=True
+            )
+        else:
+            result = subprocess.run(
+                [str(out)],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=str(work),
+            )
         sys.stdout.write(result.stdout)
         sys.stderr.write(result.stderr)
         if result.returncode != 0:

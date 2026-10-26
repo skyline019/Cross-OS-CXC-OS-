@@ -1,0 +1,5 @@
+feat: M101 mini-cc #include/for/ptr[i] ONBOX_INCL_PASS (v1.2.0)
+
+Expand freestanding cxc-cc with preprocess includes, for-loops, and
+word-scale pointer indexing; plant disk/lib.cx in on-box and host tests;
+contract/CI evidence is WMSG:IN + ONBOX_INCL_PASS + incl:1 + edge:1.
