@@ -338,6 +338,30 @@ static void parse_stmt(CcParser* p) {
         cc_emit_write_lit2(p->em, lit);
         return;
     }
+    if (accept(p, TOK_KW_PRINT)) {
+        parse_expr(p);
+        expect(p, TOK_SEMI);
+        cc_emit_print_rax(p->em);
+        return;
+    }
+    if (accept(p, TOK_KW_INPUT)) {
+        char name[CC_IDENT_MAX + 1];
+        int slot;
+        if (p->lx->tok != TOK_IDENT) {
+            fail(p);
+            return;
+        }
+        memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+        cc_lex_next(p->lx);
+        expect(p, TOK_SEMI);
+        slot = cc_local_slot(p->em, name, 1);
+        if (slot < 0) {
+            fail(p);
+            return;
+        }
+        cc_emit_input_slot(p->em, slot);
+        return;
+    }
     if (accept(p, TOK_KW_RETURN)) {
         parse_expr(p);
         expect(p, TOK_SEMI);

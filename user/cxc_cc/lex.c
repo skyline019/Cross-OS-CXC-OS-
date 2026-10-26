@@ -33,6 +33,10 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_RETURN;
     } else if (strcmp(lx->text, "write") == 0) {
         lx->tok = TOK_KW_WRITE;
+    } else if (strcmp(lx->text, "print") == 0) {
+        lx->tok = TOK_KW_PRINT;
+    } else if (strcmp(lx->text, "input") == 0) {
+        lx->tok = TOK_KW_INPUT;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {

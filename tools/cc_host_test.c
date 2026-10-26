@@ -63,6 +63,21 @@ int main(void) {
             "logic-unary") != 0) {
         fails++;
     }
+    if (expect_ok(
+            "CXC_A2\ninput n;\nprint n;\nif(n==35){\nwrite IO;\n}\n"
+            "return n+7;\n",
+            "m98-iorw") != 0) {
+        fails++;
+    }
+    if (expect_ok("CXC_A2\nprint 0;\nreturn 0;\n", "print-zero") != 0) {
+        fails++;
+    }
+    if (expect_fail("CXC_A2\ninput ;\n", "bad-input") != 0) {
+        fails++;
+    }
+    if (expect_fail("CXC_A2\nprint ;\n", "bad-print") != 0) {
+        fails++;
+    }
     if (expect_fail("CXC_A2\nreturn ;\n", "bad-return") != 0) {
         fails++;
     }

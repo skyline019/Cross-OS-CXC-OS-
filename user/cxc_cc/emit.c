@@ -1,9 +1,20 @@
 #include "cxc_cc/cc.h"
 
 enum {
+    SYS_READ = 0,
     SYS_WRITE = 1,
+    SYS_OPEN = 2,
+    SYS_CLOSE = 3,
     SYS_EXIT = 60
 };
+
+static void patch_rel32_local(CcEmit* em, size_t at, size_t target) {
+    int rel = (int)(target - (at + 4));
+    em->code[at] = (unsigned char)(rel);
+    em->code[at + 1] = (unsigned char)(rel >> 8);
+    em->code[at + 2] = (unsigned char)(rel >> 16);
+    em->code[at + 3] = (unsigned char)(rel >> 24);
+}
 
 int cc_local_find(CcEmit* em, const char* name) {
     int i;
@@ -225,7 +236,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_LANG_PASS\n";
+    static const char pass[] = "ONBOX_IORW_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
@@ -237,6 +248,134 @@ void cc_emit_write_pass(CcEmit* em) {
     cc_emit_byte(em, 0xBA);
     cc_emit_u32(em, (unsigned)(sizeof(pass) - 1));
     cc_emit_int80(em);
+}
+
+void cc_emit_print_rax(CcEmit* em) {
+    /* rax → stdout "NMSG:<digits>\n" using a 40-byte stack scratch. */
+    size_t jz_zero;
+    size_t jmp_fin;
+    size_t loop_at;
+    size_t jnz_loop;
+    cc_emit_bytes(em, "\x48\x83\xEC\x28", 4);       /* sub rsp, 40 */
+    cc_emit_bytes(em, "\x48\x89\x44\x24\x20", 5);   /* mov [rsp+32], rax */
+    cc_emit_bytes(em, "\x48\x8D\x5C\x24\x1F", 5);   /* lea rbx, [rsp+31] */
+    cc_emit_bytes(em, "\xC6\x03\x0A", 3);           /* mov byte [rbx], '\n' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);           /* dec rbx */
+    cc_emit_bytes(em, "\x8B\x44\x24\x20", 4);       /* mov eax, [rsp+32] */
+    cc_emit_bytes(em, "\x85\xC0", 2);               /* test eax, eax */
+    cc_emit_bytes(em, "\x0F\x84", 2);
+    jz_zero = em->code_len;
+    cc_emit_i32(em, 0);
+    loop_at = em->code_len;
+    cc_emit_bytes(em, "\x31\xD2", 2);               /* xor edx, edx */
+    cc_emit_bytes(em, "\xB9\x0A\x00\x00\x00", 5);   /* mov ecx, 10 */
+    cc_emit_bytes(em, "\xF7\xF1", 2);               /* div ecx */
+    cc_emit_bytes(em, "\x80\xC2\x30", 3);           /* add dl, '0' */
+    cc_emit_bytes(em, "\x88\x13", 2);               /* mov [rbx], dl */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);           /* dec rbx */
+    cc_emit_bytes(em, "\x85\xC0", 2);               /* test eax, eax */
+    cc_emit_bytes(em, "\x0F\x85", 2);
+    jnz_loop = em->code_len;
+    cc_emit_i32(em, 0);
+    patch_rel32_local(em, jnz_loop, loop_at);
+    cc_emit_byte(em, 0xE9);
+    jmp_fin = em->code_len;
+    cc_emit_i32(em, 0);
+    patch_rel32_local(em, jz_zero, em->code_len);
+    cc_emit_bytes(em, "\xC6\x03\x30", 3);           /* mov byte [rbx], '0' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);           /* dec rbx */
+    patch_rel32_local(em, jmp_fin, em->code_len);
+    /* prefix NMSG: leftward */
+    cc_emit_bytes(em, "\xC6\x03\x3A", 3); /* ':' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);
+    cc_emit_bytes(em, "\xC6\x03\x47", 3); /* 'G' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);
+    cc_emit_bytes(em, "\xC6\x03\x53", 3); /* 'S' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);
+    cc_emit_bytes(em, "\xC6\x03\x4D", 3); /* 'M' */
+    cc_emit_bytes(em, "\x48\xFF\xCB", 3);
+    cc_emit_bytes(em, "\xC6\x03\x4E", 3); /* 'N' */
+    cc_emit_bytes(em, "\x48\x89\xDE", 3);           /* mov rsi, rbx */
+    cc_emit_bytes(em, "\x48\x8D\x54\x24\x20", 5);   /* lea rdx, [rsp+32] */
+    cc_emit_bytes(em, "\x48\x29\xF2", 3);           /* sub rdx, rsi */
+    cc_emit_mov_eax_imm(em, SYS_WRITE);
+    cc_emit_mov_edi_imm(em, 1);
+    cc_emit_int80(em);
+    cc_emit_bytes(em, "\x48\x83\xC4\x28", 4); /* add rsp, 40 */
+}
+
+void cc_emit_input_slot(CcEmit* em, int slot) {
+    /* open("disk/io.in"), read decimal, store local slot. */
+    static const char path[] = "disk/io.in";
+    size_t data_at = cc_data_push(em, path, sizeof(path));
+    size_t lea_at;
+    size_t js_fail;
+    size_t jmp_store;
+    size_t parse_at;
+    size_t ja_end;
+    size_t jb_end;
+    size_t jmp_parse;
+
+    cc_emit_mov_eax_imm(em, SYS_OPEN);
+    cc_emit_bytes(em, "\x48\x8D\x3D", 3); /* lea rdi, [rip+path] */
+    lea_at = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_reloc_add(lea_at, data_at);
+    cc_emit_bytes(em, "\x31\xF6", 2); /* xor esi, esi  O_RDONLY */
+    cc_emit_bytes(em, "\x31\xD2", 2); /* xor edx, edx */
+    cc_emit_int80(em);
+    cc_emit_bytes(em, "\x85\xC0", 2); /* test eax, eax */
+    cc_emit_bytes(em, "\x0F\x88", 2); /* js fail */
+    js_fail = em->code_len;
+    cc_emit_i32(em, 0);
+
+    cc_emit_byte(em, 0x50); /* push rax = fd */
+    cc_emit_bytes(em, "\x48\x83\xEC\x10", 4); /* sub rsp, 16 */
+    cc_emit_mov_eax_imm(em, SYS_READ);
+    cc_emit_bytes(em, "\x8B\x7C\x24\x10", 4); /* mov edi, [rsp+16] fd */
+    cc_emit_bytes(em, "\x48\x89\xE6", 3);     /* mov rsi, rsp */
+    cc_emit_byte(em, 0xBA);
+    cc_emit_u32(em, 15);
+    cc_emit_int80(em);
+
+    cc_emit_bytes(em, "\x31\xC0", 2);         /* xor eax, eax result */
+    cc_emit_bytes(em, "\x48\x89\xE6", 3);     /* mov rsi, rsp */
+    parse_at = em->code_len;
+    cc_emit_bytes(em, "\x0F\xB6\x0E", 3);     /* movzx ecx, byte [rsi] */
+    cc_emit_bytes(em, "\x83\xF9\x30", 3);     /* cmp ecx, '0' */
+    cc_emit_bytes(em, "\x0F\x82", 2);         /* jb end */
+    jb_end = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_emit_bytes(em, "\x83\xF9\x39", 3); /* cmp ecx, '9' */
+    cc_emit_bytes(em, "\x0F\x87", 2);     /* ja end */
+    ja_end = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_emit_bytes(em, "\x83\xE9\x30", 3);           /* sub ecx, '0' */
+    cc_emit_bytes(em, "\x69\xC0\x0A\x00\x00\x00", 6); /* imul eax, eax, 10 */
+    cc_emit_bytes(em, "\x01\xC8", 2);               /* add eax, ecx */
+    cc_emit_bytes(em, "\x48\xFF\xC6", 3);           /* inc rsi */
+    cc_emit_byte(em, 0xE9);
+    jmp_parse = em->code_len;
+    cc_emit_i32(em, 0);
+    patch_rel32_local(em, jmp_parse, parse_at);
+    patch_rel32_local(em, jb_end, em->code_len);
+    patch_rel32_local(em, ja_end, em->code_len);
+
+    cc_emit_bytes(em, "\x89\xC3", 2); /* mov ebx, eax keep value */
+    cc_emit_mov_eax_imm(em, SYS_CLOSE);
+    cc_emit_bytes(em, "\x8B\x7C\x24\x10", 4); /* mov edi, [rsp+16] */
+    cc_emit_int80(em);
+    cc_emit_bytes(em, "\x48\x83\xC4\x10", 4); /* add rsp, 16 */
+    cc_emit_byte(em, 0x59);                   /* pop rcx discard fd */
+    cc_emit_bytes(em, "\x89\xD8", 2);         /* mov eax, ebx */
+    cc_emit_byte(em, 0xE9);
+    jmp_store = em->code_len;
+    cc_emit_i32(em, 0);
+
+    patch_rel32_local(em, js_fail, em->code_len);
+    cc_emit_bytes(em, "\x31\xC0", 2); /* xor eax, eax */
+    patch_rel32_local(em, jmp_store, em->code_len);
+    cc_emit_store_local(em, slot);
 }
 
 void cc_emit_exit_rax(CcEmit* em) {
@@ -289,9 +428,9 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     elf[16] = 2;
     elf[18] = 62;
     elf[20] = 1; /* version */
-    /* e_entry */
+    /* e_entry — use ull so host Win32 builds don't trip -Wshift-count-overflow */
     {
-        unsigned long entry = CC_LOAD_VA;
+        unsigned long long entry = (unsigned long long)CC_LOAD_VA;
         size_t o = 24;
         elf[o] = (unsigned char)(entry);
         elf[o + 1] = (unsigned char)(entry >> 8);
@@ -314,9 +453,9 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
        strings in RX (OK read). */
     {
         unsigned char* p = elf + ehdr;
-        unsigned long va = CC_LOAD_VA;
-        unsigned long fsz = body_len;
-        unsigned long msz = memsz - file_off;
+        unsigned long long va = (unsigned long long)CC_LOAD_VA;
+        unsigned long long fsz = (unsigned long long)body_len;
+        unsigned long long msz = (unsigned long long)(memsz - file_off);
         if (msz < fsz) {
             msz = fsz;
         }

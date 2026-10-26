@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 97 / v0.98.0：机上 mini-cc 语言加深（break/&&/数组+边缘）**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 98 / v0.99.0：机上 mini-cc input/print I/O**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS

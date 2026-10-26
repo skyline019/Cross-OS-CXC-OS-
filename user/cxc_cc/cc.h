@@ -34,6 +34,8 @@ enum CcTok {
     TOK_KW_WHILE,
     TOK_KW_RETURN,
     TOK_KW_WRITE,
+    TOK_KW_PRINT,
+    TOK_KW_INPUT,
     TOK_KW_BREAK,
     TOK_KW_CONTINUE,
     TOK_LPAREN,
@@ -121,6 +123,8 @@ void cc_emit_index_store(CcEmit* em, int base_slot);
 void cc_emit_prologue(CcEmit* em);
 void cc_emit_write_lit2(CcEmit* em, const char* lit);
 void cc_emit_write_pass(CcEmit* em);
+void cc_emit_print_rax(CcEmit* em);
+void cc_emit_input_slot(CcEmit* em, int slot);
 void cc_emit_exit_rax(CcEmit* em);
 void cc_reloc_reset(void);
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
