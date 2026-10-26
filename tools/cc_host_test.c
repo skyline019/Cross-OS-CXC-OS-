@@ -375,22 +375,46 @@ int main(void) {
         unsigned char* o = 0;
         size_t on = 0;
         FILE* f;
-        if (cc_compile_obj("CXC_A2\nfn bump(x){\nreturn x+7;\n}\n",
-                           strlen("CXC_A2\nfn bump(x){\nreturn x+7;\n}\n"), &o,
-                           &on) != 0 ||
-            !o || on < 64) {
-            fprintf(stderr, "FAIL ok m113-obj-emit: compile_obj\n");
+        const char* lib =
+            "CXC_A2\n"
+            "int add(int a, int b){\n"
+            "return a+b;\n"
+            "}\n"
+            "int bump(int x){\n"
+            "return add(x, 7);\n"
+            "}\n";
+        if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m114-cfn-obj: compile_obj\n");
             fails++;
         } else if (o[0] != 0x7f || o[16] != 1) {
-            fprintf(stderr, "FAIL ok m113-obj-emit: not ET_REL\n");
+            fprintf(stderr, "FAIL ok m114-cfn-obj: not ET_REL\n");
             fails++;
         } else {
             f = fopen("disk/lib.o", "wb");
             if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
-                fprintf(stderr, "FAIL ok m113-obj-emit: write lib.o\n");
+                fprintf(stderr, "FAIL ok m114-cfn-obj: write lib.o\n");
                 fails++;
             }
         }
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn cwrite(p,n);\n"
+            "import fn strlen(s);\n"
+            "int main(void){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:CF\\n\");\n"
+            "cwrite(\"WMSG:CF\\n\", m);\n"
+            "n=bump(35);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m114-cfn") != 0) {
+        fails++;
     }
     if (expect_ok(
             "CXC_A2\n"

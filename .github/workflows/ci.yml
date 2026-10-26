@@ -263,15 +263,15 @@ jobs:
           grep -F 'access: 1' build/uefi/qemu-test/serial.log
           grep -F 'clock: 1' build/uefi/qemu-test/serial.log
           grep -F 'gettimeofday: 1' build/uefi/qemu-test/serial.log
-          grep -F 'ONBOX_OBJ_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'ONBOX_CFN_PASS' build/uefi/qemu-test/serial.log
           grep -F 'onbox-cc: pass: 1' build/uefi/qemu-test/serial.log
-          grep -F 'WMSG:OB' build/uefi/qemu-test/serial.log
+          grep -F 'WMSG:CF' build/uefi/qemu-test/serial.log
           grep -F 'NMSG:42' build/uefi/qemu-test/serial.log
           grep -F 'DMSG:21' build/uefi/qemu-test/serial.log
           grep -F 'DHINT:UND' build/uefi/qemu-test/serial.log
           grep -F 'exit: 42' build/uefi/qemu-test/serial.log
           grep -F 'write: 1' build/uefi/qemu-test/serial.log
-          grep -F 'obj: 1' build/uefi/qemu-test/serial.log
+          grep -F 'cfn: 1' build/uefi/qemu-test/serial.log
           grep -F 'edge: 1' build/uefi/qemu-test/serial.log
           grep -F 'src: 1' build/uefi/qemu-test/serial.log
           grep -F 'cc: 1' build/uefi/qemu-test/serial.log

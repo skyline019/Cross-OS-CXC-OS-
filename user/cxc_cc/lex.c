@@ -65,6 +65,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_IMPORT;
     } else if (strcmp(lx->text, "typedef") == 0) {
         lx->tok = TOK_KW_TYPEDEF;
+    } else if (strcmp(lx->text, "void") == 0) {
+        lx->tok = TOK_KW_VOID;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {

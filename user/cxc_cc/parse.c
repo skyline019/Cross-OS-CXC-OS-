@@ -1225,10 +1225,98 @@ static void parse_enum_def(CcParser* p) {
     expect(p, TOK_SEMI);
 }
 
-static void parse_global_def(CcParser* p) {
+static void parse_fn_rest(CcParser* p, const char* name, int c_style) {
+    CcFn* fn;
+    int arity = 0;
+    size_t n;
+    int existing;
+
+    existing = cc_fn_find(p->em, name);
+    if (existing >= 0) {
+        if (p->em->fns[existing].defined) {
+            fail(p);
+            return;
+        }
+        fn = &p->em->fns[existing];
+    } else {
+        if (p->em->nfns >= CC_FN_MAX) {
+            fail(p);
+            return;
+        }
+        fn = &p->em->fns[p->em->nfns];
+        n = 0;
+        while (n < CC_IDENT_MAX && name[n] != '\0') {
+            fn->name[n] = name[n];
+            n++;
+        }
+        fn->name[n] = 0;
+        fn->arity = 0;
+        p->em->nfns++;
+    }
+    fn->entry = p->em->code_len;
+    fn->defined = 1;
+    fn->sysv = p->em->obj_mode ? 1 : 0;
+
+    clear_locals(p->em);
+    expect(p, TOK_LPAREN);
+    if (c_style && accept(p, TOK_KW_VOID)) {
+        expect(p, TOK_RPAREN);
+    } else if (p->lx->tok != TOK_RPAREN) {
+        for (;;) {
+            if (arity >= CC_FN_ARGS) {
+                fail(p);
+                return;
+            }
+            if (c_style) {
+                if (!accept_type(p)) {
+                    fail(p);
+                    return;
+                }
+            }
+            if (p->lx->tok != TOK_IDENT) {
+                fail(p);
+                return;
+            }
+            if (cc_local_define(p->em, p->lx->text, 1) < 0) {
+                fail(p);
+                return;
+            }
+            arity++;
+            cc_lex_next(p->lx);
+            if (!accept(p, TOK_COMMA)) {
+                break;
+            }
+        }
+        expect(p, TOK_RPAREN);
+    } else {
+        expect(p, TOK_RPAREN);
+    }
+    if (existing >= 0 && fn->arity != arity) {
+        fail(p);
+        return;
+    }
+    fn->arity = arity;
+    if (fn->sysv) {
+        cc_emit_fn_prologue_sysv(p->em, arity);
+    } else {
+        cc_emit_fn_prologue(p->em, arity);
+    }
+    p->em->in_fn = 1;
+    parse_block(p);
+    p->em->in_fn = 0;
+    cc_emit_mov_eax_imm(p->em, 0);
+    cc_emit_leave_ret(p->em);
+    clear_locals(p->em);
+}
+
+static void parse_global_or_c_fn(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     unsigned long long init = 0;
-    if (!accept_type(p)) {
+    int is_void = 0;
+
+    if (accept(p, TOK_KW_VOID)) {
+        is_void = 1;
+    } else if (!accept_type(p)) {
         fail(p);
         return;
     }
@@ -1238,6 +1326,14 @@ static void parse_global_def(CcParser* p) {
     }
     memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
     cc_lex_next(p->lx);
+    if (p->lx->tok == TOK_LPAREN) {
+        parse_fn_rest(p, name, 1);
+        return;
+    }
+    if (is_void) {
+        fail(p);
+        return;
+    }
     if (accept(p, TOK_ASSIGN)) {
         if (p->lx->tok != TOK_NUMBER) {
             fail(p);
@@ -1398,11 +1494,6 @@ static void parse_import_fn(CcParser* p) {
 
 static void parse_function(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
-    CcFn* fn;
-    int arity = 0;
-    size_t n;
-    int existing;
-
     expect(p, TOK_KW_FN);
     if (p->lx->tok != TOK_IDENT) {
         fail(p);
@@ -1410,69 +1501,7 @@ static void parse_function(CcParser* p) {
     }
     memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
     cc_lex_next(p->lx);
-    existing = cc_fn_find(p->em, name);
-    if (existing >= 0) {
-        if (p->em->fns[existing].defined) {
-            fail(p);
-            return;
-        }
-        fn = &p->em->fns[existing];
-    } else {
-        if (p->em->nfns >= CC_FN_MAX) {
-            fail(p);
-            return;
-        }
-        fn = &p->em->fns[p->em->nfns];
-        n = 0;
-        while (n < CC_IDENT_MAX && name[n] != '\0') {
-            fn->name[n] = name[n];
-            n++;
-        }
-        fn->name[n] = 0;
-        fn->arity = 0;
-        p->em->nfns++;
-    }
-    fn->entry = p->em->code_len;
-    fn->defined = 1;
-    fn->sysv = p->em->obj_mode ? 1 : 0;
-
-    clear_locals(p->em);
-    expect(p, TOK_LPAREN);
-    if (p->lx->tok != TOK_RPAREN) {
-        for (;;) {
-            if (p->lx->tok != TOK_IDENT || arity >= CC_FN_ARGS) {
-                fail(p);
-                return;
-            }
-            if (cc_local_define(p->em, p->lx->text, 1) < 0) {
-                fail(p);
-                return;
-            }
-            arity++;
-            cc_lex_next(p->lx);
-            if (!accept(p, TOK_COMMA)) {
-                break;
-            }
-        }
-    }
-    expect(p, TOK_RPAREN);
-    if (existing >= 0 && fn->arity != arity) {
-        fail(p);
-        return;
-    }
-    fn->arity = arity;
-    if (fn->sysv) {
-        cc_emit_fn_prologue_sysv(p->em, arity);
-    } else {
-        cc_emit_fn_prologue(p->em, arity);
-    }
-    p->em->in_fn = 1;
-    parse_block(p);
-    p->em->in_fn = 0;
-    /* fallthrough return 0 */
-    cc_emit_mov_eax_imm(p->em, 0);
-    cc_emit_leave_ret(p->em);
-    clear_locals(p->em);
+    parse_fn_rest(p, name, 0);
 }
 
 static void parse_defs(CcParser* p) {
@@ -1481,7 +1510,7 @@ static void parse_defs(CcParser* p) {
            (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
             p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_ENUM ||
             p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT ||
-            p->lx->tok == TOK_KW_TYPEDEF ||
+            p->lx->tok == TOK_KW_TYPEDEF || p->lx->tok == TOK_KW_VOID ||
             (p->lx->tok == TOK_IDENT &&
              cc_typedef_find(p->em, p->lx->text) >= 0))) {
         if (++guard > 64) {
@@ -1501,7 +1530,7 @@ static void parse_defs(CcParser* p) {
         } else if (p->lx->tok == TOK_KW_TYPEDEF) {
             parse_typedef_def(p);
         } else {
-            parse_global_def(p);
+            parse_global_or_c_fn(p);
         }
     }
 }

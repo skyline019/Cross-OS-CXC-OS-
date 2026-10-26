@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M113/A2: self ET_REL lib.o + #lib SysV → NMSG + WMSG + OBJ.
+    // M114/A2: C-decl + multi-fn self ET_REL → NMSG + WMSG + CFN.
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2075,16 +2075,16 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", exit: ");
         log::decimal(onbox.exit_code);
         log::write('\n');
-        log::panic("M113 on-box mini-cc self ET_REL obj pipeline failed");
+        log::panic("M114 on-box mini-cc C-decl self-obj pipeline failed");
     }
     log::write("[ok] onbox-cc: pass: ");
     log::decimal(onbox.wrote_pass);
     log::write(" src: 1 cc: 1 run: 1 exit: ");
     log::decimal(onbox.exit_code);
-    log::write(" write: 1 obj: 1 edge: ");
+    log::write(" write: 1 cfn: 1 edge: ");
     log::decimal(onbox.edge_ok);
     log::write('\n');
-    log::line("ONBOX_OBJ_PASS");
+    log::line("ONBOX_CFN_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2357,7 +2357,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.4.0 - on-box mini-cc self ET_REL (A2/M113)");
+    cxc::log::line("CXC/OS 2.5.0 - on-box mini-cc C-decl ET_REL (A2/M114)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

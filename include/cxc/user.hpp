@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M113/A2: self ET_REL lib.o + #lib SysV + DMSG/DHINT → ONBOX_OBJ_PASS.
+// M114/A2: C-decl multi-fn ET_REL + DMSG/DHINT → ONBOX_CFN_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

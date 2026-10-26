@@ -1,0 +1,4 @@
+feat: M114 mini-cc C-decl multi-fn ET_REL ONBOX_CFN_PASS (v2.5.0)
+
+Accept int/void function syntax; self .o with SysV internal calls.
+Eleventh midfield. Evidence WMSG:CF + DMSG/DHINT + ONBOX_CFN_PASS.

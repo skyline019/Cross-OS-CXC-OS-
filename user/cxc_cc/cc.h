@@ -63,6 +63,7 @@ enum CcTok {
     TOK_KW_EXTERN,
     TOK_KW_IMPORT,
     TOK_KW_TYPEDEF,
+    TOK_KW_VOID,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,

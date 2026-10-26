@@ -175,8 +175,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M110** | `call(...);` + `cwrite`/`io.elf` + `\n` 转义 | 曾用 `ONBOX_LIBC_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M111** | planted `strlen`/`memcpy` + `cwrite(…,strlen)` | 曾用 `ONBOX_CSTR_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M112** | `memset`/`memcmp` + `typedef` + `DMSG`/`DHINT` | 曾用 `ONBOX_MUSL_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M113** | 自产 ET_REL + SysV `#lib` | `ONBOX_OBJ_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M114+** | 真 musl 链接 / 声明靠拢真实 C → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M113** | 自产 ET_REL + SysV `#lib` | 曾用 `ONBOX_OBJ_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M114** | C-decl + 多函数 ET_REL 互调；第十一次中场 | `ONBOX_CFN_PASS`；[`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
+| **M115+** | 真 musl/gcc `.o` 链接 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

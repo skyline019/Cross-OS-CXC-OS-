@@ -1922,11 +1922,14 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M113: self ET_REL lib.o (SysV) + #lib; edge DMSG+DHINT.
+    // M114: C-decl fns in self ET_REL + SysV internal call; edge DMSG+DHINT.
     static const char lib_text[] =
         "CXC_A2\n"
-        "fn bump(x){\n"
-        "return x+7;\n"
+        "int add(int a, int b){\n"
+        "return a+b;\n"
+        "}\n"
+        "int bump(int x){\n"
+        "return add(x, 7);\n"
         "}\n";
     static const char src_text[] =
         "CXC_A2\n"
@@ -1935,11 +1938,11 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "import fn bump(x);\n"
         "import fn cwrite(p,n);\n"
         "import fn strlen(s);\n"
-        "fn main(){\n"
+        "int main(void){\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:OB\\n\");\n"
-        "cwrite(\"WMSG:OB\\n\", m);\n"
+        "m=strlen(\"WMSG:CF\\n\");\n"
+        "cwrite(\"WMSG:CF\\n\", m);\n"
         "n=bump(35);\n"
         "print n;\n"
         "return n;\n"
