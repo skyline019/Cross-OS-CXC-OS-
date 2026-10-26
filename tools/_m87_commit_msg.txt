@@ -1,0 +1,5 @@
+feat: M87 nested mkdir on ramfs/CXCFS (v0.88.0)
+
+Multi-level parent paths for mkdir/open/rename; orphan-parent edge;
+CXCFS getdents lists dir children; ramfs inode cap 32. Contract
+NEST_PASS + persist remount; ESP NEST.ELF. Baseline M87.

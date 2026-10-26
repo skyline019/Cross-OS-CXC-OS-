@@ -28,7 +28,8 @@ constexpr uint8_t dt_reg = 8;
 
 constexpr size_t max_path = 48;
 constexpr size_t max_file_bytes = 4096;
-constexpr size_t max_files = 16;
+// M87: more inodes for nested toolchain trees (was 16).
+constexpr size_t max_files = 32;
 constexpr size_t max_getdents = 4096;
 constexpr uint32_t fd_stdout = 1;
 constexpr uint32_t fd_table_begin = 3;

@@ -101,6 +101,8 @@ uint64_t pipe_elf_physical = 0;
 uint64_t pipe_elf_size = 0;
 uint64_t chdir_elf_physical = 0;
 uint64_t chdir_elf_size = 0;
+uint64_t nest_elf_physical = 0;
+uint64_t nest_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -1861,6 +1863,67 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" rel: 1 enoent: 1 erange: 1\n");
     log::line("CHDIR_PASS");
 
+    // M87 kernel nested mkdir on disk/ + orphan parent edge.
+    {
+        if (fs::mkdir_path("/disk/knest", 0755) != 0) {
+            log::panic("M87 kernel mkdir knest failed");
+        }
+        if (fs::mkdir_path("/disk/knest/sub", 0755) != 0) {
+            log::panic("M87 kernel mkdir knest/sub failed");
+        }
+        if (fs::mkdir_path("/disk/nope/leaf", 0755) == 0) {
+            log::panic("M87 kernel orphan mkdir should fail");
+        }
+        const int64_t nfd = fs::open_path(
+            "/disk/knest/sub/k.txt", fs::o_rdwr | fs::o_creat | fs::o_trunc,
+            0644);
+        if (nfd < 0) {
+            log::panic("M87 kernel nested open failed");
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nfd), "NEST", 4) != 4) {
+            log::panic("M87 kernel nested write failed");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(nfd));
+        cxcfs::MountResult remount{};
+        if (!cxcfs::remount(remount)) {
+            log::panic("M87 kernel remount after nest failed");
+        }
+        const int64_t rfd =
+            fs::open_path("/disk/knest/sub/k.txt", fs::o_rdonly, 0);
+        if (rfd < 0) {
+            log::panic("M87 kernel nest reopen failed");
+        }
+        char buf[8]{};
+        if (fs::read_fd(static_cast<uint32_t>(rfd), buf, 4) != 4 ||
+            buf[0] != 'N' || buf[1] != 'E' || buf[2] != 'S' || buf[3] != 'T') {
+            log::panic("M87 kernel nest persist mismatch");
+        }
+        (void)fs::close_fd(static_cast<uint32_t>(rfd));
+        log::write("[ok] nest-k: pass: 1 orphan: 1 persist: 1\n");
+    }
+
+    user::NestProbeResult nest_probe{};
+    const auto* nest_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + nest_elf_physical);
+    if (nest_elf_physical == 0 || nest_elf_size == 0 ||
+        !user::run_nest_probe(nest_image, static_cast<size_t>(nest_elf_size),
+                              nest_probe)) {
+        log::write("[debug] nest stage: ");
+        log::decimal(nest_probe.stage);
+        log::write(", failure: ");
+        log::decimal(nest_probe.failure);
+        log::write(", pass: ");
+        log::decimal(nest_probe.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(nest_probe.exit_code);
+        log::write('\n');
+        log::panic("M87 nest/dirs probe failed");
+    }
+    log::write("[ok] nest: pass: ");
+    log::decimal(nest_probe.wrote_pass);
+    log::write(" depth: 2 orphan: 1\n");
+    log::line("NEST_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2084,6 +2147,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP CHDIR.ELF")) {
         log::panic("cannot relocate ESP CHDIR.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(nest_elf_physical, nest_elf_size,
+                                 "ESP NEST.ELF")) {
+        log::panic("cannot relocate ESP NEST.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2100,7 +2167,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.87.0 - chdir/getcwd (A2/M86)");
+    cxc::log::line("CXC/OS 0.88.0 - nested dirs (A2/M87)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2651,6 +2718,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP CHDIR.ELF bytes: ");
     cxc::log::decimal(cxc::chdir_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 nest_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'N',  u'E', u'S', u'T', u'.',  u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, nest_path,
+                                      64 * 1024, cxc::nest_elf_physical,
+                                      cxc::nest_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP NEST.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP NEST.ELF bytes: ");
+    cxc::log::decimal(cxc::nest_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

@@ -215,6 +215,7 @@ bool format_volume() {
     return true;
 }
 
+// Parent for "a/b/c" → "a/b". Allows multi-level paths (M87).
 bool parent_name(const char* name, size_t length, const char*& parent,
                  size_t& parent_len) {
     size_t slash = length;
@@ -231,13 +232,8 @@ bool parent_name(const char* name, size_t length, const char*& parent,
     if (slash == 0 || slash + 1 >= length) {
         return false;
     }
-    for (size_t index = 0; index < slash; ++index) {
-        if (name[index] == '/') {
-            return false;
-        }
-    }
-    for (size_t index = slash + 1; index < length; ++index) {
-        if (name[index] == '/') {
+    for (size_t index = 0; index + 1 < length; ++index) {
+        if (name[index] == '/' && name[index + 1] == '/') {
             return false;
         }
     }
@@ -391,12 +387,10 @@ int64_t mkdir_name(const char* name, size_t length) {
     if (!mounted || name == nullptr || length == 0 || length >= fs::max_path) {
         return -1;
     }
-    for (size_t index = 0; index < length; ++index) {
-        if (name[index] == '/') {
-            return -1;
-        }
-    }
     if (find_inode(name, length) >= 0) {
+        return -1;
+    }
+    if (!parent_dir_ready(name, length)) {
         return -1;
     }
     const int32_t inode = alloc_inode();
@@ -440,16 +434,6 @@ int64_t rename_name(const char* old_name, size_t old_len, const char* new_name,
         new_len == 0 || old_len >= fs::max_path || new_len >= fs::max_path) {
         return -1;
     }
-    for (size_t index = 0; index < old_len; ++index) {
-        if (old_name[index] == '/') {
-            return -1;
-        }
-    }
-    for (size_t index = 0; index < new_len; ++index) {
-        if (new_name[index] == '/') {
-            return -1;
-        }
-    }
     const int32_t old_inode = find_inode(old_name, old_len);
     if (old_inode < 0) {
         return -2;
@@ -459,6 +443,9 @@ int64_t rename_name(const char* old_name, size_t old_len, const char* new_name,
     }
     if (old_len == new_len && names_match(old_name, new_name, new_len)) {
         return 0;
+    }
+    if (!parent_dir_ready(new_name, new_len)) {
+        return -1;
     }
     const int32_t dest = find_inode(new_name, new_len);
     if (dest >= 0) {
@@ -629,7 +616,7 @@ int64_t getdents_inode(uint32_t inode, void* buffer, size_t length) {
     size_t written = 0;
     uint64_t next_off = 0;
     for (uint32_t index = 0; index < max_files; ++index) {
-        if (!inodes[index].used || inodes[index].is_dir) {
+        if (!inodes[index].used) {
             continue;
         }
         const char* full = inodes[index].name;
@@ -652,6 +639,7 @@ int64_t getdents_inode(uint32_t inode, void* buffer, size_t length) {
         while (child[child_len] != '\0' && child[child_len] != '/') {
             ++child_len;
         }
+        // Direct children only (no further '/').
         if (child_len == 0 || child[child_len] == '/') {
             continue;
         }
@@ -659,14 +647,13 @@ int64_t getdents_inode(uint32_t inode, void* buffer, size_t length) {
         if (written + reclen > length) {
             break;
         }
-        // struct linux_dirent64 { u64 d_ino; u64 d_off; u16 d_reclen; u8 d_type; char d_name[]; }
         const uint64_t ino = index + 1;
         next_off += reclen;
         memcpy(out + written, &ino, 8);
         memcpy(out + written + 8, &next_off, 8);
         const uint16_t rec16 = static_cast<uint16_t>(reclen);
         memcpy(out + written + 16, &rec16, 2);
-        out[written + 18] = fs::dt_reg;
+        out[written + 18] = inodes[index].is_dir ? fs::dt_dir : fs::dt_reg;
         memcpy(out + written + 19, child, child_len);
         out[written + 19 + child_len] = '\0';
         written += reclen;

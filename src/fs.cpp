@@ -280,7 +280,7 @@ void release_pipe_end(FileDesc& slot) {
     }
 }
 
-// Parent directory name for "dir/file" → "dir". Single-component → empty.
+// Parent directory for "a/b/c" → "a/b". Single-component → empty (root).
 bool parent_name(const char* name, size_t length, const char*& parent,
                  size_t& parent_len) {
     size_t slash = length;
@@ -297,14 +297,9 @@ bool parent_name(const char* name, size_t length, const char*& parent,
     if (slash == 0 || slash + 1 >= length) {
         return false;
     }
-    // Only one slash level for the thin slice.
-    for (size_t index = 0; index < slash; ++index) {
-        if (name[index] == '/') {
-            return false;
-        }
-    }
-    for (size_t index = slash + 1; index < length; ++index) {
-        if (name[index] == '/') {
+    // Reject empty components ("a//b") and trailing slash (already filtered).
+    for (size_t index = 0; index + 1 < length; ++index) {
+        if (name[index] == '/' && name[index + 1] == '/') {
             return false;
         }
     }
@@ -386,13 +381,10 @@ int64_t mkdir_path(const char* path, uint64_t /*mode*/) {
         }
         return rc;
     }
-    // Single-component directory names only (no nested mkdir yet).
-    for (size_t index = 0; index < name_len; ++index) {
-        if (name[index] == '/') {
-            return -1;
-        }
-    }
     if (find_inode(name, name_len) >= 0) {
+        return -1;
+    }
+    if (!parent_dir_ready(name, name_len)) {
         return -1;
     }
     const int32_t inode = alloc_inode();
