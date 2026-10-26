@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M103/A2: switch/?:/% + edge → ONBOX_CASE_PASS.
+// M104/A2: enum/sizeof/shifts/hex + edge → ONBOX_ENUM_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

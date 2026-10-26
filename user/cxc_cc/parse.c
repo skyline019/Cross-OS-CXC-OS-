@@ -126,12 +126,18 @@ static void parse_primary(CcParser* p) {
         }
         idx = cc_local_find(p->em, name);
         if (idx < 0) {
+            int ei;
             gi = cc_global_find(p->em, name);
-            if (gi < 0) {
+            if (gi >= 0) {
+                cc_emit_load_global(p->em, p->em->globals[gi].data_off);
+                return;
+            }
+            ei = cc_enum_find(p->em, name);
+            if (ei < 0) {
                 fail(p);
                 return;
             }
-            cc_emit_load_global(p->em, p->em->globals[gi].data_off);
+            cc_emit_mov_eax_imm(p->em, (unsigned)p->em->enums[ei].value);
             return;
         }
         if (accept(p, TOK_LBRACK)) {
@@ -264,6 +270,28 @@ static void parse_unary(CcParser* p) {
         parse_addr_of(p);
         return;
     }
+    if (accept(p, TOK_KW_SIZEOF)) {
+        unsigned sz = 8;
+        expect(p, TOK_LPAREN);
+        if (accept(p, TOK_KW_INT)) {
+            sz = 8;
+        } else if (p->lx->tok == TOK_IDENT) {
+            int st = cc_struct_find(p->em, p->lx->text);
+            if (st >= 0) {
+                sz = (unsigned)(p->em->structs[st].nfields * 8);
+                cc_lex_next(p->lx);
+            } else {
+                parse_expr(p);
+                sz = 8;
+            }
+        } else {
+            parse_expr(p);
+            sz = 8;
+        }
+        expect(p, TOK_RPAREN);
+        cc_emit_mov_eax_imm(p->em, sz);
+        return;
+    }
     parse_primary(p);
 }
 
@@ -311,14 +339,31 @@ static void parse_add(CcParser* p) {
     }
 }
 
-static void parse_cmp(CcParser* p) {
+static void parse_shift(CcParser* p) {
     parse_add(p);
+    while (p->lx->tok == TOK_LSHIFT || p->lx->tok == TOK_RSHIFT) {
+        int op = p->lx->tok;
+        cc_lex_next(p->lx);
+        cc_emit_push_rax(p->em);
+        parse_add(p);
+        cc_emit_bytes(p->em, "\x48\x89\xC1", 3); /* mov rcx, rax (count) */
+        cc_emit_byte(p->em, 0x58);               /* pop rax (value) */
+        if (op == TOK_LSHIFT) {
+            cc_emit_bytes(p->em, "\x48\xD3\xE0", 3); /* shl rax, cl */
+        } else {
+            cc_emit_bytes(p->em, "\x48\xD3\xE8", 3); /* shr rax, cl */
+        }
+    }
+}
+
+static void parse_cmp(CcParser* p) {
+    parse_shift(p);
     while (p->lx->tok == TOK_EQ || p->lx->tok == TOK_NE || p->lx->tok == TOK_LT ||
            p->lx->tok == TOK_LE || p->lx->tok == TOK_GT || p->lx->tok == TOK_GE) {
         int op = p->lx->tok;
         cc_lex_next(p->lx);
         cc_emit_push_rax(p->em);
-        parse_add(p);
+        parse_shift(p);
         cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
         cc_emit_pop_rcx(p->em);
         cc_emit_bytes(p->em, "\x48\x39\xD1", 3);
@@ -1016,6 +1061,39 @@ static void clear_locals(CcEmit* em) {
     em->nloops = 0;
 }
 
+static void parse_enum_def(CcParser* p) {
+    long next_val = 0;
+    expect(p, TOK_KW_ENUM);
+    expect(p, TOK_LBRACE);
+    while (!p->em->failed && p->lx->tok != TOK_RBRACE && p->lx->tok != TOK_EOF) {
+        char name[CC_IDENT_MAX + 1];
+        if (p->lx->tok != TOK_IDENT) {
+            fail(p);
+            return;
+        }
+        memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+        cc_lex_next(p->lx);
+        if (accept(p, TOK_ASSIGN)) {
+            if (p->lx->tok != TOK_NUMBER) {
+                fail(p);
+                return;
+            }
+            next_val = p->lx->number;
+            cc_lex_next(p->lx);
+        }
+        if (cc_enum_define(p->em, name, next_val) < 0) {
+            fail(p);
+            return;
+        }
+        next_val++;
+        if (!accept(p, TOK_COMMA)) {
+            break;
+        }
+    }
+    expect(p, TOK_RBRACE);
+    expect(p, TOK_SEMI);
+}
+
 static void parse_global_def(CcParser* p) {
     char name[CC_IDENT_MAX + 1];
     unsigned long long init = 0;
@@ -1175,6 +1253,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.in_fn = 0;
     em.nstructs = 0;
     em.nglobals = 0;
+    em.nenums = 0;
     em.failed = 0;
     cc_reloc_reset();
 
@@ -1208,7 +1287,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
         int guard = 0;
         while (!em.failed &&
                (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
-                lx.tok == TOK_KW_INT)) {
+                lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM)) {
             if (++guard > 64) {
                 em.failed = 1;
                 break;
@@ -1217,6 +1296,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                 parse_function(&p);
             } else if (lx.tok == TOK_KW_STRUCT) {
                 parse_struct_def(&p);
+            } else if (lx.tok == TOK_KW_ENUM) {
+                parse_enum_def(&p);
             } else {
                 parse_global_def(&p);
             }
@@ -1249,7 +1330,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                     break;
                 }
                 if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
-                    lx.tok == TOK_KW_INT) {
+                    lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM) {
                     em.failed = 1;
                     break;
                 }

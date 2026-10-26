@@ -55,6 +55,10 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_CASE;
     } else if (strcmp(lx->text, "default") == 0) {
         lx->tok = TOK_KW_DEFAULT;
+    } else if (strcmp(lx->text, "enum") == 0) {
+        lx->tok = TOK_KW_ENUM;
+    } else if (strcmp(lx->text, "sizeof") == 0) {
+        lx->tok = TOK_KW_SIZEOF;
     } else if (strcmp(lx->text, "break") == 0) {
         lx->tok = TOK_KW_BREAK;
     } else if (strcmp(lx->text, "continue") == 0) {
@@ -122,6 +126,35 @@ void cc_lex_next(CcLexer* lx) {
     }
     if (c >= '0' && c <= '9') {
         long v = 0;
+        if (c == '0' && lx->pos + 1 < lx->len &&
+            (lx->src[lx->pos + 1] == 'x' || lx->src[lx->pos + 1] == 'X')) {
+            lx->pos += 2;
+            if (lx->pos >= lx->len) {
+                lx->tok = TOK_EOF;
+                return;
+            }
+            while (lx->pos < lx->len) {
+                char h = lx->src[lx->pos];
+                int d;
+                if (h >= '0' && h <= '9') {
+                    d = h - '0';
+                } else if (h >= 'a' && h <= 'f') {
+                    d = 10 + (h - 'a');
+                } else if (h >= 'A' && h <= 'F') {
+                    d = 10 + (h - 'A');
+                } else {
+                    break;
+                }
+                v = v * 16 + d;
+                if (v > 255) {
+                    v = 255;
+                }
+                lx->pos++;
+            }
+            lx->number = v;
+            lx->tok = TOK_NUMBER;
+            return;
+        }
         while (lx->pos < lx->len && lx->src[lx->pos] >= '0' &&
                lx->src[lx->pos] <= '9') {
             v = v * 10 + (lx->src[lx->pos] - '0');
@@ -212,14 +245,20 @@ void cc_lex_next(CcLexer* lx) {
             lx->tok = TOK_ASSIGN;
         }
     } else if (c == '<') {
-        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
+        if (lx->pos < lx->len && lx->src[lx->pos] == '<') {
+            lx->pos++;
+            lx->tok = TOK_LSHIFT;
+        } else if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
             lx->pos++;
             lx->tok = TOK_LE;
         } else {
             lx->tok = TOK_LT;
         }
     } else if (c == '>') {
-        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
+        if (lx->pos < lx->len && lx->src[lx->pos] == '>') {
+            lx->pos++;
+            lx->tok = TOK_RSHIFT;
+        } else if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
             lx->pos++;
             lx->tok = TOK_GE;
         } else {

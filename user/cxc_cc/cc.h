@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): CRT + switch/?:/%/char. */
+/* CXC mini-cc (A2): CRT/switch + enum/sizeof/shifts/hex. */
 #pragma once
 
 #ifdef CC_HOST
@@ -27,6 +27,7 @@ enum {
     CC_STRUCT_MAX = 4,
     CC_STRUCT_FIELDS = 4,
     CC_GLOBAL_MAX = 8,
+    CC_ENUM_MAX = 16,
     CC_LOAD_VA = 0x400000
 };
 
@@ -53,6 +54,8 @@ enum CcTok {
     TOK_KW_SWITCH,
     TOK_KW_CASE,
     TOK_KW_DEFAULT,
+    TOK_KW_ENUM,
+    TOK_KW_SIZEOF,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -83,7 +86,9 @@ enum CcTok {
     TOK_PLUSEQ,
     TOK_MINUSEQ,
     TOK_PLUSPLUS,
-    TOK_MINUSMINUS
+    TOK_MINUSMINUS,
+    TOK_LSHIFT,
+    TOK_RSHIFT
 };
 
 typedef struct CcLexer {
@@ -131,6 +136,11 @@ typedef struct CcStruct {
     int nfields;
 } CcStruct;
 
+typedef struct CcEnumConst {
+    char name[CC_IDENT_MAX + 1];
+    long value;
+} CcEnumConst;
+
 typedef struct CcEmit {
     unsigned char* code;
     size_t code_len;
@@ -151,6 +161,8 @@ typedef struct CcEmit {
     int nstructs;
     CcGlobal globals[CC_GLOBAL_MAX];
     int nglobals;
+    CcEnumConst enums[CC_ENUM_MAX];
+    int nenums;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -165,6 +177,8 @@ int cc_struct_find(CcEmit* em, const char* name);
 int cc_struct_field(CcEmit* em, int stype, const char* field);
 int cc_global_find(CcEmit* em, const char* name);
 int cc_global_define(CcEmit* em, const char* name, unsigned long long init);
+int cc_enum_find(CcEmit* em, const char* name);
+int cc_enum_define(CcEmit* em, const char* name, long value);
 
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);

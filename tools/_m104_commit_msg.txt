@@ -1,0 +1,4 @@
+feat: M104 mini-cc enum/sizeof/shifts ONBOX_ENUM_PASS (v1.5.0)
+
+Tenth midfield: enum constants, sizeof, << >>, hex literals; contract
+evidence WMSG:EN + ONBOX_ENUM_PASS + enum:1 + edge:1; midpoint-assessment-10.

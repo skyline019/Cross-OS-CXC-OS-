@@ -111,6 +111,34 @@ int cc_global_find(CcEmit* em, const char* name) {
     return -1;
 }
 
+int cc_enum_find(CcEmit* em, const char* name) {
+    int i;
+    for (i = 0; i < em->nenums; i++) {
+        if (strcmp(em->enums[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int cc_enum_define(CcEmit* em, const char* name, long value) {
+    CcEnumConst* e;
+    size_t n = 0;
+    if (em->nenums >= CC_ENUM_MAX || cc_enum_find(em, name) >= 0 ||
+        cc_global_find(em, name) >= 0) {
+        return -1;
+    }
+    e = &em->enums[em->nenums];
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        e->name[n] = name[n];
+        n++;
+    }
+    e->name[n] = 0;
+    e->value = value;
+    em->nenums++;
+    return em->nenums - 1;
+}
+
 int cc_global_define(CcEmit* em, const char* name, unsigned long long init) {
     CcGlobal* g;
     size_t n = 0;
@@ -378,7 +406,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_CASE_PASS\n";
+    static const char pass[] = "ONBOX_ENUM_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

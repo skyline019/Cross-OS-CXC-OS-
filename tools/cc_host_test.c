@@ -187,12 +187,56 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "enum { TEN=0x0a, TW=20 };\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=TEN+TW+(1<<2)+sizeof(n);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"EN\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m104-enum") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "n=0x20;\n"
+            "n=n>>1;\n"
+            "return n;\n",
+            "m104-shift") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "n=0;\n"
             "n+=21;\n"
             "n++;\n"
             "n++;\n"
             "return n;\n",
             "m102-asgn") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "enum { TEN=0x0a, TW=20 };\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=TEN+TW+(1<<2)+sizeof(n);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"EN\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m104-enum") != 0) {
+        fails++;
+    }
+    if (expect_ok("CXC_A2\nn=0x2a;\nreturn n;\n", "m104-hex") != 0) {
+        fails++;
+    }
+    if (expect_ok("CXC_A2\nn=1<<3;\nreturn n+(1>>0);\n", "m104-shift") != 0) {
         fails++;
     }
     if (expect_ok(
@@ -230,6 +274,16 @@ int main(void) {
             "CXC_A2\nswitch(1){\ndefault:\nbreak;\ndefault:\nbreak;\n}\n"
             "return 0;\n",
             "bad-dup-default") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nenum { A=1, A=2 };\nreturn 0;\n",
+            "bad-dup-enum") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nenum { A=1, A=2 };\nreturn 0;\n",
+            "bad-dup-enum") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

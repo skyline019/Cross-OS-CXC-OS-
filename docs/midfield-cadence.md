@@ -15,9 +15,9 @@
 | 第七次 | M65–M74 | [`midpoint-assessment-7.md`](midpoint-assessment-7.md) |
 | 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
 | 第九次 | M85–M94 | [`midpoint-assessment-9.md`](midpoint-assessment-9.md) |
-| 第十次（计划） | 约 M95–M104 | `midpoint-assessment-10.md`（届时新建） |
+| 第十次 | 约 M95–M104 | [`midpoint-assessment-10.md`](midpoint-assessment-10.md) |
 
-当前基线：**M103 / v1.4.0**（机上 mini-cc：`switch`/`?:`/`%`+edge；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M104**。
+当前基线：**M104 / v1.5.0**（机上 mini-cc：`enum`/`sizeof`/`<<`/hex+edge；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M114**。
 
 ## 中场窗口必做
 
