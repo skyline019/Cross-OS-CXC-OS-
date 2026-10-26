@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M107/A2: multi-symbol #lib/import SysV + edge → NMSG + WMSG + MATH + exit.
+    // M108/A2: #lib PC32 + SysV + edge → NMSG + WMSG + PC32 + exit.
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2075,16 +2075,16 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", exit: ");
         log::decimal(onbox.exit_code);
         log::write('\n');
-        log::panic("M107 on-box mini-cc math pipeline failed");
+        log::panic("M108 on-box mini-cc pc32 pipeline failed");
     }
     log::write("[ok] onbox-cc: pass: ");
     log::decimal(onbox.wrote_pass);
     log::write(" src: 1 cc: 1 run: 1 exit: ");
     log::decimal(onbox.exit_code);
-    log::write(" write: 1 math: 1 edge: ");
+    log::write(" write: 1 pc32: 1 edge: ");
     log::decimal(onbox.edge_ok);
     log::write('\n');
-    log::line("ONBOX_MATH_PASS");
+    log::line("ONBOX_PC32_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2357,7 +2357,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 1.8.0 - on-box mini-cc math (A2/M107)");
+    cxc::log::line("CXC/OS 1.9.0 - on-box mini-cc pc32 (A2/M108)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

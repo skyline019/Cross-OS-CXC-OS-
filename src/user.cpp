@@ -1920,19 +1920,18 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M107: multi-symbol #lib + SysV add/mul/mac → 42; edge reject.
+    // M108: #lib PC32 twice→add + multi-symbol math → 42; edge reject.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"rt.elf\"\n"
-        "import fn add(a,b);\n"
-        "import fn mul(a,b);\n"
+        "import fn twice(a);\n"
         "import fn mac(a,b,c);\n"
         "fn main(){\n"
         "int n;\n"
-        "n=mac(mul(add(5,2),3),2,0);\n"
+        "n=mac(twice(10),2,2);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"MH\";\n"
+        "write \"PC\";\n"
         "}\n"
         "return n;\n"
         "}\n";

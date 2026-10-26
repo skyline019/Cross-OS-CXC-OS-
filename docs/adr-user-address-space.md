@@ -169,8 +169,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M104** | `enum`/`sizeof`/`<<`/`0x` + 边缘；第十次中场 | 曾用 `ONBOX_ENUM_PASS` |
 | **M105** | `#link` / `extern fn` 多 TU + 边缘 | 曾用 `ONBOX_LINK_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M106** | `#lib` / `import fn` planted ET_REL SysV + 边缘 | 曾用 `ONBOX_LIB_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M107** | 多符号 `#lib`（add/mul/mac）+ SysV 至 4 参 + 边缘 | `ONBOX_MATH_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M108+** | ET_REL PC32 + 更多 planted musl/CRT → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M107** | 多符号 `#lib`（add/mul/mac）+ SysV 至 4 参 + 边缘 | 曾用 `ONBOX_MATH_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M108** | `#lib` 整节 `.text` + `R_X86_64_PC32`（`twice`→`add`）+ 边缘 | `ONBOX_PC32_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M109+** | 更多 planted musl/CRT；跨目标未定义符号 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

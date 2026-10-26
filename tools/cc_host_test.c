@@ -301,6 +301,33 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn twice(a);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=twice(21);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"PC\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m108-pc32") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn twice(a);\n"
+            "import fn mac(a,b,c);\n"
+            "fn main(){\n"
+            "return mac(twice(10),2,2);\n"
+            "}\n",
+            "m108-compose") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"

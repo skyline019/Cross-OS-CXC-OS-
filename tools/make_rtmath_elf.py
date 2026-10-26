@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ET_REL: SysV add/mul/mac. Planted multi-symbol CRT subset for M107 #lib."""
+"""ET_REL: SysV add/mul/mac + twice(call add via PC32). M107/M108 #lib."""
 
 from __future__ import annotations
 
@@ -13,29 +13,45 @@ ADD = bytes.fromhex("4889F84801F0C3")
 MUL = bytes.fromhex("4889F8480FAFC6C3")
 # mac: mov rax,rdi; imul rax,rsi; add rax,rdx; ret
 MAC = bytes.fromhex("4889F8480FAFC64801D0C3")
+# twice: mov rsi,rdi; call add; ret  (call disp patched by R_X86_64_PC32)
+TWICE_PREFIX = bytes.fromhex("4889FE")  # mov rsi, rdi
+TWICE_CALL = bytes.fromhex("E800000000")  # call +0 (addend -4)
+TWICE_RET = bytes.fromhex("C3")
 
-FUNCS = (
-    ("add", ADD),
-    ("mul", MUL),
-    ("mac", MAC),
-)
+R_X86_64_PC32 = 2
+SHT_NULL = 0
+SHT_PROGBITS = 1
+SHT_SYMTAB = 2
+SHT_STRTAB = 3
+SHT_RELA = 4
 
 
 def build() -> bytes:
-    text = b"".join(body for _, body in FUNCS)
-    offsets: list[tuple[str, int, int]] = []
-    at = 0
-    for name, body in FUNCS:
-        offsets.append((name, at, len(body)))
-        at += len(body)
+    add_off = 0
+    mul_off = add_off + len(ADD)
+    mac_off = mul_off + len(MUL)
+    twice_off = mac_off + len(MAC)
+    text = ADD + MUL + MAC + TWICE_PREFIX + TWICE_CALL + TWICE_RET
+    call_field = twice_off + len(TWICE_PREFIX) + 1  # after E8
 
-    shstr = b"\x00.text\x00.shstrtab\x00.symtab\x00.strtab\x00"
-    strtab = b"\x00" + b"".join(name.encode("ascii") + b"\x00" for name, _, _ in offsets)
+    funcs = (
+        ("add", add_off, len(ADD)),
+        ("mul", mul_off, len(MUL)),
+        ("mac", mac_off, len(MAC)),
+        ("twice", twice_off, len(TWICE_PREFIX) + len(TWICE_CALL) + len(TWICE_RET)),
+    )
+
+    shstr = b"\x00.text\x00.rela.text\x00.shstrtab\x00.symtab\x00.strtab\x00"
+    # shstr offsets: 1=.text 7=.rela.text 18=.shstrtab 28=.symtab 36=.strtab
+    strtab = b"\x00" + b"".join(n.encode("ascii") + b"\x00" for n, _, _ in funcs)
 
     ehdr_sz = 64
     off_text = ehdr_sz
-    off_shstr = off_text + len(text)
-    nsym = 1 + len(offsets)  # null + funcs
+    nsym = 1 + len(funcs)
+    # rela: one PC32 for twice→add (sym index 1 = add)
+    rela = struct.pack("<QQq", call_field, (1 << 32) | R_X86_64_PC32, -4)
+    off_rela = off_text + len(text)
+    off_shstr = off_rela + len(rela)
     off_sym = (off_shstr + len(shstr) + 7) & ~7
     pad_shstr = b"\x00" * (off_sym - (off_shstr + len(shstr)))
     off_str = off_sym + nsym * 24
@@ -57,24 +73,25 @@ def build() -> bytes:
             entsz,
         )
 
-    # name offsets in shstr: 1=.text 7=.shstrtab 17=.symtab 25=.strtab
+    # sections: 0 null, 1 .text, 2 .rela.text, 3 .shstrtab, 4 .symtab, 5 .strtab
     shdrs = b"".join(
         [
             bytes(64),
-            shdr(1, 1, 6, 0, off_text, len(text), 0, 0, 1, 0),
-            shdr(7, 3, 0, 0, off_shstr, len(shstr), 0, 0, 1, 0),
-            shdr(17, 2, 0, 0, off_sym, nsym * 24, 4, 1, 8, 24),
-            shdr(25, 3, 0, 0, off_str, len(strtab), 0, 0, 1, 0),
+            shdr(1, SHT_PROGBITS, 6, 0, off_text, len(text), 0, 0, 1, 0),
+            shdr(7, SHT_RELA, 0, 0, off_rela, len(rela), 4, 1, 8, 24),
+            shdr(18, SHT_STRTAB, 0, 0, off_shstr, len(shstr), 0, 0, 1, 0),
+            shdr(28, SHT_SYMTAB, 0, 0, off_sym, nsym * 24, 5, 1, 8, 24),
+            shdr(36, SHT_STRTAB, 0, 0, off_str, len(strtab), 0, 0, 1, 0),
         ]
     )
 
-    symtab = bytearray(24)  # null
+    symtab = bytearray(24)
     name_off = 1
-    for name, value, size in offsets:
+    for name, value, size in funcs:
         symtab += struct.pack(
             "<IBBHQQ",
             name_off,
-            (1 << 4) | 2,  # GLOBAL FUNC
+            (1 << 4) | 2,
             0,
             1,
             value,
@@ -85,7 +102,7 @@ def build() -> bytes:
     ehdr = struct.pack(
         "<16sHHIQQQIHHHHHH",
         b"\x7fELF" + bytes([2, 1, 1, 0]) + bytes(8),
-        1,  # ET_REL
+        1,
         62,
         1,
         0,
@@ -96,11 +113,21 @@ def build() -> bytes:
         0,
         0,
         64,
-        5,
-        2,
+        6,
+        3,  # e_shstrndx = .shstrtab
     )
     return b"".join(
-        [ehdr, text, shstr, pad_shstr, bytes(symtab), strtab, pad_str, shdrs]
+        [
+            ehdr,
+            text,
+            rela,
+            shstr,
+            pad_shstr,
+            bytes(symtab),
+            strtab,
+            pad_str,
+            shdrs,
+        ]
     )
 
 
