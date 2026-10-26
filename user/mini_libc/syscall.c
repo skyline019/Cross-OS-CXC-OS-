@@ -11,6 +11,7 @@ enum {
     SYS_BRK = 12,
     SYS_WRITEV = 20,
     SYS_GETPID = 39,
+    SYS_EXECVE = 59,
     SYS_EXIT = 60,
     SYS_UNAME = 63,
     SYS_GETPPID = 110,
@@ -90,6 +91,15 @@ void _exit(int status) {
     syscall3(SYS_EXIT, status, 0, 0);
     for (;;) {
     }
+}
+
+int execve(const char* path, char* const argv[], char* const envp[]) {
+    long r = syscall3(SYS_EXECVE, (long)path, (long)argv, (long)envp);
+    if (r < 0) {
+        errno = (int)(-r);
+        return -1;
+    }
+    return (int)r;
 }
 
 int uname(struct utsname* buf) {

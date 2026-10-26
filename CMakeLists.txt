@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 0.96.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 0.97.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1353,15 +1353,55 @@ add_custom_command(
 
 set(CXC_USER_ONBOX_CC_ELF
     "${CMAKE_CURRENT_BINARY_DIR}/user_onbox_cc.elf")
-add_custom_command(
-    OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
-    COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
-        --output "${CXC_USER_ONBOX_CC_ELF}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
-    COMMENT "Building ESP ONBXCC.ELF on-box compiler"
-    VERBATIM
-)
+if(CXC_USER_CROSS_USES_GCC)
+    add_custom_command(
+        OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            -Os
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+            -o "${CXC_USER_ONBOX_CC_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/malloc.c"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_ONBOX_CC_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/malloc.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+        COMMENT "Building ESP ONBXCC.ELF freestanding mini-cc (A2)"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+            "${CXC_USER_ONBOX_CC_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+        COMMENT "Copying prebuilt ONBXCC.ELF mini-cc"
+        VERBATIM
+    )
+endif()
 
 set(CXC_ESP_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/cxc-os.img")
 add_custom_command(
@@ -1495,7 +1535,11 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_time_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_stub_elf.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_cc_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

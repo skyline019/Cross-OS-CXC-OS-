@@ -192,7 +192,29 @@ TimeProbeResult time_probe{};
 OnboxCcProbeResult onbox_cc_probe{};
 /* M90: above brk (≤0x509000) and mmap (≤0x700000) windows. */
 constexpr uint64_t user_stack_base = 0x0000000000800000ull;
+// A2 mini-cc needs more than one page (parse/emit frames); 32 KiB floor.
+constexpr uint64_t user_stack_pages = 8;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
+
+bool map_user_stack(uint64_t user_root, uint64_t& stack_physical,
+                    uint64_t& top_page_va) {
+    stack_physical = pmm::allocate_pages(user_stack_pages);
+    if (stack_physical == 0) {
+        return false;
+    }
+    for (uint64_t i = 0; i < user_stack_pages; ++i) {
+        const uint64_t va = user_stack_base + i * pmm::page_size;
+        const uint64_t pa = stack_physical + i * pmm::page_size;
+        if (!vmm::map_user_page(user_root, va, pa, vmm::user_map_writable)) {
+            pmm::free_pages(stack_physical, user_stack_pages);
+            stack_physical = 0;
+            return false;
+        }
+    }
+    top_page_va =
+        user_stack_base + (user_stack_pages - 1) * pmm::page_size;
+    return true;
+}
 constexpr uint64_t privilege_stack_pages = 8;
 
 bool ensure_tss() {
@@ -229,13 +251,9 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
     entry = loaded.entry;
     stage = 3;
 
-    const uint64_t stack_physical = pmm::allocate_pages(1);
-    if (stack_physical == 0 ||
-        !vmm::map_user_page(user_root, user_stack_base, stack_physical,
-                            vmm::user_map_writable)) {
-        if (stack_physical != 0) {
-            pmm::free_pages(stack_physical, 1);
-        }
+    uint64_t stack_physical = 0;
+    uint64_t top_page_va = 0;
+    if (!map_user_stack(user_root, stack_physical, top_page_va)) {
         (void)vmm::destroy_user_address_space(user_root);
         failure = 4;
         return false;
@@ -243,9 +261,10 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
 
     const uint64_t kernel_root = vmm::kernel_address_space();
     auto* const stack_page = reinterpret_cast<uint8_t*>(
-        vmm::direct_map_base + stack_physical);
+        vmm::direct_map_base + stack_physical +
+        (user_stack_pages - 1) * pmm::page_size);
     const uint64_t user_rsp = seed_linux_user_stack(
-        stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
+        stack_page, top_page_va, loaded.entry, loaded.at_phdr,
         loaded.at_phent, loaded.at_phnum, nullptr, 0, nullptr, 0);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
     syscall::set_user_root(user_root);
@@ -1442,13 +1461,9 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
         return false;
     }
 
-    const uint64_t stack_physical = pmm::allocate_pages(1);
-    if (stack_physical == 0 ||
-        !vmm::map_user_page(new_root, user_stack_base, stack_physical,
-                            vmm::user_map_writable)) {
-        if (stack_physical != 0) {
-            pmm::free_pages(stack_physical, 1);
-        }
+    uint64_t stack_physical = 0;
+    uint64_t top_page_va = 0;
+    if (!map_user_stack(new_root, stack_physical, top_page_va)) {
         (void)vmm::destroy_user_address_space(new_root);
         (void)vmm::activate_address_space(old_root);
         failure = 7;
@@ -1456,9 +1471,10 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
     }
 
     auto* const stack_page = reinterpret_cast<uint8_t*>(
-        vmm::direct_map_base + stack_physical);
+        vmm::direct_map_base + stack_physical +
+        (user_stack_pages - 1) * pmm::page_size);
     const uint64_t user_rsp = seed_linux_user_stack(
-        stack_page, user_stack_base, loaded.entry, loaded.at_phdr,
+        stack_page, top_page_va, loaded.entry, loaded.at_phdr,
         loaded.at_phent, loaded.at_phnum, argv, argc, envp, envc);
 
     if (!vmm::destroy_user_address_space(old_root)) {
@@ -1903,8 +1919,19 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M95: write LIT + return N — observable WMSG + exit 42.
-    static const char src_text[] = "CXC_A2\nwrite HI;\nreturn 42;\n";
+    // M96: while/if/expr compute 42, then write HI + return n.
+    static const char src_text[] =
+        "CXC_A2\n"
+        "i=0;\n"
+        "n=0;\n"
+        "while(i<6){\n"
+        "n=n+7;\n"
+        "i=i+1;\n"
+        "}\n"
+        "if(n==42){\n"
+        "write HI;\n"
+        "}\n"
+        "return n;\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
     if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||

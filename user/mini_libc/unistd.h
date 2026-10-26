@@ -24,3 +24,4 @@ long set_tid_address(int* tidptr);
 pid_t getpid(void);
 pid_t getppid(void);
 void _exit(int status) __attribute__((noreturn));
+int execve(const char* path, char* const argv[], char* const envp[]);

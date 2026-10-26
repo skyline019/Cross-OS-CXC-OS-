@@ -747,7 +747,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M95/A2: write LIT + return N → WMSG + ONBOX_WRITE_PASS + exit(N).
+// M96/A2: freestanding mini-cc; while/if/expr → ONBOX_CTRL_PASS + exit(N).
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);
