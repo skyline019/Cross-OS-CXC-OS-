@@ -1,4 +1,4 @@
-/* On-box CXC mini-cc: optional disk/lib.c→lib.o (ET_REL), then in.c→out.elf. */
+/* On-box CXC mini-cc: optional disk/lib.s|lib.c→lib.o, then in.c→out.elf. */
 #include "cxc_cc/cc.h"
 #include "mini_libc/fcntl.h"
 #include "mini_libc/unistd.h"
@@ -39,7 +39,7 @@ static int write_all(int fd, const unsigned char* buf, size_t n) {
         if (w < 0 || (size_t)w != chunk) {
             return -1;
         }
-        off += chunk;
+        off += (size_t)w;
     }
     return 0;
 }
@@ -89,6 +89,9 @@ static void write_dmsg(int code) {
         break;
     case 30:
         hint = "DHINT:PAR\n";
+        break;
+    case 40:
+        hint = "DHINT:ASM\n";
         break;
     default:
         hint = "DHINT:UNK\n";
@@ -140,6 +143,41 @@ static int compile_write(const char* in_path, const char* out_path, int obj) {
     return 0;
 }
 
+/* M127: assemble GAS subset → SysV ET_REL. */
+static int assemble_write(const char* in_path, const char* out_path) {
+    static char src_buf[CC_SRC_MAX];
+    size_t src_len = 0;
+    unsigned char* elf = 0;
+    size_t elf_len = 0;
+    int fd = open(in_path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -2;
+    }
+    if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
+        close(fd);
+        return -3;
+    }
+    close(fd);
+    src_buf[src_len] = 0;
+    if (as_compile(src_buf, src_len, &elf, &elf_len) != 0 || !elf ||
+        elf_len == 0) {
+        write_dmsg(as_last_fail_code());
+        return -4;
+    }
+    fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        return -5;
+    }
+    if (write_all(fd, elf, elf_len) != 0) {
+        close(fd);
+        return -6;
+    }
+    if (close(fd) != 0) {
+        return -7;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     char* out_argv[2];
     char* out_envp[1];
@@ -147,17 +185,29 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    /* M113: if disk/lib.c present, emit SysV ET_REL disk/lib.o first. */
+    /* M127: prefer disk/lib.s → as; else M113 disk/lib.c → cc_compile_obj. */
     {
-        int lfd = open("disk/lib.c", O_RDONLY, 0);
-        if (lfd >= 0) {
-            close(lfd);
-            rc = compile_write("disk/lib.c", "disk/lib.o", 1);
+        int sfd = open("disk/lib.s", O_RDONLY, 0);
+        if (sfd >= 0) {
+            close(sfd);
+            rc = assemble_write("disk/lib.s", "disk/lib.o");
             if (rc == -4) {
                 _exit(4);
             }
             if (rc != 0) {
                 _exit(9);
+            }
+        } else {
+            int lfd = open("disk/lib.c", O_RDONLY, 0);
+            if (lfd >= 0) {
+                close(lfd);
+                rc = compile_write("disk/lib.c", "disk/lib.o", 1);
+                if (rc == -4) {
+                    _exit(4);
+                }
+                if (rc != 0) {
+                    _exit(9);
+                }
             }
         }
     }

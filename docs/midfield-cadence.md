@@ -19,7 +19,7 @@
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 | 第十二次 | 约 M115–M124 | [`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 
-当前基线：**M126 / v2.17.0**（机上 mini-cc：musl strcat+strchr 字符串闭包；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M134**。
+当前基线：**M127 / v2.18.0**（机上 mini-cc：as 子集 `lib.s`→ET_REL + 字符串闭包；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M134**。
 
 ## 中场窗口必做
 

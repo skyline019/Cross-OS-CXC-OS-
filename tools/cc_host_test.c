@@ -674,24 +674,25 @@ int main(void) {
         unsigned char* o = 0;
         size_t on = 0;
         FILE* f;
-        const char* lib =
-            "CXC_A2\n"
-            "int add(int a, int b){\n"
-            "return a+b;\n"
-            "}\n"
-            "int bump(int x){\n"
-            "return add(x, 42);\n"
-            "}\n"
-            "int msg(void){\n"
-            "return \"XA\";\n"
-            "}\n";
-        if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
-            fprintf(stderr, "FAIL ok m126-skit-obj: compile_obj\n");
+        const char* asrc =
+            ".text\n"
+            ".globl add\n"
+            "add:\n"
+            "mov %edi, %eax\n"
+            "add %esi, %eax\n"
+            "ret\n"
+            ".globl bump\n"
+            "bump:\n"
+            "mov $42, %esi\n"
+            "call add\n"
+            "ret\n";
+        if (as_compile(asrc, strlen(asrc), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m127-as-obj: as_compile\n");
             fails++;
         } else {
             f = fopen("disk/lib.o", "wb");
             if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
-                fprintf(stderr, "FAIL ok m126-skit-obj: write lib.o\n");
+                fprintf(stderr, "FAIL ok m127-as-obj: write lib.o\n");
                 fails++;
             }
         }
@@ -708,7 +709,6 @@ int main(void) {
             "#lib \"slen.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"
-            "import fn msg();\n"
             "import fn strcpy(d,s);\n"
             "import fn strcat(d,s);\n"
             "import fn strchr(s,c);\n"
@@ -720,9 +720,9 @@ int main(void) {
             "int p;\n"
             "int n;\n"
             "int m;\n"
-            "m=strlen(\"WMSG:SK\\n\");\n"
-            "cwrite(\"WMSG:SK\\n\", m);\n"
-            "strcpy(&buf[0], msg());\n"
+            "m=strlen(\"WMSG:AS\\n\");\n"
+            "cwrite(\"WMSG:AS\\n\", m);\n"
+            "strcpy(&buf[0], \"XA\");\n"
             "strcat(&buf[0], \"YZ\");\n"
             "p=strchr(&buf[0], 65);\n"
             "n=strncmp(p, \"AYZ\", 3);\n"
@@ -730,7 +730,7 @@ int main(void) {
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m126-strcat-strchr-kit") != 0) {
+            "m127-as-string-kit") != 0) {
         fails++;
     }
     {

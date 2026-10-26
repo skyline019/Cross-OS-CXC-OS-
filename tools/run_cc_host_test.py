@@ -20,6 +20,7 @@ SOURCES = [
     CC_DIR / "emit.c",
     CC_DIR / "prep.c",
     CC_DIR / "elflink.c",
+    CC_DIR / "as.c",
 ]
 
 

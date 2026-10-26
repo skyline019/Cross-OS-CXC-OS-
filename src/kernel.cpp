@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M126/A2: musl strcat+strchr string-kit closure → NMSG + WMSG + SKIT.
+    // M127/A2: on-box as lib.s→ET_REL + string-kit → NMSG + WMSG + ASM.
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2075,16 +2075,16 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", exit: ");
         log::decimal(onbox.exit_code);
         log::write('\n');
-        log::panic("M126 on-box mini-cc strcat+strchr string-kit failed");
+        log::panic("M127 on-box mini-cc as+string-kit failed");
     }
     log::write("[ok] onbox-cc: pass: ");
     log::decimal(onbox.wrote_pass);
     log::write(" src: 1 cc: 1 run: 1 exit: ");
     log::decimal(onbox.exit_code);
-    log::write(" write: 1 skit: 1 edge: ");
+    log::write(" write: 1 asm: 1 edge: ");
     log::decimal(onbox.edge_ok);
     log::write('\n');
-    log::line("ONBOX_SKIT_PASS");
+    log::line("ONBOX_ASM_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2357,7 +2357,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.17.0 - on-box mini-cc strcat/strchr kit (A2/M126)");
+    cxc::log::line("CXC/OS 2.18.0 - on-box mini-cc as subset (A2/M127)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

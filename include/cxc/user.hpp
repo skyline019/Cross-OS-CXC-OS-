@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M126/A2: musl strcat+strchr multi-hop closure + DMSG/DHINT → ONBOX_SKIT_PASS.
+// M127/A2: on-box as lib.s→ET_REL + string-kit + DMSG/DHINT → ONBOX_ASM_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

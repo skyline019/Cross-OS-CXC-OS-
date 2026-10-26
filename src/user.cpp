@@ -1937,18 +1937,19 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M126: musl strcat+strchr closure (multi-hop UND); edge.
-    static const char lib_text[] =
-        "CXC_A2\n"
-        "int add(int a, int b){\n"
-        "return a+b;\n"
-        "}\n"
-        "int bump(int x){\n"
-        "return add(x, 42);\n"
-        "}\n"
-        "int msg(void){\n"
-        "return \"XA\";\n"
-        "}\n";
+    // M127: on-box as lib.s→ET_REL + musl string-kit; edge.
+    static const char lib_s_text[] =
+        ".text\n"
+        ".globl add\n"
+        "add:\n"
+        "mov %edi, %eax\n"
+        "add %esi, %eax\n"
+        "ret\n"
+        ".globl bump\n"
+        "bump:\n"
+        "mov $42, %esi\n"
+        "call add\n"
+        "ret\n";
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"lib.o\"\n"
@@ -1961,7 +1962,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "#lib \"slen.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
-        "import fn msg();\n"
         "import fn strcpy(d,s);\n"
         "import fn strcat(d,s);\n"
         "import fn strchr(s,c);\n"
@@ -1973,9 +1973,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "int p;\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:SK\\n\");\n"
-        "cwrite(\"WMSG:SK\\n\", m);\n"
-        "strcpy(&buf[0], msg());\n"
+        "m=strlen(\"WMSG:AS\\n\");\n"
+        "cwrite(\"WMSG:AS\\n\", m);\n"
+        "strcpy(&buf[0], \"XA\");\n"
         "strcat(&buf[0], \"YZ\");\n"
         "p=strchr(&buf[0], 65);\n"
         "n=strncmp(p, \"AYZ\", 3);\n"
@@ -2347,13 +2347,13 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
 
     {
         const int64_t lfd = fs::open_path(
-            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            "disk/lib.s", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (lfd < 0) {
             result.failure = 70;
             return false;
         }
-        const size_t lib_len = sizeof(lib_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(lfd), lib_text, lib_len) !=
+        const size_t lib_len = sizeof(lib_s_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(lfd), lib_s_text, lib_len) !=
             static_cast<int64_t>(lib_len)) {
             (void)fs::close_fd(static_cast<uint32_t>(lfd));
             result.failure = 71;

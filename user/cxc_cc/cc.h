@@ -280,3 +280,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);
 int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
                    size_t* out_len);
+
+/* M127: freestanding GAS subset → SysV ET_REL. */
+int as_compile(const char* src, size_t len, unsigned char** out_elf,
+               size_t* out_len);
+int as_last_fail_code(void);
