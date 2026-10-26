@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 96 / v0.97.0：机上 freestanding mini-cc（if/while/表达式）**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 97 / v0.98.0：机上 mini-cc 语言加深（break/&&/数组+边缘）**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -121,7 +121,8 @@ CXC_OS_SELF_TEST_PASS
 | on-box codegen (M93) | `cxc-cc` 解析 `return N` 写入 exit(N)；`exit: 42`；`ONBOX_CGEN_PASS` |
 | Ninth midfield (M94) | [`midpoint-assessment-9.md`](midpoint-assessment-9.md)；pipe→机上 codegen 收束；下一刀表达式/汇编 |
 | on-box write (M95) | `write LIT`+`return N`→`WMSG:`+exit；`ONBOX_WRITE_PASS` |
-| on-box mini-cc (M96) | freestanding C `cxc-cc`；if/while/expr；`ONBOX_CTRL_PASS`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
+| on-box mini-cc (M96) | freestanding C `cxc-cc`；if/while/expr；曾用 `ONBOX_CTRL_PASS` |
+| on-box lang (M97) | `break`/`continue`/`&&`/`||`/`!`/`-`/数组；`ONBOX_LANG_PASS` + `edge: 1`；宿主 `cc_host_test`；见 [`a2-mini-cc.md`](a2-mini-cc.md) |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 
@@ -310,4 +311,4 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
 - 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **数组/struct/函数**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；下一正式中场约 **M104**）。须保持 M13–M96 回归证据。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **struct/函数**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；下一正式中场约 **M104**）。须保持 M13–M97 回归证据。

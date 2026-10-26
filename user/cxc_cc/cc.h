@@ -1,17 +1,26 @@
-/* CXC mini-cc (A2): statements, expressions, if/while. Freestanding. */
+/* CXC mini-cc (A2): statements, expressions, control, arrays. Freestanding. */
 #pragma once
 
+#ifdef CC_HOST
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#else
 #include "mini_libc/stdlib.h"
 #include "mini_libc/string.h"
 #include "mini_libc/unistd.h"
+#endif
 
 enum {
     CC_SRC_MAX = 4096,
     CC_CODE_MAX = 12288,
     CC_DATA_MAX = 2048,
-    CC_LOCAL_MAX = 16,
+    CC_LOCAL_MAX = 32,
     CC_IDENT_MAX = 8,
     CC_LIT_MAX = 8,
+    CC_LOOP_MAX = 4,
+    CC_BREAK_MAX = 8,
     CC_LOAD_VA = 0x400000
 };
 
@@ -19,28 +28,35 @@ enum CcTok {
     TOK_EOF = 0,
     TOK_IDENT,
     TOK_NUMBER,
-    TOK_LIT, /* write operand: HI */
+    TOK_LIT,
     TOK_KW_IF,
     TOK_KW_ELSE,
     TOK_KW_WHILE,
     TOK_KW_RETURN,
     TOK_KW_WRITE,
+    TOK_KW_BREAK,
+    TOK_KW_CONTINUE,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
     TOK_RBRACE,
+    TOK_LBRACK,
+    TOK_RBRACK,
     TOK_SEMI,
     TOK_ASSIGN,
     TOK_PLUS,
     TOK_MINUS,
     TOK_STAR,
     TOK_SLASH,
+    TOK_BANG,
     TOK_EQ,
     TOK_NE,
     TOK_LT,
     TOK_LE,
     TOK_GT,
-    TOK_GE
+    TOK_GE,
+    TOK_AMPAMP,
+    TOK_BARBAR
 };
 
 typedef struct CcLexer {
@@ -54,8 +70,15 @@ typedef struct CcLexer {
 
 typedef struct CcLocal {
     char name[CC_IDENT_MAX + 1];
-    int slot; /* 0..CC_LOCAL_MAX-1 */
+    int slot;  /* base stack slot */
+    int count; /* 1 scalar, N array */
 } CcLocal;
+
+typedef struct CcLoop {
+    size_t cont_at;
+    size_t brk_at[CC_BREAK_MAX];
+    int nbrk;
+} CcLoop;
 
 typedef struct CcEmit {
     unsigned char* code;
@@ -66,13 +89,19 @@ typedef struct CcEmit {
     size_t data_cap;
     CcLocal locals[CC_LOCAL_MAX];
     int nlocals;
+    int next_slot;
     int failed;
+    CcLoop loops[CC_LOOP_MAX];
+    int nloops;
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
 void cc_lex_next(CcLexer* lx);
 
+int cc_local_find(CcEmit* em, const char* name);
+int cc_local_define(CcEmit* em, const char* name, int count);
 int cc_local_slot(CcEmit* em, const char* name, int create);
+
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
 void cc_emit_u32(CcEmit* em, unsigned v);
@@ -87,6 +116,8 @@ void cc_emit_push_rax(CcEmit* em);
 void cc_emit_pop_rcx(CcEmit* em);
 void cc_emit_store_local(CcEmit* em, int slot);
 void cc_emit_load_local(CcEmit* em, int slot);
+void cc_emit_index_load(CcEmit* em, int base_slot);
+void cc_emit_index_store(CcEmit* em, int base_slot);
 void cc_emit_prologue(CcEmit* em);
 void cc_emit_write_lit2(CcEmit* em, const char* lit);
 void cc_emit_write_pass(CcEmit* em);

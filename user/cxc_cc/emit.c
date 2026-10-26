@@ -5,31 +5,51 @@ enum {
     SYS_EXIT = 60
 };
 
-int cc_local_slot(CcEmit* em, const char* name, int create) {
+int cc_local_find(CcEmit* em, const char* name) {
     int i;
-    if (em->nlocals < 0 || em->nlocals > CC_LOCAL_MAX) {
-        em->nlocals = 0;
-    }
     for (i = 0; i < em->nlocals; i++) {
         if (strcmp(em->locals[i].name, name) == 0) {
-            return em->locals[i].slot;
+            return i;
         }
     }
-    if (!create || em->nlocals >= CC_LOCAL_MAX) {
+    return -1;
+}
+
+int cc_local_define(CcEmit* em, const char* name, int count) {
+    CcLocal* loc;
+    size_t n = 0;
+    if (count < 1 || em->nlocals >= CC_LOCAL_MAX ||
+        em->next_slot + count > CC_LOCAL_MAX) {
         return -1;
     }
-    {
-        CcLocal* loc = &em->locals[em->nlocals];
-        size_t n = 0;
-        while (n < CC_IDENT_MAX && name[n] != '\0') {
-            loc->name[n] = name[n];
-            n++;
-        }
-        loc->name[n] = 0;
-        loc->slot = em->nlocals;
-        em->nlocals++;
-        return loc->slot;
+    if (cc_local_find(em, name) >= 0) {
+        return -1;
     }
+    loc = &em->locals[em->nlocals];
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        loc->name[n] = name[n];
+        n++;
+    }
+    loc->name[n] = 0;
+    loc->slot = em->next_slot;
+    loc->count = count;
+    em->next_slot += count;
+    em->nlocals++;
+    return loc->slot;
+}
+
+int cc_local_slot(CcEmit* em, const char* name, int create) {
+    int idx = cc_local_find(em, name);
+    if (idx >= 0) {
+        if (em->locals[idx].count != 1) {
+            return -1;
+        }
+        return em->locals[idx].slot;
+    }
+    if (!create) {
+        return -1;
+    }
+    return cc_local_define(em, name, 1);
 }
 
 void cc_emit_byte(CcEmit* em, unsigned char b) {
@@ -115,6 +135,24 @@ void cc_emit_load_local(CcEmit* em, int slot) {
     cc_emit_i32(em, -((slot + 1) * 8));
 }
 
+void cc_emit_index_load(CcEmit* em, int base_slot) {
+    /* rax = index; element at rbp-(base+1+index)*8 */
+    cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base+1)*8] */
+    cc_emit_i32(em, -((base_slot + 1) * 8));
+    cc_emit_bytes(em, "\x48\xC1\xE0\x03", 4); /* shl rax, 3 */
+    cc_emit_bytes(em, "\x48\x29\xC6", 3);     /* sub rsi, rax */
+    cc_emit_bytes(em, "\x48\x8B\x06", 3);     /* mov rax, [rsi] */
+}
+
+void cc_emit_index_store(CcEmit* em, int base_slot) {
+    /* value in rax, index in rcx */
+    cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base+1)*8] */
+    cc_emit_i32(em, -((base_slot + 1) * 8));
+    cc_emit_bytes(em, "\x48\xC1\xE1\x03", 4); /* shl rcx, 3 */
+    cc_emit_bytes(em, "\x48\x29\xCE", 3);     /* sub rsi, rcx */
+    cc_emit_bytes(em, "\x48\x89\x06", 3);     /* mov [rsi], rax */
+}
+
 void cc_emit_prologue(CcEmit* em) {
     /* push rbp; mov rbp, rsp; sub rsp, CC_LOCAL_MAX*8 */
     cc_emit_byte(em, 0x55);
@@ -187,7 +225,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_CTRL_PASS\n";
+    static const char pass[] = "ONBOX_LANG_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);

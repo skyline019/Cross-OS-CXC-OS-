@@ -157,9 +157,9 @@ HEAP_PASS = "HEAP_PASS"
 HEAP_PROBE_SUCCESS = "heap: pass: 1"
 TIME_PASS = "TIME_PASS"
 TIME_PROBE_SUCCESS = "time: pass: 1"
-ONBOX_CTRL_PASS = "ONBOX_CTRL_PASS"
+ONBOX_LANG_PASS = "ONBOX_LANG_PASS"
 ONBOX_CC_PROBE_SUCCESS = "onbox-cc: pass: 1"
-ONBOX_WMSG = "WMSG:HI"
+ONBOX_WMSG = "WMSG:OK"
 
 
 @dataclass
@@ -492,6 +492,24 @@ def run_host_checks(seed: int) -> list[HostCheck]:
         return f"seed={seed}; 10000 random blobs x 4 validators rejected without exceptions"
 
     record("混沌", "deterministic malformed-frame chaos", deterministic_chaos, "random frames")
+
+    def cxc_cc_strict() -> str:
+        script = PROJECT_ROOT / "tools" / "run_cc_host_test.py"
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        if completed.returncode != 0:
+            raise AssertionError(
+                (completed.stdout or "") + (completed.stderr or "")
+            )
+        assert "cc_host_test: PASS" in completed.stdout
+        return "host cxc-cc: good ELF + edge rejects"
+
+    record("编译器", "cxc-cc host strict compile", cxc_cc_strict, "mini-cc host")
     return checks
 
 
@@ -650,7 +668,7 @@ class ContractRunner:
         assert b"access: 1" in serial
         assert b"clock: 1" in serial
         assert b"gettimeofday: 1" in serial
-        assert ONBOX_CTRL_PASS.encode() in serial
+        assert ONBOX_LANG_PASS.encode() in serial
         assert ONBOX_CC_PROBE_SUCCESS.encode() in serial
         assert ONBOX_WMSG.encode() in serial
         assert b"src: 1" in serial
@@ -658,7 +676,8 @@ class ContractRunner:
         assert b"run: 1" in serial
         assert b"exit: 42" in serial
         assert b"write: 1" in serial
-        assert b"ctrl: 1" in serial
+        assert b"lang: 1" in serial
+        assert b"edge: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -667,7 +686,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M96 on-box mini-cc ctrl"
+            "kernel PASS + net + M75–M97 on-box mini-cc lang+edge"
         )
 
     def negative_evidence(self, work: Path) -> str:

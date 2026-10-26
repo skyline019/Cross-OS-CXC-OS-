@@ -1919,19 +1919,24 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M96: while/if/expr compute 42, then write HI + return n.
+    // M97: array/break/continue/&&/! compute 42, write OK; then edge reject.
     static const char src_text[] =
         "CXC_A2\n"
+        "a[6];\n"
         "i=0;\n"
         "n=0;\n"
-        "while(i<6){\n"
-        "n=n+7;\n"
+        "while(1){\n"
+        "if(i==6){ break; }\n"
+        "if(i==0){ i=i+1; continue; }\n"
+        "a[i]=7;\n"
+        "n=n+a[i];\n"
         "i=i+1;\n"
         "}\n"
-        "if(n==42){\n"
-        "write HI;\n"
+        "if(n==35 && !(i!=6)){\n"
+        "write OK;\n"
         "}\n"
-        "return n;\n";
+        "return n+7;\n";
+    static const char bad_src[] = "CXC_A2\nreturn ;\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
     if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||
@@ -2012,6 +2017,51 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         return false;
     }
     syscall::clear_session();
+
+    // Edge: illegal source must exit 4 from cxc-cc without LANG_PASS.
+    result.stage = 6;
+    const int64_t bfd = fs::open_path(
+        "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+    if (bfd < 0) {
+        result.failure = 11;
+        return false;
+    }
+    const size_t bad_len = sizeof(bad_src) - 1;
+    if (fs::write_fd(static_cast<uint32_t>(bfd), bad_src, bad_len) !=
+        static_cast<int64_t>(bad_len)) {
+        (void)fs::close_fd(static_cast<uint32_t>(bfd));
+        result.failure = 12;
+        return false;
+    }
+    if (fs::close_fd(static_cast<uint32_t>(bfd)) != 0) {
+        result.failure = 13;
+        return false;
+    }
+    cxcfs::MountResult remount_edge{};
+    if (!cxcfs::remount(remount_edge)) {
+        result.failure = 14;
+        return false;
+    }
+    entry = 0;
+    stage = 0;
+    failure = 0;
+    if (!launch_user_elf(stub_image, stub_size, entry, stage, failure)) {
+        result.stage = stage;
+        result.failure = 30 + failure;
+        return false;
+    }
+    {
+        const uint64_t edge_exit = syscall::session().exit_code;
+        const uint32_t edge_pass = syscall::session().saw_onbox_cc_pass;
+        syscall::clear_session();
+        if (edge_exit != 4 || edge_pass != 0) {
+            result.failure = 15;
+            result.exit_code = edge_exit;
+            return false;
+        }
+    }
+    result.edge_ok = 1;
+    result.stage = 7;
     onbox_cc_probe = result;
     return true;
 }

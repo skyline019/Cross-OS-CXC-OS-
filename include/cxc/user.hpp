@@ -744,10 +744,11 @@ struct OnboxCcProbeResult {
     uint32_t entered;
     uint32_t exited;
     uint32_t wrote_pass;
+    uint32_t edge_ok;
     uint64_t exit_code;
 };
 
-// M96/A2: freestanding mini-cc; while/if/expr → ONBOX_CTRL_PASS + exit(N).
+// M97/A2: lang (&&/||/!/-/break/continue/array) + edge reject → ONBOX_LANG_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

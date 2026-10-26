@@ -25,107 +25,17 @@ static void expect(CcParser* p, int tok) {
 
 static void parse_expr(CcParser* p);
 
-static void parse_primary(CcParser* p) {
-    if (p->lx->tok == TOK_NUMBER) {
-        cc_emit_mov_eax_imm(p->em, (unsigned)p->lx->number);
-        cc_lex_next(p->lx);
-        return;
-    }
-    if (p->lx->tok == TOK_IDENT) {
-        int slot = cc_local_slot(p->em, p->lx->text, 0);
-        if (slot < 0) {
-            fail(p);
-            return;
-        }
-        cc_emit_load_local(p->em, slot);
-        cc_lex_next(p->lx);
-        return;
-    }
-    if (accept(p, TOK_LPAREN)) {
-        parse_expr(p);
-        expect(p, TOK_RPAREN);
-        return;
-    }
-    fail(p);
-}
-
-static void parse_mul(CcParser* p) {
-    parse_primary(p);
-    while (p->lx->tok == TOK_STAR || p->lx->tok == TOK_SLASH) {
-        int op = p->lx->tok;
-        cc_lex_next(p->lx);
-        cc_emit_push_rax(p->em);
-        parse_primary(p);
-        if (op == TOK_STAR) {
-            cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax */
-            cc_emit_pop_rcx(p->em);
-            cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
-            cc_emit_bytes(p->em, "\x48\x0F\xAF\xC2", 4); /* imul rax, rdx */
-        } else {
-            cc_emit_bytes(p->em, "\x48\x89\xC1", 3); /* mov rcx, rax divisor */
-            cc_emit_byte(p->em, 0x58);                /* pop rax = dividend */
-            cc_emit_bytes(p->em, "\x48\x99", 2);       /* cqo */
-            cc_emit_bytes(p->em, "\x48\xF7\xF9", 3);   /* idiv rcx */
-        }
-    }
-}
-
-static void parse_add(CcParser* p) {
-    parse_mul(p);
-    while (p->lx->tok == TOK_PLUS || p->lx->tok == TOK_MINUS) {
-        int op = p->lx->tok;
-        cc_lex_next(p->lx);
-        cc_emit_push_rax(p->em);
-        parse_mul(p);
-        cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax */
-        cc_emit_pop_rcx(p->em);
-        cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
-        if (op == TOK_PLUS) {
-            cc_emit_bytes(p->em, "\x48\x01\xD0", 3); /* add rax, rdx */
-        } else {
-            cc_emit_bytes(p->em, "\x48\x29\xD0", 3); /* sub rax, rdx */
-        }
-    }
-}
-
-static void parse_cmp(CcParser* p) {
-    parse_add(p);
-    while (p->lx->tok == TOK_EQ || p->lx->tok == TOK_NE || p->lx->tok == TOK_LT ||
-           p->lx->tok == TOK_LE || p->lx->tok == TOK_GT || p->lx->tok == TOK_GE) {
-        int op = p->lx->tok;
-        cc_lex_next(p->lx);
-        cc_emit_push_rax(p->em);
-        parse_add(p);
-        cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
-        cc_emit_pop_rcx(p->em);
-        cc_emit_bytes(p->em, "\x48\x39\xD1", 3); /* cmp rcx, rdx */
-        /* setcc al; movzx eax, al */
-        if (op == TOK_EQ) {
-            cc_emit_bytes(p->em, "\x0F\x94\xC0", 3);
-        } else if (op == TOK_NE) {
-            cc_emit_bytes(p->em, "\x0F\x95\xC0", 3);
-        } else if (op == TOK_LT) {
-            cc_emit_bytes(p->em, "\x0F\x9C\xC0", 3);
-        } else if (op == TOK_LE) {
-            cc_emit_bytes(p->em, "\x0F\x9E\xC0", 3);
-        } else if (op == TOK_GT) {
-            cc_emit_bytes(p->em, "\x0F\x9F\xC0", 3);
-        } else {
-            cc_emit_bytes(p->em, "\x0F\x9D\xC0", 3);
-        }
-        cc_emit_bytes(p->em, "\x0F\xB6\xC0", 3); /* movzx eax, al */
-    }
-}
-
-static void parse_expr(CcParser* p) {
-    parse_cmp(p);
-}
-
-static void parse_stmt(CcParser* p);
-
 static size_t emit_je32(CcEmit* em) {
     size_t at;
     cc_emit_bytes(em, "\x0F\x84", 2);
+    at = em->code_len;
+    cc_emit_i32(em, 0);
+    return at;
+}
+
+static size_t emit_jne32(CcEmit* em) {
+    size_t at;
+    cc_emit_bytes(em, "\x0F\x85", 2);
     at = em->code_len;
     cc_emit_i32(em, 0);
     return at;
@@ -147,12 +57,192 @@ static void patch_rel32(CcEmit* em, size_t at, size_t target) {
     em->code[at + 3] = (unsigned char)(rel >> 24);
 }
 
+static void parse_primary(CcParser* p) {
+    if (p->lx->tok == TOK_NUMBER) {
+        cc_emit_mov_eax_imm(p->em, (unsigned)p->lx->number);
+        cc_lex_next(p->lx);
+        return;
+    }
+    if (p->lx->tok == TOK_IDENT) {
+        char name[CC_IDENT_MAX + 1];
+        int idx;
+        memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+        cc_lex_next(p->lx);
+        idx = cc_local_find(p->em, name);
+        if (idx < 0) {
+            fail(p);
+            return;
+        }
+        if (accept(p, TOK_LBRACK)) {
+            if (p->em->locals[idx].count < 1) {
+                fail(p);
+                return;
+            }
+            parse_expr(p);
+            expect(p, TOK_RBRACK);
+            cc_emit_index_load(p->em, p->em->locals[idx].slot);
+            return;
+        }
+        if (p->em->locals[idx].count != 1) {
+            fail(p);
+            return;
+        }
+        cc_emit_load_local(p->em, p->em->locals[idx].slot);
+        return;
+    }
+    if (accept(p, TOK_LPAREN)) {
+        parse_expr(p);
+        expect(p, TOK_RPAREN);
+        return;
+    }
+    fail(p);
+}
+
+static void parse_unary(CcParser* p) {
+    if (accept(p, TOK_MINUS)) {
+        parse_unary(p);
+        cc_emit_bytes(p->em, "\x48\xF7\xD8", 3); /* neg rax */
+        return;
+    }
+    if (accept(p, TOK_BANG)) {
+        parse_unary(p);
+        cc_emit_bytes(p->em, "\x85\xC0", 2);     /* test eax, eax */
+        cc_emit_bytes(p->em, "\x0F\x94\xC0", 3); /* sete al */
+        cc_emit_bytes(p->em, "\x0F\xB6\xC0", 3); /* movzx eax, al */
+        return;
+    }
+    parse_primary(p);
+}
+
+static void parse_mul(CcParser* p) {
+    parse_unary(p);
+    while (p->lx->tok == TOK_STAR || p->lx->tok == TOK_SLASH) {
+        int op = p->lx->tok;
+        cc_lex_next(p->lx);
+        cc_emit_push_rax(p->em);
+        parse_unary(p);
+        if (op == TOK_STAR) {
+            cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+            cc_emit_pop_rcx(p->em);
+            cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+            cc_emit_bytes(p->em, "\x48\x0F\xAF\xC2", 4);
+        } else {
+            cc_emit_bytes(p->em, "\x48\x89\xC1", 3);
+            cc_emit_byte(p->em, 0x58);
+            cc_emit_bytes(p->em, "\x48\x99", 2);
+            cc_emit_bytes(p->em, "\x48\xF7\xF9", 3);
+        }
+    }
+}
+
+static void parse_add(CcParser* p) {
+    parse_mul(p);
+    while (p->lx->tok == TOK_PLUS || p->lx->tok == TOK_MINUS) {
+        int op = p->lx->tok;
+        cc_lex_next(p->lx);
+        cc_emit_push_rax(p->em);
+        parse_mul(p);
+        cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+        cc_emit_pop_rcx(p->em);
+        cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+        if (op == TOK_PLUS) {
+            cc_emit_bytes(p->em, "\x48\x01\xD0", 3);
+        } else {
+            cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+        }
+    }
+}
+
+static void parse_cmp(CcParser* p) {
+    parse_add(p);
+    while (p->lx->tok == TOK_EQ || p->lx->tok == TOK_NE || p->lx->tok == TOK_LT ||
+           p->lx->tok == TOK_LE || p->lx->tok == TOK_GT || p->lx->tok == TOK_GE) {
+        int op = p->lx->tok;
+        cc_lex_next(p->lx);
+        cc_emit_push_rax(p->em);
+        parse_add(p);
+        cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+        cc_emit_pop_rcx(p->em);
+        cc_emit_bytes(p->em, "\x48\x39\xD1", 3);
+        if (op == TOK_EQ) {
+            cc_emit_bytes(p->em, "\x0F\x94\xC0", 3);
+        } else if (op == TOK_NE) {
+            cc_emit_bytes(p->em, "\x0F\x95\xC0", 3);
+        } else if (op == TOK_LT) {
+            cc_emit_bytes(p->em, "\x0F\x9C\xC0", 3);
+        } else if (op == TOK_LE) {
+            cc_emit_bytes(p->em, "\x0F\x9E\xC0", 3);
+        } else if (op == TOK_GT) {
+            cc_emit_bytes(p->em, "\x0F\x9F\xC0", 3);
+        } else {
+            cc_emit_bytes(p->em, "\x0F\x9D\xC0", 3);
+        }
+        cc_emit_bytes(p->em, "\x0F\xB6\xC0", 3);
+    }
+}
+
+static void parse_and(CcParser* p) {
+    parse_cmp(p);
+    while (p->lx->tok == TOK_AMPAMP) {
+        size_t je_at;
+        cc_lex_next(p->lx);
+        cc_emit_bytes(p->em, "\x85\xC0", 2);
+        je_at = emit_je32(p->em);
+        parse_cmp(p);
+        patch_rel32(p->em, je_at, p->em->code_len);
+    }
+}
+
+static void parse_or(CcParser* p) {
+    parse_and(p);
+    while (p->lx->tok == TOK_BARBAR) {
+        size_t jne_at;
+        cc_lex_next(p->lx);
+        cc_emit_bytes(p->em, "\x85\xC0", 2);
+        jne_at = emit_jne32(p->em);
+        parse_and(p);
+        patch_rel32(p->em, jne_at, p->em->code_len);
+    }
+}
+
+static void parse_expr(CcParser* p) {
+    parse_or(p);
+}
+
+static void parse_stmt(CcParser* p);
+
 static void parse_block(CcParser* p) {
     expect(p, TOK_LBRACE);
     while (!p->em->failed && p->lx->tok != TOK_RBRACE && p->lx->tok != TOK_EOF) {
         parse_stmt(p);
     }
     expect(p, TOK_RBRACE);
+}
+
+static int loop_push(CcEmit* em, size_t cont_at) {
+    CcLoop* lp;
+    if (em->nloops >= CC_LOOP_MAX) {
+        em->failed = 1;
+        return -1;
+    }
+    lp = &em->loops[em->nloops++];
+    lp->cont_at = cont_at;
+    lp->nbrk = 0;
+    return 0;
+}
+
+static void loop_pop(CcEmit* em, size_t exit_at) {
+    CcLoop* lp;
+    int i;
+    if (em->nloops <= 0) {
+        em->failed = 1;
+        return;
+    }
+    lp = &em->loops[em->nloops - 1];
+    for (i = 0; i < lp->nbrk; i++) {
+        patch_rel32(em, lp->brk_at[i], exit_at);
+    }
+    em->nloops--;
 }
 
 static void parse_stmt(CcParser* p) {
@@ -170,7 +260,6 @@ static void parse_stmt(CcParser* p) {
         expect(p, TOK_LPAREN);
         parse_expr(p);
         expect(p, TOK_RPAREN);
-        /* test eax,eax; je else */
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         parse_stmt(p);
@@ -188,17 +277,48 @@ static void parse_stmt(CcParser* p) {
     if (accept(p, TOK_KW_WHILE)) {
         size_t loop = p->em->code_len;
         size_t je_at;
+        size_t back;
         expect(p, TOK_LPAREN);
+        if (loop_push(p->em, loop) != 0) {
+            return;
+        }
         parse_expr(p);
         expect(p, TOK_RPAREN);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         parse_stmt(p);
-        {
-            size_t back = emit_jmp32(p->em);
-            patch_rel32(p->em, back, loop);
-        }
+        back = emit_jmp32(p->em);
+        patch_rel32(p->em, back, loop);
         patch_rel32(p->em, je_at, p->em->code_len);
+        loop_pop(p->em, p->em->code_len);
+        return;
+    }
+    if (accept(p, TOK_KW_BREAK)) {
+        CcLoop* lp;
+        size_t at;
+        expect(p, TOK_SEMI);
+        if (p->em->nloops <= 0) {
+            fail(p);
+            return;
+        }
+        lp = &p->em->loops[p->em->nloops - 1];
+        if (lp->nbrk >= CC_BREAK_MAX) {
+            fail(p);
+            return;
+        }
+        at = emit_jmp32(p->em);
+        lp->brk_at[lp->nbrk++] = at;
+        return;
+    }
+    if (accept(p, TOK_KW_CONTINUE)) {
+        size_t at;
+        expect(p, TOK_SEMI);
+        if (p->em->nloops <= 0) {
+            fail(p);
+            return;
+        }
+        at = emit_jmp32(p->em);
+        patch_rel32(p->em, at, p->em->loops[p->em->nloops - 1].cont_at);
         return;
     }
     if (accept(p, TOK_KW_WRITE)) {
@@ -221,7 +341,6 @@ static void parse_stmt(CcParser* p) {
     if (accept(p, TOK_KW_RETURN)) {
         parse_expr(p);
         expect(p, TOK_SEMI);
-        /* Preserve status across write_pass (syscall clobbers eax). */
         cc_emit_bytes(p->em, "\x89\xC3", 2); /* mov ebx, eax */
         cc_emit_write_pass(p->em);
         cc_emit_exit_rax(p->em);
@@ -229,9 +348,57 @@ static void parse_stmt(CcParser* p) {
     }
     if (p->lx->tok == TOK_IDENT) {
         char name[CC_IDENT_MAX + 1];
+        int idx;
         int slot;
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
+        if (accept(p, TOK_LBRACK)) {
+            if (p->lx->tok == TOK_NUMBER) {
+                long dim = p->lx->number;
+                cc_lex_next(p->lx);
+                expect(p, TOK_RBRACK);
+                if (accept(p, TOK_SEMI)) {
+                    if (dim < 1 || dim > CC_LOCAL_MAX) {
+                        fail(p);
+                        return;
+                    }
+                    if (cc_local_define(p->em, name, (int)dim) < 0) {
+                        fail(p);
+                    }
+                    return;
+                }
+                if (accept(p, TOK_ASSIGN)) {
+                    idx = cc_local_find(p->em, name);
+                    if (idx < 0 || p->em->locals[idx].count < 1) {
+                        fail(p);
+                        return;
+                    }
+                    cc_emit_mov_eax_imm(p->em, (unsigned)dim);
+                    cc_emit_push_rax(p->em);
+                    parse_expr(p);
+                    expect(p, TOK_SEMI);
+                    cc_emit_pop_rcx(p->em);
+                    cc_emit_index_store(p->em, p->em->locals[idx].slot);
+                    return;
+                }
+                fail(p);
+                return;
+            }
+            idx = cc_local_find(p->em, name);
+            if (idx < 0 || p->em->locals[idx].count < 1) {
+                fail(p);
+                return;
+            }
+            parse_expr(p);
+            expect(p, TOK_RBRACK);
+            expect(p, TOK_ASSIGN);
+            cc_emit_push_rax(p->em);
+            parse_expr(p);
+            expect(p, TOK_SEMI);
+            cc_emit_pop_rcx(p->em);
+            cc_emit_index_store(p->em, p->em->locals[idx].slot);
+            return;
+        }
         expect(p, TOK_ASSIGN);
         if (p->em->failed) {
             return;
@@ -261,8 +428,6 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     CcParser p;
     const char magic[] = "CXC_A2";
     size_t i;
-    /* Keep emit state + code/data off the  user stack (corruption was hanging
-     * strcmp in cc_local_slot after deep write() frames). */
     static CcEmit em;
     static unsigned char code_buf[CC_CODE_MAX];
     static unsigned char data_buf[CC_DATA_MAX];
@@ -275,6 +440,8 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.code_len = 0;
     em.data_len = 0;
     em.nlocals = 0;
+    em.next_slot = 0;
+    em.nloops = 0;
     em.failed = 0;
     cc_reloc_reset();
 
@@ -288,7 +455,6 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     }
 
     cc_lex_init(&lx, src, len);
-    /* skip magic tokens: CXC_A2 may lex as IDENT CXC_A2 */
     if (lx.tok == TOK_IDENT && strcmp(lx.text, "CXC_A2") == 0) {
         cc_lex_next(&lx);
     }
@@ -299,7 +465,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     {
         int guard = 0;
         while (!em.failed && lx.tok != TOK_EOF) {
-            if (++guard > 256) {
+            if (++guard > 512) {
                 em.failed = 1;
                 break;
             }

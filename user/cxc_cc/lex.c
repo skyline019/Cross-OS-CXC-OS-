@@ -33,6 +33,10 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_RETURN;
     } else if (strcmp(lx->text, "write") == 0) {
         lx->tok = TOK_KW_WRITE;
+    } else if (strcmp(lx->text, "break") == 0) {
+        lx->tok = TOK_KW_BREAK;
+    } else if (strcmp(lx->text, "continue") == 0) {
+        lx->tok = TOK_KW_CONTINUE;
     } else {
         lx->tok = TOK_IDENT;
     }
@@ -82,6 +86,10 @@ void cc_lex_next(CcLexer* lx) {
         lx->tok = TOK_LBRACE;
     } else if (c == '}') {
         lx->tok = TOK_RBRACE;
+    } else if (c == '[') {
+        lx->tok = TOK_LBRACK;
+    } else if (c == ']') {
+        lx->tok = TOK_RBRACK;
     } else if (c == ';') {
         lx->tok = TOK_SEMI;
     } else if (c == '+') {
@@ -92,19 +100,33 @@ void cc_lex_next(CcLexer* lx) {
         lx->tok = TOK_STAR;
     } else if (c == '/') {
         lx->tok = TOK_SLASH;
+    } else if (c == '!') {
+        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
+            lx->pos++;
+            lx->tok = TOK_NE;
+        } else {
+            lx->tok = TOK_BANG;
+        }
+    } else if (c == '&') {
+        if (lx->pos < lx->len && lx->src[lx->pos] == '&') {
+            lx->pos++;
+            lx->tok = TOK_AMPAMP;
+        } else {
+            lx->tok = TOK_EOF;
+        }
+    } else if (c == '|') {
+        if (lx->pos < lx->len && lx->src[lx->pos] == '|') {
+            lx->pos++;
+            lx->tok = TOK_BARBAR;
+        } else {
+            lx->tok = TOK_EOF;
+        }
     } else if (c == '=') {
         if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
             lx->pos++;
             lx->tok = TOK_EQ;
         } else {
             lx->tok = TOK_ASSIGN;
-        }
-    } else if (c == '!') {
-        if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
-            lx->pos++;
-            lx->tok = TOK_NE;
-        } else {
-            lx->tok = TOK_EOF;
         }
     } else if (c == '<') {
         if (lx->pos < lx->len && lx->src[lx->pos] == '=') {
