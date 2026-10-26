@@ -20,6 +20,7 @@ MEMBERS = {
     "memcmp": "memcmp.lo",
     "memcpy": "memcpy.lo",
     "atoi": "atoi.lo",
+    "strcmp": "strcmp.lo",
 }
 
 

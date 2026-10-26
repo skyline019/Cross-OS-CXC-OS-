@@ -114,6 +114,9 @@ def main() -> int:
         (disk / "atoi.o").write_bytes(
             (ROOT / "user" / "prebuilt" / "musl_atoi.o").read_bytes()
         )
+        (disk / "scmp.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strcmp.o").read_bytes()
+        )
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

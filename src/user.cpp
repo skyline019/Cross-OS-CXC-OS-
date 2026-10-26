@@ -6,6 +6,7 @@
 #include <cxc/musl_atoi_elf.hpp>
 #include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
+#include <cxc/musl_strcmp_elf.hpp>
 #include <cxc/musl_strlen_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
@@ -1930,31 +1931,35 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M122: self lib.c→.rela ET_REL + musl atoi; edge DMSG+DHINT.
+    // M123: self lib.c .rodata+PC32 + PLT32; musl strcmp; edge DMSG+DHINT.
     static const char lib_text[] =
         "CXC_A2\n"
         "int add(int a, int b){\n"
         "return a+b;\n"
         "}\n"
         "int bump(int x){\n"
-        "return add(x, 1);\n"
+        "return add(x, 42);\n"
+        "}\n"
+        "int msg(void){\n"
+        "return \"RD\";\n"
         "}\n";
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"lib.o\"\n"
+        "#lib \"scmp.o\"\n"
         "#lib \"slen.o\"\n"
-        "#lib \"atoi.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
+        "import fn msg();\n"
+        "import fn strcmp(a,b);\n"
         "import fn strlen(s);\n"
-        "import fn atoi(s);\n"
         "import fn cwrite(p,n);\n"
         "int main(void){\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:AT\\n\");\n"
-        "cwrite(\"WMSG:AT\\n\", m);\n"
-        "n=atoi(\"41\");\n"
+        "m=strlen(\"WMSG:RD\\n\");\n"
+        "cwrite(\"WMSG:RD\\n\", m);\n"
+        "n=strcmp(msg(), \"RD\");\n"
         "n=bump(n);\n"
         "print n;\n"
         "return n;\n"
@@ -2184,6 +2189,25 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(afd)) != 0) {
             result.failure = 69;
+            return false;
+        }
+    }
+    {
+        const int64_t cfd = fs::open_path(
+            "disk/scmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (cfd < 0) {
+            result.failure = 73;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(cfd), musl_strcmp_elf,
+                         musl_strcmp_elf_size) !=
+            static_cast<int64_t>(musl_strcmp_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(cfd));
+            result.failure = 74;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(cfd)) != 0) {
+            result.failure = 75;
             return false;
         }
     }

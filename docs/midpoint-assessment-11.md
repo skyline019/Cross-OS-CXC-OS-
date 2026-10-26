@@ -48,7 +48,7 @@
 ## 4. 下一主线裁定
 
 1. **优先**：导入真实 musl/gcc ET_REL（或补齐自产 `.rela` + 未定义符号延迟绑定）并有可回归合同。  
-   - **M115–M122 进度**：host-gcc → GOT → musl → 多节 → mem/str → **自产 `.rela` + atoi**（`ONBOX_ATOI_PASS`）；下一刀更大 musl / 机上工具链。  
+   - **M115–M123 进度**：host-gcc → GOT → musl → 多节 → mem/str → `.rela` → **自产 `.rodata`/PC32 + strcmp**（`ONBOX_RDAT_PASS`）；下一刀更大 musl / 机上工具链（中场约 M124）。  
 2. **可选**：窄整型 / `const` / 更多声明语法。  
 3. **禁止**：拆掉通向 A2 的前端；禁止超时/删断言刷绿；禁止宣称 A2。
 

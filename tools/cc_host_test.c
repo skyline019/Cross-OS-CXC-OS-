@@ -390,7 +390,7 @@ int main(void) {
             fprintf(stderr, "FAIL ok m114-cfn-obj: not ET_REL\n");
             fails++;
         } else {
-            /* M122: multi-fn obj must carry .rela.text (PLT32). */
+            /* M122/M123: multi-fn obj carries .rela.text (PLT32). */
             int found_rela = 0;
             size_t i;
             for (i = 0; i + 10 < on; i++) {
@@ -513,28 +513,95 @@ int main(void) {
             "m121-musl-mem-trio") != 0) {
         fails++;
     }
+    {
+        unsigned char* o = 0;
+        size_t on = 0;
+        FILE* f;
+        const char* lib =
+            "CXC_A2\n"
+            "int add(int a, int b){\n"
+            "return a+b;\n"
+            "}\n"
+            "int bump(int x){\n"
+            "return add(x, 42);\n"
+            "}\n"
+            "int msg(void){\n"
+            "return \"RD\";\n"
+            "}\n";
+        if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m123-rodata-obj: compile_obj\n");
+            fails++;
+        } else {
+            int found_ro = 0;
+            int found_rela = 0;
+            size_t i;
+            for (i = 0; i + 7 < on; i++) {
+                if (o[i] == '.' && o[i + 1] == 'r' && o[i + 2] == 'o' &&
+                    o[i + 3] == 'd' && o[i + 4] == 'a' && o[i + 5] == 't' &&
+                    o[i + 6] == 'a') {
+                    found_ro = 1;
+                }
+                if (o[i] == '.' && o[i + 1] == 'r' && o[i + 2] == 'e' &&
+                    o[i + 3] == 'l' && o[i + 4] == 'a' && o[i + 5] == '.') {
+                    found_rela = 1;
+                }
+            }
+            if (!found_ro || !found_rela) {
+                fprintf(stderr,
+                        "FAIL ok m123-rodata-obj: missing .rodata/.rela\n");
+                fails++;
+            }
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m123-rodata-obj: write lib.o\n");
+                fails++;
+            }
+        }
+    }
     if (expect_ok(
             "CXC_A2\n"
             "#lib \"lib.o\"\n"
+            "#lib \"scmp.o\"\n"
             "#lib \"slen.o\"\n"
-            "#lib \"atoi.o\"\n"
             "#lib \"io.elf\"\n"
             "import fn bump(x);\n"
+            "import fn msg();\n"
+            "import fn strcmp(a,b);\n"
             "import fn strlen(s);\n"
-            "import fn atoi(s);\n"
             "import fn cwrite(p,n);\n"
             "int main(void){\n"
             "int n;\n"
             "int m;\n"
-            "m=strlen(\"WMSG:AT\\n\");\n"
-            "cwrite(\"WMSG:AT\\n\", m);\n"
-            "n=atoi(\"41\");\n"
+            "m=strlen(\"WMSG:RD\\n\");\n"
+            "cwrite(\"WMSG:RD\\n\", m);\n"
+            "n=strcmp(msg(), \"RD\");\n"
             "n=bump(n);\n"
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m122-atoi-rela") != 0) {
+            "m123-rodata-strcmp") != 0) {
         fails++;
+    }
+    {
+        /* Restore bump+7 lib.o for m113 regression. */
+        unsigned char* o = 0;
+        size_t on = 0;
+        FILE* f;
+        const char* lib =
+            "CXC_A2\n"
+            "int add(int a, int b){\n"
+            "return a+b;\n"
+            "}\n"
+            "int bump(int x){\n"
+            "return add(x, 7);\n"
+            "}\n";
+        if (cc_compile_obj(lib, strlen(lib), &o, &on) == 0 && o && on >= 64) {
+            f = fopen("disk/lib.o", "wb");
+            if (f) {
+                (void)fwrite(o, 1, on, f);
+                (void)fclose(f);
+            }
+        }
     }
     if (expect_ok(
             "CXC_A2\n"

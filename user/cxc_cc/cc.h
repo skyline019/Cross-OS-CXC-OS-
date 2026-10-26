@@ -33,7 +33,7 @@ enum {
     CC_EXPORT_MAX = 32,
     CC_GOT_MAX = 32,
     CC_TEXT_SEC_MAX = 8,
-    CC_RELA_SEC_MAX = 8,
+    CC_RELA_SEC_MAX = 16,
     CC_TYPEDEF_MAX = 8,
     CC_LOAD_VA = 0x400000
 };
