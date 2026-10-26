@@ -186,7 +186,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M121** | musl `strlen`/`memcmp`/`memcpy` 三联 | 曾用 `ONBOX_MMEM_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M122** | 自产 `.rela.text` + musl `atoi` | 曾用 `ONBOX_ATOI_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M123** | 自产 `.rodata`/PC32 + musl `strcmp` | 曾用 `ONBOX_RDAT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M124** | `strcpy`→`__stpcpy` + `strncmp`；第十二次中场 | `ONBOX_SCPY_PASS`；[`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
+| **M124** | `strcpy`→`__stpcpy` + `strncmp`；第十二次中场 | 曾用 `ONBOX_SCPY_PASS`；[`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
+| **M125** | 延迟 `#lib` UND + 自产 ET_REL UND | `ONBOX_LUND_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M122+** | 更大 musl / 机上工具链 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考

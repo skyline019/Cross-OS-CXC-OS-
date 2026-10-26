@@ -29,11 +29,12 @@ enum {
     CC_GLOBAL_MAX = 8,
     CC_ENUM_MAX = 16,
     CC_CALL_MAX = 32,
-    CC_LINK_MAX = 8,
-    CC_EXPORT_MAX = 32,
+    CC_LINK_MAX = 12,
+    CC_EXPORT_MAX = 48,
     CC_GOT_MAX = 32,
     CC_TEXT_SEC_MAX = 8,
     CC_RELA_SEC_MAX = 16,
+    CC_UND_PEND_MAX = 64,
     CC_TYPEDEF_MAX = 8,
     CC_LOAD_VA = 0x400000
 };
@@ -271,6 +272,8 @@ void cc_lib_reset(void);
 int cc_lib_count(void);
 const char* cc_lib_at(int i);
 int cc_import_elf(CcEmit* em, const char* path);
+void cc_und_reset(void);
+int cc_und_resolve(CcEmit* em);
 int cc_last_fail_code(void);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,

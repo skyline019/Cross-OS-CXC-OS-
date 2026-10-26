@@ -1538,20 +1538,33 @@ static void parse_defs(CcParser* p) {
 
 static int resolve_calls(CcEmit* em) {
     int i;
+    int ndef = 0;
     for (i = 0; i < em->ncalls; i++) {
         int fi = em->calls[i].fn;
-        if (fi < 0 || fi >= em->nfns || !em->fns[fi].defined) {
+        if (fi < 0 || fi >= em->nfns) {
             return -1;
+        }
+        if (!em->fns[fi].defined) {
+            /* ET_EXEC must resolve; obj_mode emits UND + PLT32 (M125). */
+            if (!em->obj_mode) {
+                return -1;
+            }
+            continue;
         }
         if (!em->obj_mode) {
             patch_rel32(em, em->calls[i].at, em->fns[fi].entry);
         }
-        /* obj_mode: keep zeros; cc_build_rel_elf emits R_X86_64_PLT32. */
     }
     for (i = 0; i < em->nfns; i++) {
-        if (!em->fns[i].defined) {
+        if (em->fns[i].defined) {
+            ndef++;
+        } else if (!em->obj_mode) {
             return -1;
         }
+    }
+    /* obj_mode needs ≥1 defined export; ET_EXEC may have zero fns (CRT). */
+    if (em->obj_mode && ndef < 1) {
+        return -1;
     }
     return 0;
 }
@@ -1601,6 +1614,7 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
     cc_reloc_reset();
     cc_link_reset();
     cc_lib_reset();
+    cc_und_reset();
 
     if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
         0) {
@@ -1676,6 +1690,12 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
                 break;
             }
         }
+        if (!em.failed && cc_und_resolve(&em) != 0) {
+            em.failed = 1;
+            if (em.fail_code == 0) {
+                em.fail_code = 21;
+            }
+        }
     }
     if (em.failed) {
         g_last_fail_code = em.fail_code ? em.fail_code : 20;
@@ -1686,7 +1706,6 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
         return -1;
     }
     if (em.obj_mode) {
-        int fi;
         if (cc_fn_find(&em, "main") >= 0) {
             g_last_fail_code = 30;
             return -1;
@@ -1694,12 +1713,6 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
         if (em.nfns < 1) {
             g_last_fail_code = 30;
             return -1;
-        }
-        for (fi = 0; fi < em.nfns; fi++) {
-            if (!em.fns[fi].defined) {
-                g_last_fail_code = 11;
-                return -1;
-            }
         }
         if (lx.tok != TOK_EOF) {
             g_last_fail_code = 30;

@@ -461,7 +461,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_SCPY_PASS\n";
+    static const char pass[] = "ONBOX_LUND_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
@@ -729,8 +729,10 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
 int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     enum { MAX_SYM = CC_FN_MAX };
     int order[MAX_SYM];
+    int und_order[MAX_SYM];
     size_t sizes[MAX_SYM];
     int nfn = 0;
+    int nund = 0;
     int i;
     int j;
     int ncall;
@@ -757,7 +759,8 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     int str_shndx;
     int ro_shndx;
     int sec_sym; /* 1 if LOCAL STT_SECTION for .rodata */
-    int fn_sym0; /* first FUNC sym index */
+    int fn_sym0; /* first defined FUNC sym index */
+    int und_sym0; /* first UND FUNC sym index */
     /* plain: .text .shstrtab .symtab .strtab */
     static const char shstr_plain[] = "\0.text\0.shstrtab\0.symtab\0.strtab";
     /* rela only: .text .rela.text .shstrtab .symtab .strtab */
@@ -829,6 +832,30 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
         sizes[i] = end - start;
     }
+    /* M125: UND symbols for obj_mode imports referenced by calls. */
+    for (i = 0; i < em->ncalls; i++) {
+        int fi = em->calls[i].fn;
+        int seen = 0;
+        if (fi < 0 || fi >= em->nfns || em->fns[fi].defined) {
+            continue;
+        }
+        if (em->fns[fi].name[0] == 0) {
+            return -1;
+        }
+        for (j = 0; j < nund; j++) {
+            if (und_order[j] == fi) {
+                seen = 1;
+                break;
+            }
+        }
+        if (seen) {
+            continue;
+        }
+        if (nund >= MAX_SYM) {
+            return -1;
+        }
+        und_order[nund++] = fi;
+    }
 
     strtab_len = 1;
     for (i = 0; i < nfn; i++) {
@@ -837,6 +864,16 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             nl++;
         }
         if (nl == 0 || em->fns[order[i]].name[nl] != 0) {
+            return -1;
+        }
+        strtab_len += nl + 1;
+    }
+    for (i = 0; i < nund; i++) {
+        size_t nl = 0;
+        while (nl < CC_IDENT_MAX && em->fns[und_order[i]].name[nl] != 0) {
+            nl++;
+        }
+        if (nl == 0 || em->fns[und_order[i]].name[nl] != 0) {
             return -1;
         }
         strtab_len += nl + 1;
@@ -867,8 +904,9 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         str_shndx = 4;
         ro_shndx = 0;
     }
-    nsym = (size_t)nfn + 1 + (size_t)sec_sym;
+    nsym = (size_t)nfn + (size_t)nund + 1 + (size_t)sec_sym;
     fn_sym0 = 1 + sec_sym;
+    und_sym0 = fn_sym0 + nfn;
     off_text = 64;
     if (em->code_len > sizeof(g_elf_buf) - 64) {
         return -1;
@@ -931,6 +969,14 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
                 if (order[j] == fi) {
                     r_sym = (unsigned)(fn_sym0 + j);
                     break;
+                }
+            }
+            if (r_sym == 0) {
+                for (j = 0; j < nund; j++) {
+                    if (und_order[j] == fi) {
+                        r_sym = (unsigned)(und_sym0 + j);
+                        break;
+                    }
                 }
             }
             if (r_sym == 0) {
@@ -1008,6 +1054,24 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
                     sy[16 + k] = (unsigned char)(sz >> (8 * k));
                 }
             }
+            name_off += nl + 1;
+            so += nl + 1;
+        }
+        for (i = 0; i < nund; i++) {
+            unsigned char* sy =
+                elf + off_sym + (size_t)(und_sym0 + i) * 24;
+            size_t nl = 0;
+            while (nl < CC_IDENT_MAX && em->fns[und_order[i]].name[nl] != 0) {
+                nl++;
+            }
+            memcpy(elf + off_str + so, em->fns[und_order[i]].name, nl);
+            elf[off_str + so + nl] = 0;
+            sy[0] = (unsigned char)name_off;
+            sy[1] = (unsigned char)(name_off >> 8);
+            sy[2] = (unsigned char)(name_off >> 16);
+            sy[3] = (unsigned char)(name_off >> 24);
+            sy[4] = (unsigned char)((1u << 4) | 2u); /* GLOBAL FUNC */
+            sy[6] = 0; /* UND */
             name_off += nl + 1;
             so += nl + 1;
         }

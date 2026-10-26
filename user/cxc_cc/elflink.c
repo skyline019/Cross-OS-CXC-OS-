@@ -162,6 +162,109 @@ static int resolve_addr(CcEmit* em, const char* name, size_t* out) {
     return -1;
 }
 
+/* M125: defer cross-#lib UND until all objects exported. */
+typedef struct CcUndPend {
+    size_t p_at;
+    long long addend;
+    unsigned r_type;
+    char name[CC_IDENT_MAX + 1];
+} CcUndPend;
+
+static CcUndPend g_unds[CC_UND_PEND_MAX];
+static int g_nunds;
+
+void cc_und_reset(void) {
+    g_nunds = 0;
+}
+
+static int und_pend_add(size_t p_at, const char* name, long long addend,
+                        unsigned r_type) {
+    int i = 0;
+    if (g_nunds >= CC_UND_PEND_MAX || !name || name[0] == 0) {
+        return -1;
+    }
+    g_unds[g_nunds].p_at = p_at;
+    g_unds[g_nunds].addend = addend;
+    g_unds[g_nunds].r_type = r_type;
+    while (name[i] != 0 && i < CC_IDENT_MAX) {
+        g_unds[g_nunds].name[i] = name[i];
+        i++;
+    }
+    g_unds[g_nunds].name[i] = 0;
+    if (name[i] != 0) {
+        return -1;
+    }
+    g_nunds++;
+    return 0;
+}
+
+static int patch_at(CcEmit* em, size_t p_at, size_t s_at, long long r_add,
+                    unsigned r_type, const char* ident) {
+    long long disp;
+    unsigned long long absva;
+    char got_name[CC_IDENT_MAX + 1];
+    if (r_type == R_X86_64_32) {
+        absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at +
+                (unsigned long long)r_add;
+        if (absva > 0xffffffffULL) {
+            return -1;
+        }
+        w32(em->code + p_at, (unsigned)absva);
+        return 0;
+    }
+    if (r_type == R_X86_64_GOTPCREL) {
+        size_t g_at;
+        int i = 0;
+        if (ident && ident[0] != 0) {
+            while (ident[i] != 0 && i < CC_IDENT_MAX) {
+                got_name[i] = ident[i];
+                i++;
+            }
+            got_name[i] = 0;
+        } else {
+            got_name[0] = '@';
+            got_name[1] = 'L';
+            got_name[2] = 0;
+        }
+        if (got_slot(em, got_name, s_at, &g_at) != 0) {
+            return -1;
+        }
+        disp = (long long)g_at + r_add - (long long)p_at;
+        if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
+            return -1;
+        }
+        w32(em->code + p_at, (unsigned)(int)disp);
+        return 0;
+    }
+    disp = (long long)s_at + r_add - (long long)p_at;
+    if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
+        return -1;
+    }
+    w32(em->code + p_at, (unsigned)(int)disp);
+    return 0;
+}
+
+int cc_und_resolve(CcEmit* em) {
+    int i;
+    if (!em) {
+        return -1;
+    }
+    for (i = 0; i < g_nunds; i++) {
+        size_t s_at = 0;
+        if (resolve_addr(em, g_unds[i].name, &s_at) != 0) {
+            em->fail_code = CC_FAIL_UND;
+            return -1;
+        }
+        if (patch_at(em, g_unds[i].p_at, s_at, g_unds[i].addend,
+                     g_unds[i].r_type, g_unds[i].name) != 0) {
+            em->fail_code = CC_FAIL_RELOC;
+            return -1;
+        }
+    }
+    g_nunds = 0;
+    return 0;
+}
+
 int cc_import_elf(CcEmit* em, const char* path) {
     static unsigned char buf[CC_SRC_MAX];
     size_t n = 0;
@@ -360,8 +463,6 @@ int cc_import_elf(CcEmit* em, const char* path) {
             char ident[CC_IDENT_MAX + 1];
             size_t p_at;
             size_t s_at;
-            long long disp;
-            unsigned long long absva;
             int tslot;
             if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32 &&
                 r_type != R_X86_64_32 && r_type != R_X86_64_GOTPCREL) {
@@ -397,45 +498,20 @@ int cc_import_elf(CcEmit* em, const char* path) {
                     return -1;
                 }
                 if (resolve_addr(em, ident, &s_at) != 0) {
-                    em->fail_code = CC_FAIL_UND;
-                    return -1;
+                    /* M125: defer until later #lib exports land. */
+                    if (und_pend_add(p_at, ident, r_add, r_type) != 0) {
+                        em->fail_code = CC_FAIL_UND;
+                        return -1;
+                    }
+                    continue;
                 }
             } else {
                 em->fail_code = CC_FAIL_UND;
                 return -1;
             }
-            if (r_type == R_X86_64_32) {
-                absva = (unsigned long long)CC_LOAD_VA +
-                        (unsigned long long)s_at + (unsigned long long)r_add;
-                if (absva > 0xffffffffULL) {
-                    em->fail_code = CC_FAIL_RELOC;
-                    return -1;
-                }
-                w32(em->code + p_at, (unsigned)absva);
-            } else if (r_type == R_X86_64_GOTPCREL) {
-                size_t g_at;
-                if (ident[0] == 0) {
-                    ident[0] = '@';
-                    ident[1] = 'L';
-                    ident[2] = 0;
-                }
-                if (got_slot(em, ident, s_at, &g_at) != 0) {
-                    em->fail_code = CC_FAIL_RELOC;
-                    return -1;
-                }
-                disp = (long long)g_at + r_add - (long long)p_at;
-                if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
-                    em->fail_code = CC_FAIL_RELOC;
-                    return -1;
-                }
-                w32(em->code + p_at, (unsigned)(int)disp);
-            } else {
-                disp = (long long)s_at + r_add - (long long)p_at;
-                if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
-                    em->fail_code = CC_FAIL_RELOC;
-                    return -1;
-                }
-                w32(em->code + p_at, (unsigned)(int)disp);
+            if (patch_at(em, p_at, s_at, r_add, r_type, ident) != 0) {
+                em->fail_code = CC_FAIL_RELOC;
+                return -1;
             }
         }
     }

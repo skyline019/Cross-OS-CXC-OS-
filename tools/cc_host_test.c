@@ -585,8 +585,8 @@ int main(void) {
     if (expect_ok(
             "CXC_A2\n"
             "#lib \"lib.o\"\n"
-            "#lib \"stpc.o\"\n"
             "#lib \"scpy.o\"\n"
+            "#lib \"stpc.o\"\n"
             "#lib \"sncmp.o\"\n"
             "#lib \"slen.o\"\n"
             "#lib \"io.elf\"\n"
@@ -609,6 +609,65 @@ int main(void) {
             "return n;\n"
             "}\n",
             "m124-strcpy-stpcpy") != 0) {
+        fails++;
+    }
+    {
+        unsigned char* o = 0;
+        size_t on = 0;
+        FILE* f;
+        const char* lib =
+            "CXC_A2\n"
+            "import fn strncmp(a,b,n);\n"
+            "int add(int a, int b){\n"
+            "return a+b;\n"
+            "}\n"
+            "int bump(int x){\n"
+            "return add(x, 42);\n"
+            "}\n"
+            "int msg(void){\n"
+            "return \"LU\";\n"
+            "}\n"
+            "int chk(void){\n"
+            "return strncmp(msg(), \"LU\", 2);\n"
+            "}\n";
+        if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m125-lund-obj: compile_obj\n");
+            fails++;
+        } else {
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m125-lund-obj: write lib.o\n");
+                fails++;
+            }
+        }
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"scpy.o\"\n"
+            "#lib \"stpc.o\"\n"
+            "#lib \"sncmp.o\"\n"
+            "#lib \"slen.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn chk();\n"
+            "import fn msg();\n"
+            "import fn strcpy(d,s);\n"
+            "import fn strlen(s);\n"
+            "import fn cwrite(p,n);\n"
+            "int main(void){\n"
+            "int buf[4];\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:LU\\n\");\n"
+            "cwrite(\"WMSG:LU\\n\", m);\n"
+            "strcpy(&buf[0], msg());\n"
+            "n=chk();\n"
+            "n=bump(n);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m125-deferred-und") != 0) {
         fails++;
     }
     {
