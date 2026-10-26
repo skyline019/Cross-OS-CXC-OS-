@@ -1,10 +1,11 @@
-/* M116: host-gcc ET_REL — .rodata + UND strlen/cwrite → io.elf. */
+/* M117: host-gcc ET_REL — UND add (math.o) + strlen/cwrite (io.elf). */
+extern long add(long a, long b);
 extern unsigned long strlen(const char* s);
 extern long cwrite(const char* p, long n);
 
 long bump(long x) {
-    static const char msg[] = "WMSG:HG\n";
+    static const char msg[] = "WMSG:H2\n";
     long m = (long)strlen(msg);
     (void)cwrite(msg, m);
-    return x + 7;
+    return add(x, 7);
 }

@@ -11,7 +11,7 @@
 
 | Item | Value |
 |---|---|
-| Baseline | Milestone 116 / v2.7.0 |
+| Baseline | Milestone 117 / v2.8.0 |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
 | Evidence | QEMU + OVMF, EDU + e1000e, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/embed host-gcc ET_REL for bump() — M115 real ABI object plant."""
+"""Build/embed host-gcc ET_REL for bump() — M117 cross-#lib + UND plant."""
 
 from __future__ import annotations
 

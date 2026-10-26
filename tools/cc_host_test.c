@@ -419,6 +419,7 @@ int main(void) {
     if (expect_ok(
             "CXC_A2\n"
             "#lib \"io.elf\"\n"
+            "#lib \"math.o\"\n"
             "#lib \"host.o\"\n"
             "import fn bump(x);\n"
             "int main(void){\n"
@@ -427,7 +428,7 @@ int main(void) {
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m116-host-rodata-und") != 0) {
+            "m117-dual-host-gcc") != 0) {
         fails++;
     }
     if (expect_ok(

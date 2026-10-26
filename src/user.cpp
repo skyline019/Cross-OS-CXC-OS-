@@ -1,4 +1,5 @@
 #include <cxc/user.hpp>
+#include <cxc/host_add_elf.hpp>
 #include <cxc/host_bump_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
@@ -1923,10 +1924,11 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M116: host-gcc .rodata+UND→io.elf (io before host); edge DMSG+DHINT.
+    // M117: io → math.o → host.o (cross host-gcc UND + rodata); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"io.elf\"\n"
+        "#lib \"math.o\"\n"
         "#lib \"host.o\"\n"
         "import fn bump(x);\n"
         "int main(void){\n"
@@ -2011,6 +2013,25 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
     }
 
+    {
+        const int64_t mfd = fs::open_path(
+            "disk/math.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (mfd < 0) {
+            result.failure = 49;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(mfd), host_add_elf,
+                         host_add_elf_size) !=
+            static_cast<int64_t>(host_add_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(mfd));
+            result.failure = 50;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(mfd)) != 0) {
+            result.failure = 51;
+            return false;
+        }
+    }
     {
         const int64_t hfd = fs::open_path(
             "disk/host.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
