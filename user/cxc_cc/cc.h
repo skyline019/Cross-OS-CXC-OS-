@@ -31,6 +31,7 @@ enum {
     CC_CALL_MAX = 32,
     CC_LINK_MAX = 4,
     CC_EXPORT_MAX = 16,
+    CC_GOT_MAX = 16,
     CC_TYPEDEF_MAX = 8,
     CC_LOAD_VA = 0x400000
 };
@@ -150,6 +151,11 @@ typedef struct CcExport {
     size_t entry;
 } CcExport;
 
+typedef struct CcGot {
+    char name[CC_IDENT_MAX + 1];
+    size_t slot; /* code offset of 8-byte GOT entry */
+} CcGot;
+
 typedef struct CcTypedef {
     char name[CC_IDENT_MAX + 1];
 } CcTypedef;
@@ -192,6 +198,8 @@ typedef struct CcEmit {
     int ncalls;
     CcExport exports[CC_EXPORT_MAX];
     int nexports;
+    CcGot gots[CC_GOT_MAX];
+    int ngots;
     CcTypedef typedefs[CC_TYPEDEF_MAX];
     int ntypedefs;
     int obj_mode; /* 1: emit ET_REL SysV fns (no CRT) */

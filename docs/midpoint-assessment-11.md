@@ -48,7 +48,7 @@
 ## 4. 下一主线裁定
 
 1. **优先**：导入真实 musl/gcc ET_REL（或补齐自产 `.rela` + 未定义符号延迟绑定）并有可回归合同。  
-   - **M115–M117 进度**：host-gcc → `.rodata`+UND → 双 `#lib` 互调（`ONBOX_H2O_PASS`）；下一刀 GOT / musl。  
+   - **M115–M118 进度**：host-gcc → UND → 双 `#lib` → GOTPCREL（`ONBOX_GOT_PASS`）；下一刀 musl / 机上工具链。  
 2. **可选**：窄整型 / `const` / 更多声明语法。  
 3. **禁止**：拆掉通向 A2 的前端；禁止超时/删断言刷绿；禁止宣称 A2。
 

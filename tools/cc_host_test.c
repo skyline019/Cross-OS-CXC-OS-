@@ -428,7 +428,7 @@ int main(void) {
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m117-dual-host-gcc") != 0) {
+            "m118-host-gotpcrel") != 0) {
         fails++;
     }
     if (expect_ok(

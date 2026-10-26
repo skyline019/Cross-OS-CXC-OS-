@@ -1,4 +1,4 @@
-/* Import ET_REL: .text+.rodata, PC32/PLT32/32, cross-#lib UND (M116). */
+/* Import ET_REL: .text+.rodata, PC32/PLT32/32/GOTPCREL (M118). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST
@@ -14,6 +14,7 @@ enum {
     R_X86_64_PC32 = 2,
     R_X86_64_PLT32 = 4,
     R_X86_64_32 = 10,
+    R_X86_64_GOTPCREL = 41,
     CC_FAIL_ELF = 20,
     CC_FAIL_UND = 21,
     CC_FAIL_RELOC = 22,
@@ -45,6 +46,13 @@ static void w32(unsigned char* p, unsigned v) {
     p[3] = (unsigned char)(v >> 24);
 }
 
+static void w64(unsigned char* p, unsigned long long v) {
+    int i;
+    for (i = 0; i < 8; i++) {
+        p[i] = (unsigned char)(v >> (8 * i));
+    }
+}
+
 static int name_eq(const char* a, const char* b) {
     size_t i = 0;
     while (i <= CC_IDENT_MAX) {
@@ -56,6 +64,43 @@ static int name_eq(const char* a, const char* b) {
         }
         i++;
     }
+    return 0;
+}
+
+/* Allocate/reuse an 8-byte GOT slot holding abs VA of symbol at s_at. */
+static int got_slot(CcEmit* em, const char* name, size_t s_at, size_t* out) {
+    int i;
+    size_t slot;
+    unsigned char z[8];
+    unsigned long long absva;
+    for (i = 0; i < em->ngots; i++) {
+        if (name_eq(em->gots[i].name, name)) {
+            *out = em->gots[i].slot;
+            return 0;
+        }
+    }
+    if (em->ngots >= CC_GOT_MAX) {
+        return -1;
+    }
+    for (i = 0; i < 8; i++) {
+        z[i] = 0;
+    }
+    slot = em->code_len;
+    cc_emit_bytes(em, z, 8);
+    if (em->failed) {
+        return -1;
+    }
+    absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at;
+    w64(em->code + slot, absva);
+    i = 0;
+    while (name[i] != 0 && i < CC_IDENT_MAX) {
+        em->gots[em->ngots].name[i] = name[i];
+        i++;
+    }
+    em->gots[em->ngots].name[i] = 0;
+    em->gots[em->ngots].slot = slot;
+    em->ngots++;
+    *out = slot;
     return 0;
 }
 
@@ -274,7 +319,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
             long long disp;
             unsigned long long absva;
             if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32 &&
-                r_type != R_X86_64_32) {
+                r_type != R_X86_64_32 && r_type != R_X86_64_GOTPCREL) {
                 em->fail_code = CC_FAIL_RELOC;
                 return -1;
             }
@@ -287,6 +332,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
             t_val = u64(tsy + 8);
             t_name_off = u32(tsy);
             p_at = text_base + (size_t)r_off;
+            ident[0] = 0;
             if (t_shndx == text_i) {
                 if (t_val > text_sz) {
                     em->fail_code = CC_FAIL_RELOC;
@@ -320,6 +366,24 @@ int cc_import_elf(CcEmit* em, const char* path) {
                     return -1;
                 }
                 w32(em->code + p_at, (unsigned)absva);
+            } else if (r_type == R_X86_64_GOTPCREL) {
+                size_t g_at;
+                if (ident[0] == 0) {
+                    /* Local/section target: synthesize a unique slot key. */
+                    ident[0] = '@';
+                    ident[1] = 'L';
+                    ident[2] = 0;
+                }
+                if (got_slot(em, ident, s_at, &g_at) != 0) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                disp = (long long)g_at + r_add - (long long)p_at;
+                if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                w32(em->code + p_at, (unsigned)(int)disp);
             } else {
                 disp = (long long)s_at + r_add - (long long)p_at;
                 if (disp < -0x80000000LL || disp > 0x7fffffffLL) {

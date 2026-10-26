@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/embed host-gcc ET_REL for bump() — M117 cross-#lib + UND plant."""
+"""Build/embed host-gcc -fPIC ET_REL for bump() — M118 GOTPCREL plant."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ def compile_with_gcc(out: Path) -> None:
     gcc = shutil.which("gcc")
     if not gcc:
         raise RuntimeError("gcc not found")
-    # -fno-pie yields PLT32 (not GOTPCREL) for UND; keep R_X86_64_32 to .rodata.
+    # -fPIC -fno-plt → R_X86_64_GOTPCREL for UND (M118); .rodata stays PC32.
     cmd = [
         gcc,
         "-c",
         "-m64",
         "-O0",
-        "-fno-pic",
-        "-fno-pie",
+        "-fPIC",
+        "-fno-plt",
         "-fno-asynchronous-unwind-tables",
         "-fno-ident",
         "-fno-stack-protector",

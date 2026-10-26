@@ -1924,7 +1924,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M117: io → math.o → host.o (cross host-gcc UND + rodata); edge DMSG+DHINT.
+    // M118: io → math.o → host.o (-fPIC GOTPCREL); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"io.elf\"\n"

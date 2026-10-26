@@ -179,8 +179,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M114** | C-decl + 多函数 ET_REL 互调；第十一次中场 | 曾用 `ONBOX_CFN_PASS`；[`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 | **M115** | `#lib` host-gcc ET_REL（非自产） | 曾用 `ONBOX_HOBJ_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M116** | host-gcc `.rodata` + UND→`io.elf` | 曾用 `ONBOX_HUND_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M117** | 双 host-gcc `#lib`（math+host） | `ONBOX_H2O_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M118+** | GOT / 更大 musl `.o` / 机上工具链 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M117** | 双 host-gcc `#lib`（math+host） | 曾用 `ONBOX_H2O_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M118** | host-gcc `-fPIC` GOTPCREL 合成 GOT | `ONBOX_GOT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M119+** | 更大 musl `.o` / 机上工具链 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 
