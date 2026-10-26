@@ -157,7 +157,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M92** | 机上 `cxc-cc`：in.c→out.elf→execve | 串口 `ONBOX_CC_PASS`；A2 闭环起步 |
 | **M93** | `cxc-cc` 解析 `return N`→exit(N) | 串口 `ONBOX_CGEN_PASS`；`exit: 42` |
 | **M94** | 第九次中场（M85–M94） | [`midpoint-assessment-9.md`](midpoint-assessment-9.md)；下一刀表达式/汇编 |
-| **M95+** | 表达式/多语句前端、汇编 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M95** | `write LIT` + `return N` | 串口 `WMSG:` + `ONBOX_WRITE_PASS`；`exit: 42` |
+| **M96+** | 表达式/算术、汇编 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

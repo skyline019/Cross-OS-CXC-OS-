@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build ET_EXEC on-box 'cc': parse return N from disk/in.c → emit out.elf → execve (M93/A2)."""
+"""Build ET_EXEC on-box 'cc': parse write LIT + return N → out.elf → execve (M95/A2)."""
 
 from __future__ import annotations
 
@@ -21,33 +21,54 @@ LOAD_VA = 0x400000
 SRC_PATH = b"disk/in.c\0"
 OUT_PATH = b"disk/out.elf\0"
 MAGIC = b"CXC_A2"
+WRITE_KEY = b"write "
 RETURN_KEY = b"return "
-PASS = b"ONBOX_CGEN_PASS\n"  # nested out.elf after real codegen
+PASS = b"ONBOX_WRITE_PASS\n"
+MSG_PREFIX = b"WMSG:"
+MSG_MAX = 8
 
 
-def build_out_elf() -> tuple[bytes, int]:
-    """Minimal ET_EXEC: write ONBOX_CGEN_PASS and exit(N). Returns (elf, exit_imm_off)."""
+def build_out_elf() -> tuple[bytes, int, int, int]:
+    """ET_EXEC: write WMSG:<lit>\\n, ONBOX_WRITE_PASS, exit(N).
+
+    Returns (elf, msg_buf_off, msg_len_imm_off, exit_imm_off) — file offsets.
+    msg buffer holds PREFIX + up to MSG_MAX chars + '\\n' (patched len).
+    """
     code = bytearray()
+    # write(1, msg, len) — len and msg content patched at compile time
     code += b"\xB8" + struct.pack("<I", SYS_WRITE)
     code += b"\xBF\x01\x00\x00\x00"
-    lea = len(code)
+    lea_msg = len(code)
+    code += b"\x48\x8D\x35" + struct.pack("<i", 0)
+    msg_len_imm = len(code) + 1  # mov edx, imm32
+    code += b"\xBA" + struct.pack("<I", 0)
+    code += b"\xCD\x80"
+    # write(1, PASS, len(PASS))
+    code += b"\xB8" + struct.pack("<I", SYS_WRITE)
+    code += b"\xBF\x01\x00\x00\x00"
+    lea_pass = len(code)
     code += b"\x48\x8D\x35" + struct.pack("<i", 0)
     code += b"\xBA" + struct.pack("<I", len(PASS))
     code += b"\xCD\x80"
+    # exit(N)
     code += b"\xB8" + struct.pack("<I", SYS_EXIT)
-    exit_imm = len(code) + 1  # offset of imm32 in `mov edi, imm32`
-    code += b"\xBF" + struct.pack("<I", 0)  # patched at compile time from return N
+    exit_imm = len(code) + 1
+    code += b"\xBF" + struct.pack("<I", 0)
     code += b"\xCD\x80"
     code += b"\x0F\x0B"
+
+    msg_at = len(code)
+    # PREFIX + MSG_MAX bytes + '\n' reserved
+    code += MSG_PREFIX + bytes(MSG_MAX) + b"\n"
     pass_at = len(code)
     code += PASS
-    struct.pack_into("<i", code, lea + 3, pass_at - (lea + 7))
+    struct.pack_into("<i", code, lea_msg + 3, msg_at - (lea_msg + 7))
+    struct.pack_into("<i", code, lea_pass + 3, pass_at - (lea_pass + 7))
 
     ehdr_size = 64
     phdr_size = 56
     file_off = ehdr_size + phdr_size
     page = 4096
-    memsz = page
     ehdr = struct.pack(
         "<16sHHIQQQIHHHHHH",
         b"\x7fELF" + bytes([2, 1, 1, 0]) + bytes(8),
@@ -73,14 +94,21 @@ def build_out_elf() -> tuple[bytes, int]:
         LOAD_VA,
         LOAD_VA,
         len(code),
-        memsz,
+        page,
         page,
     )
     elf = ehdr + phdr + bytes(code)
-    return elf, file_off + exit_imm
+    return (
+        elf,
+        file_off + msg_at + len(MSG_PREFIX),  # first literal byte
+        file_off + msg_len_imm,
+        file_off + exit_imm,
+    )
 
 
-def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], int]:
+def assemble_v2(
+    out_elf: bytes, msg_buf_off: int, msg_len_imm_off: int, exit_imm_off: int
+) -> tuple[bytes, dict[str, int], int]:
     blob = bytearray()
     jccs: list[tuple[str, int]] = []
     leas: list[tuple[str, int]] = []
@@ -100,12 +128,10 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
         blob.extend(b"\x48\x8D\x35" + struct.pack("<i", 0))
         leas.append((kind, at))
 
-    # rsp[0x000..0x100): in.c; rsp[0x100..0x200): writable out.elf copy (RX image is not writable)
     if len(out_elf) > 0x100:
-        raise ValueError(f"out.elf too large for stack copy: {len(out_elf)}")
-    blob += b"\x48\x81\xEC\x00\x02\x00\x00"  # sub rsp, 0x200
+        raise ValueError(f"out.elf too large: {len(out_elf)}")
+    blob += b"\x48\x81\xEC\x08\x02\x00\x00"  # sub rsp, 0x208
 
-    # open(disk/in.c, RDONLY)
     blob += b"\xB8" + struct.pack("<I", SYS_OPEN)
     lea_rdi("src")
     blob += b"\xBE" + struct.pack("<I", O_RDONLY)
@@ -115,17 +141,15 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
     jcc(b"\x0F\x88", "fail")
     blob += b"\x89\xC3"
 
-    # read(fd, rsp, 0x100)
     blob += b"\xB8" + struct.pack("<I", SYS_READ)
     blob += b"\x89\xDF"
     blob += b"\x48\x89\xE6"
     blob += b"\xBA\x00\x01\x00\x00"
     blob += b"\xCD\x80"
-    blob += b"\x48\x83\xF8\x06"  # at least MAGIC len
+    blob += b"\x48\x83\xF8\x06"
     jcc(b"\x0F\x8C", "fail")
-    blob += b"\x41\x89\xC4"  # r12d = nread
+    blob += b"\x41\x89\xC4"
 
-    # verify MAGIC at rsp
     for i, ch in enumerate(MAGIC):
         if i == 0:
             blob += b"\x80\x3C\x24" + bytes([ch])
@@ -137,70 +161,126 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
     blob += b"\x89\xDF"
     blob += b"\xCD\x80"
 
-    # --- parse "return N" in [rsp .. rsp+r12) ---
-    # r8d = index; r13d = accumulator; r9d scratch
-    blob += b"\x41\xB8\x00\x00\x00\x00"  # mov r8d, 0
-    scan_at = len(blob)
-    # if r8d + 7 > r12d → fail (need room for "return ")
-    blob += b"\x44\x89\xC0"  # mov eax, r8d
-    blob += b"\x83\xC0\x07"  # add eax, 7
-    blob += b"\x44\x39\xE0"  # cmp eax, r12d
-    jcc(b"\x0F\x8F", "fail")  # jg fail
+    # clear lit scratch
+    blob += b"\x48\xC7\x84\x24\x00\x02\x00\x00\x00\x00\x00\x00"
+    blob += b"\x48\xC7\x84\x24\x04\x02\x00\x00\x00\x00\x00\x00"
 
-    # compare "return " at rsp+r8+i (mod=01 disp8)
-    for i, ch in enumerate(RETURN_KEY):
-        # cmp byte [rsp+r8+i], ch  → 42 80 7C 04 disp imm8
+    # --- write LIT ---
+    blob += b"\x41\xB8\x00\x00\x00\x00"
+    wscan = len(blob)
+    blob += b"\x44\x89\xC0"
+    blob += b"\x83\xC0" + bytes([len(WRITE_KEY)])
+    blob += b"\x44\x39\xE0"
+    jcc(b"\x0F\x8F", "fail")
+    for i, ch in enumerate(WRITE_KEY):
         blob += b"\x42\x80\x7C\x04" + bytes([i, ch])
         at = len(blob)
         blob.extend(b"\x0F\x85" + b"\x00\x00\x00\x00")
-        jccs.append((f"try_next_{i}", at))
+        jccs.append((f"wtry_{i}", at))
+    blob += b"\x41\x83\xC0" + bytes([len(WRITE_KEY)])
+    blob += b"\x41\xBE\x00\x00\x00\x00"  # r14d = 0 len
+    blob += b"\x45\x39\xE0"
+    jcc(b"\x0F\x83", "fail")
 
-    # matched — advance r8 past "return ", parse decimal into r13d
-    blob += b"\x41\x83\xC0\x07"  # add r8d, 7
-    blob += b"\x41\xBD\x00\x00\x00\x00"  # mov r13d, 0
-    # require at least one digit
-    blob += b"\x45\x39\xE0"  # cmp r8d, r12d
-    jcc(b"\x0F\x83", "fail")  # jae fail
-    blob += b"\x42\x0F\xB6\x04\x04"  # movzx eax, byte [rsp+r8]
-    blob += b"\x83\xE8\x30"  # sub eax, '0'
-    blob += b"\x83\xF8\x09"
-    jcc(b"\x0F\x87", "fail")  # ja fail
-    blob += b"\x41\x89\xC5"  # mov r13d, eax
+    lit_loop = len(blob)
+    blob += b"\x45\x39\xE0"
+    jcc(b"\x0F\x83", "wend")
+    blob += b"\x42\x0F\xB6\x04\x04"
+    blob += b"\x3C\x3B"
+    jcc(b"\x0F\x84", "wend")
+    # validate alnum
+    blob += b"\x3C\x30"
+    jcc(b"\x0F\x82", "fail")
+    blob += b"\x3C\x39"
+    jcc(b"\x0F\x86", "lit_ok")
+    blob += b"\x3C\x41"
+    jcc(b"\x0F\x82", "fail")
+    blob += b"\x3C\x5A"
+    jcc(b"\x0F\x86", "lit_ok")
+    blob += b"\x3C\x61"
+    jcc(b"\x0F\x82", "fail")
+    blob += b"\x3C\x7A"
+    jcc(b"\x0F\x87", "fail")
+
+    lit_ok_at = len(blob)
+    blob += b"\x41\x83\xFE" + bytes([MSG_MAX])
+    jcc(b"\x0F\x83", "fail")
+    # lea rdi,[rsp+0x200]; add rdi,r14; mov [rdi],al
+    blob += b"\x48\x8D\xBC\x24\x00\x02\x00\x00"
+    blob += b"\x4C\x01\xF7"  # add rdi, r14
+    blob += b"\x88\x07"  # mov [rdi], al
+    blob += b"\x41\xFF\xC6"  # inc r14d
     blob += b"\x41\xFF\xC0"  # inc r8d
+    at = len(blob)
+    blob.extend(b"\xE9" + b"\x00\x00\x00\x00")
+    jccs.append(("lit_loop", at))
 
-    # optional more digits (cap 255)
-    dig_loop = len(blob)
-    blob += b"\x45\x39\xE0"  # cmp r8d, r12d
-    jcc(b"\x0F\x83", "parsed")  # jae parsed
-    blob += b"\x42\x0F\xB6\x04\x04"  # movzx eax, byte [rsp+r8]
+    wtry_at = len(blob)
+    for i in range(len(WRITE_KEY)):
+        pass  # filled via targets
+    blob += b"\x41\xFF\xC0"
+    at = len(blob)
+    blob.extend(b"\xE9" + b"\x00\x00\x00\x00")
+    jccs.append(("wscan", at))
+
+    wend_at = len(blob)
+    blob += b"\x41\x83\xFE\x00"
+    jcc(b"\x0F\x84", "fail")  # empty lit
+    # skip ';'
+    blob += b"\x45\x39\xE0"
+    jcc(b"\x0F\x83", "fail")
+    blob += b"\x42\x80\x3C\x04\x3B"  # cmp [rsp+r8], ';'
+    jcc(b"\x0F\x85", "fail")
+
+    # --- parse return N → r13d ---
+    blob += b"\x41\xB8\x00\x00\x00\x00"
+    rscan = len(blob)
+    blob += b"\x44\x89\xC0"
+    blob += b"\x83\xC0" + bytes([len(RETURN_KEY)])
+    blob += b"\x44\x39\xE0"
+    jcc(b"\x0F\x8F", "fail")
+    for i, ch in enumerate(RETURN_KEY):
+        blob += b"\x42\x80\x7C\x04" + bytes([i, ch])
+        at = len(blob)
+        blob.extend(b"\x0F\x85" + b"\x00\x00\x00\x00")
+        jccs.append((f"rtry_{i}", at))
+    blob += b"\x41\x83\xC0" + bytes([len(RETURN_KEY)])
+    blob += b"\x41\xBD\x00\x00\x00\x00"
+    blob += b"\x45\x39\xE0"
+    jcc(b"\x0F\x83", "fail")
+    blob += b"\x42\x0F\xB6\x04\x04"
     blob += b"\x83\xE8\x30"
     blob += b"\x83\xF8\x09"
-    jcc(b"\x0F\x87", "parsed")  # ja → end number
-    # r13d = r13d*10 + digit
-    blob += b"\x44\x89\xE9"  # mov ecx, r13d
-    blob += b"\x6B\xC9\x0A"  # imul ecx, 10
-    blob += b"\x01\xC1"  # add ecx, eax
-    blob += b"\x81\xF9\xFF\x00\x00\x00"  # cmp ecx, 255
-    jcc(b"\x0F\x8F", "fail")  # jg fail
-    blob += b"\x41\x89\xCD"  # mov r13d, ecx
-    blob += b"\x41\xFF\xC0"  # inc r8d
-    # jmp dig_loop
+    jcc(b"\x0F\x87", "fail")
+    blob += b"\x41\x89\xC5"
+    blob += b"\x41\xFF\xC0"
+    dig_loop = len(blob)
+    blob += b"\x45\x39\xE0"
+    jcc(b"\x0F\x83", "parsed")
+    blob += b"\x42\x0F\xB6\x04\x04"
+    blob += b"\x83\xE8\x30"
+    blob += b"\x83\xF8\x09"
+    jcc(b"\x0F\x87", "parsed")
+    blob += b"\x44\x89\xE9"
+    blob += b"\x6B\xC9\x0A"
+    blob += b"\x01\xC1"
+    blob += b"\x81\xF9\xFF\x00\x00\x00"
+    jcc(b"\x0F\x8F", "fail")
+    blob += b"\x41\x89\xCD"
+    blob += b"\x41\xFF\xC0"
     at = len(blob)
     blob.extend(b"\xE9" + b"\x00\x00\x00\x00")
     jccs.append(("dig_loop", at))
 
-    # try_next labels: inc r8, jmp scan
-    try_next_targets: dict[str, int] = {}
-    for i in range(len(RETURN_KEY)):
-        try_next_targets[f"try_next_{i}"] = len(blob)
-    blob += b"\x41\xFF\xC0"  # inc r8d
+    rtry_at = len(blob)
+    blob += b"\x41\xFF\xC0"
     at = len(blob)
     blob.extend(b"\xE9" + b"\x00\x00\x00\x00")
-    jccs.append(("scan", at))
+    jccs.append(("rscan", at))
 
     parsed_at = len(blob)
 
-    # open(disk/out.elf, WRONLY|CREAT|TRUNC, 0755)
+    # open out.elf
     blob += b"\xB8" + struct.pack("<I", SYS_OPEN)
     lea_rdi("out")
     blob += b"\xBE" + struct.pack("<I", O_WRONLY | O_CREAT | O_TRUNC)
@@ -210,19 +290,32 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
     jcc(b"\x0F\x88", "fail")
     blob += b"\x89\xC3"
 
-    # copy embedded template to writable stack, then patch exit(N)
+    # copy template to stack
     lea_rsi("payload")
-    blob += b"\x48\x8D\xBC\x24\x00\x01\x00\x00"  # lea rdi, [rsp+0x100]
-    blob += b"\xB9" + struct.pack("<I", len(out_elf))  # mov ecx, len
-    blob += b"\xF3\xA4"  # rep movsb
-    blob += b"\x44\x89\xAC\x24" + struct.pack(
-        "<I", 0x100 + exit_imm_off
-    )  # mov [rsp+0x100+exit_imm], r13d
+    blob += b"\x48\x8D\xBC\x24\x00\x01\x00\x00"
+    blob += b"\xB9" + struct.pack("<I", len(out_elf))
+    blob += b"\xF3\xA4"
 
-    # write patched out.elf from stack
+    # patch msg literal bytes, then '\n' immediately after lit
+    blob += b"\x48\x8D\xBC\x24" + struct.pack("<I", 0x100 + msg_buf_off)
+    blob += b"\x48\x8D\xB4\x24\x00\x02\x00\x00"  # rsi = lit scratch
+    blob += b"\x44\x89\xF1"  # ecx = r14d
+    blob += b"\xF3\xA4"
+    # rdi now points just past lit; write newline
+    blob += b"\xC6\x07\x0A"  # mov byte [rdi], '\n'
+
+    # patch msg len = PREFIX + lit + 1
+    blob += b"\x44\x89\xF0"  # eax = r14d
+    blob += b"\x83\xC0" + bytes([len(MSG_PREFIX) + 1])
+    blob += b"\x89\x84\x24" + struct.pack("<I", 0x100 + msg_len_imm_off)
+
+    # patch exit
+    blob += b"\x44\x89\xAC\x24" + struct.pack("<I", 0x100 + exit_imm_off)
+
+    # write out.elf
     blob += b"\xB8" + struct.pack("<I", SYS_WRITE)
     blob += b"\x89\xDF"
-    blob += b"\x48\x8D\xB4\x24\x00\x01\x00\x00"  # lea rsi, [rsp+0x100]
+    blob += b"\x48\x8D\xB4\x24\x00\x01\x00\x00"
     blob += b"\xBA" + struct.pack("<I", len(out_elf))
     blob += b"\xCD\x80"
     blob += b"\x48\x3D" + struct.pack("<I", len(out_elf))
@@ -234,7 +327,6 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
     blob += b"\x48\x85\xC0"
     jcc(b"\x0F\x88", "fail")
 
-    # execve(disk/out.elf, argv={out,0}, envp={0})
     blob += b"\xB8" + struct.pack("<I", SYS_EXECVE)
     lea_rdi("out")
     lea_rsi("argv")
@@ -256,11 +348,19 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
 
     targets: dict[str, int] = {
         "fail": fail_at,
-        "parsed": parsed_at,
-        "scan": scan_at,
+        "wscan": wscan,
+        "lit_loop": lit_loop,
+        "lit_ok": lit_ok_at,
+        "wend": wend_at,
+        "rscan": rscan,
         "dig_loop": dig_loop,
+        "parsed": parsed_at,
     }
-    targets.update(try_next_targets)
+    for i in range(len(WRITE_KEY)):
+        targets[f"wtry_{i}"] = wtry_at
+    for i in range(len(RETURN_KEY)):
+        targets[f"rtry_{i}"] = rtry_at
+
     targets["src"] = len(blob)
     blob += SRC_PATH
     targets["out"] = len(blob)
@@ -275,9 +375,9 @@ def assemble(out_elf: bytes, exit_imm_off: int) -> tuple[bytes, dict[str, int], 
     targets["payload"] = len(blob)
     blob += out_elf
 
+    near = {"lit_loop", "wscan", "dig_loop", "rscan"}
     for label, at in jccs:
-        if label == "dig_loop" or label == "scan":
-            # near jmp E9
+        if label in near:
             struct.pack_into("<i", blob, at + 1, targets[label] - (at + 5))
         else:
             struct.pack_into("<i", blob, at + 2, targets[label] - (at + 6))
@@ -293,15 +393,8 @@ def build_elf(payload: bytes, targets: dict[str, int], argv_at: int) -> bytes:
     file_off = ehdr_size + phdr_size
     page = 4096
     body = bytearray(payload)
-    struct.pack_into(
-        "<QQ",
-        body,
-        argv_at,
-        LOAD_VA + targets["out"],
-        0,
-    )
+    struct.pack_into("<QQ", body, argv_at, LOAD_VA + targets["out"], 0)
     struct.pack_into("<Q", body, targets["envp"], 0)
-
     memsz = (len(body) + page - 1) & ~(page - 1)
     if memsz < page:
         memsz = page
@@ -340,13 +433,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    out_elf, exit_imm_off = build_out_elf()
-    payload, targets, argv_at = assemble(out_elf, exit_imm_off)
+    out_elf, msg_buf_off, msg_len_imm_off, exit_imm_off = build_out_elf()
+    payload, targets, argv_at = assemble_v2(
+        out_elf, msg_buf_off, msg_len_imm_off, exit_imm_off
+    )
     data = build_elf(payload, targets, argv_at)
     args.output.write_bytes(data)
     print(
-        f"wrote {args.output} ({len(data)} bytes; out.elf embed {len(out_elf)}; "
-        f"exit_imm@{exit_imm_off})"
+        f"wrote {args.output} ({len(data)} bytes; out.elf {len(out_elf)}; "
+        f"msg@{msg_buf_off} len@{msg_len_imm_off} exit@{exit_imm_off})"
     )
     return 0
 

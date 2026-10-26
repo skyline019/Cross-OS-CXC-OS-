@@ -2,7 +2,7 @@
 
 CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
 
-当前为 **Milestone 94 / v0.95.0：第九次中场（M85–M94）**（见 [`product-goals.md`](product-goals.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+当前为 **Milestone 95 / v0.96.0：机上 write+return 前端**（见 [`product-goals.md`](product-goals.md)、[`midpoint-assessment-9.md`](midpoint-assessment-9.md)）。已经在 QEMU + OVMF 中实际启动并到达：
 
 ```text
 CXC_OS_SELF_TEST_PASS
@@ -120,6 +120,7 @@ CXC_OS_SELF_TEST_PASS
 | on-box cc (M92) | `disk/in.c`→`cxc-cc`→`out.elf`→execve；A2 编译运行闭环；`ONBOX_CC_PASS` |
 | on-box codegen (M93) | `cxc-cc` 解析 `return N` 写入 exit(N)；`exit: 42`；`ONBOX_CGEN_PASS` |
 | Ninth midfield (M94) | [`midpoint-assessment-9.md`](midpoint-assessment-9.md)；pipe→机上 codegen 收束；下一刀表达式/汇编 |
+| on-box write (M95) | `write LIT`+`return N`→`WMSG:`+exit；`ONBOX_WRITE_PASS` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

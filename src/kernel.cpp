@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M93/A2: on-box codegen — parse return N → out.elf exit(N).
+    // M95/A2: write LIT + return N → WMSG + exit(N).
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2073,14 +2073,14 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::write(", exit: ");
         log::decimal(onbox.exit_code);
         log::write('\n');
-        log::panic("M93 on-box codegen pipeline failed");
+        log::panic("M95 on-box write+return pipeline failed");
     }
     log::write("[ok] onbox-cc: pass: ");
     log::decimal(onbox.wrote_pass);
     log::write(" src: 1 cc: 1 run: 1 exit: ");
     log::decimal(onbox.exit_code);
-    log::write('\n');
-    log::line("ONBOX_CGEN_PASS");
+    log::write(" write: 1\n");
+    log::line("ONBOX_WRITE_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2353,7 +2353,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.95.0 - ninth midfield (A2/M94)");
+    cxc::log::line("CXC/OS 0.96.0 - on-box write+return (A2/M95)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

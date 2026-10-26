@@ -1903,8 +1903,8 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M93: cxc-cc must parse return N and emit exit(N); N=42 proves real codegen.
-    static const char src_text[] = "CXC_A2\nint main(void){return 42;}\n";
+    // M95: write LIT + return N — observable WMSG + exit 42.
+    static const char src_text[] = "CXC_A2\nwrite HI;\nreturn 42;\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
     if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||
