@@ -371,6 +371,46 @@ int main(void) {
             "m110-cwrite") != 0) {
         fails++;
     }
+    {
+        unsigned char* o = 0;
+        size_t on = 0;
+        FILE* f;
+        if (cc_compile_obj("CXC_A2\nfn bump(x){\nreturn x+7;\n}\n",
+                           strlen("CXC_A2\nfn bump(x){\nreturn x+7;\n}\n"), &o,
+                           &on) != 0 ||
+            !o || on < 64) {
+            fprintf(stderr, "FAIL ok m113-obj-emit: compile_obj\n");
+            fails++;
+        } else if (o[0] != 0x7f || o[16] != 1) {
+            fprintf(stderr, "FAIL ok m113-obj-emit: not ET_REL\n");
+            fails++;
+        } else {
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m113-obj-emit: write lib.o\n");
+                fails++;
+            }
+        }
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn cwrite(p,n);\n"
+            "import fn strlen(s);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:OB\\n\");\n"
+            "cwrite(\"WMSG:OB\\n\", m);\n"
+            "n=bump(35);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m113-self-obj") != 0) {
+        fails++;
+    }
     if (expect_ok(
             "CXC_A2\n"
             "#lib \"rt.elf\"\n"
@@ -397,6 +437,16 @@ int main(void) {
             "}\n",
             "m112-musl") != 0) {
         fails++;
+    }
+    {
+        unsigned char* o = 0;
+        size_t on = 0;
+        if (cc_compile_obj("CXC_A2\nfn main(){\nreturn 0;\n}\n",
+                           strlen("CXC_A2\nfn main(){\nreturn 0;\n}\n"), &o,
+                           &on) == 0) {
+            fprintf(stderr, "FAIL edge bad-obj-main: expected reject\n");
+            fails++;
+        }
     }
     if (expect_ok(
             "CXC_A2\n"

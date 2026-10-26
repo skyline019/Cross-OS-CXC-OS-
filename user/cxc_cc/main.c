@@ -1,4 +1,4 @@
-/* On-box CXC mini-cc driver: disk/in.c → disk/out.elf → execve (A2). */
+/* On-box CXC mini-cc: optional disk/lib.c→lib.o (ET_REL), then in.c→out.elf. */
 #include "cxc_cc/cc.h"
 #include "mini_libc/fcntl.h"
 #include "mini_libc/unistd.h"
@@ -6,7 +6,6 @@
 extern int execve(const char* path, char* const argv[], char* const envp[]);
 
 static int read_all(int fd, char* buf, size_t cap, size_t* out_n) {
-    /* Kernel max_io is 4096; request at most that per read. */
     enum { CHUNK = 4096 };
     size_t n = 0;
     while (n < cap) {
@@ -99,44 +98,91 @@ static void write_dmsg(int code) {
     (void)c;
 }
 
-int main(int argc, char** argv) {
-    char* src;
+static int compile_write(const char* in_path, const char* out_path, int obj) {
+    static char src_buf[CC_SRC_MAX];
     size_t src_len = 0;
     unsigned char* elf = 0;
     size_t elf_len = 0;
-    int fd;
+    int fd = open(in_path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -2;
+    }
+    if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
+        close(fd);
+        return -3;
+    }
+    close(fd);
+    src_buf[src_len] = 0;
+    if (obj) {
+        if (cc_compile_obj(src_buf, src_len, &elf, &elf_len) != 0 || !elf ||
+            elf_len == 0) {
+            write_dmsg(cc_last_fail_code());
+            return -4;
+        }
+    } else {
+        if (cc_compile(src_buf, src_len, &elf, &elf_len) != 0 || !elf ||
+            elf_len == 0) {
+            write_dmsg(cc_last_fail_code());
+            return -4;
+        }
+    }
+    fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, obj ? 0644 : 0755);
+    if (fd < 0) {
+        return -5;
+    }
+    if (write_all(fd, elf, elf_len) != 0) {
+        close(fd);
+        return -6;
+    }
+    if (close(fd) != 0) {
+        return -7;
+    }
+    return 0;
+}
+
+int main(int argc, char** argv) {
     char* out_argv[2];
     char* out_envp[1];
+    int rc;
     (void)argc;
     (void)argv;
 
-    static char src_buf[CC_SRC_MAX];
-    src = src_buf;
+    /* M113: if disk/lib.c present, emit SysV ET_REL disk/lib.o first. */
+    {
+        int lfd = open("disk/lib.c", O_RDONLY, 0);
+        if (lfd >= 0) {
+            close(lfd);
+            rc = compile_write("disk/lib.c", "disk/lib.o", 1);
+            if (rc == -4) {
+                _exit(4);
+            }
+            if (rc != 0) {
+                _exit(9);
+            }
+        }
+    }
 
-    fd = open("disk/in.c", O_RDONLY, 0);
-    if (fd < 0) {
+    rc = compile_write("disk/in.c", "disk/out.elf", 0);
+    if (rc == -2) {
         _exit(2);
     }
-    if (read_all(fd, src, CC_SRC_MAX - 1, &src_len) != 0) {
+    if (rc == -3) {
         _exit(3);
     }
-    close(fd);
-    src[src_len] = 0;
-
-    if (cc_compile(src, src_len, &elf, &elf_len) != 0 || !elf || elf_len == 0) {
-        write_dmsg(cc_last_fail_code());
+    if (rc == -4) {
         _exit(4);
     }
-
-    fd = open("disk/out.elf", O_WRONLY | O_CREAT | O_TRUNC, 0755);
-    if (fd < 0) {
+    if (rc == -5) {
         _exit(5);
     }
-    if (write_all(fd, elf, elf_len) != 0) {
+    if (rc == -6) {
         _exit(6);
     }
-    if (close(fd) != 0) {
+    if (rc == -7) {
         _exit(7);
+    }
+    if (rc != 0) {
+        _exit(9);
     }
 
     out_argv[0] = (char*)"disk/out.elf";

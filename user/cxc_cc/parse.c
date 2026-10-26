@@ -1434,7 +1434,7 @@ static void parse_function(CcParser* p) {
     }
     fn->entry = p->em->code_len;
     fn->defined = 1;
-    fn->sysv = 0;
+    fn->sysv = p->em->obj_mode ? 1 : 0;
 
     clear_locals(p->em);
     expect(p, TOK_LPAREN);
@@ -1461,7 +1461,11 @@ static void parse_function(CcParser* p) {
         return;
     }
     fn->arity = arity;
-    cc_emit_fn_prologue(p->em, arity);
+    if (fn->sysv) {
+        cc_emit_fn_prologue_sysv(p->em, arity);
+    } else {
+        cc_emit_fn_prologue(p->em, arity);
+    }
     p->em->in_fn = 1;
     parse_block(p);
     p->em->in_fn = 0;
@@ -1525,13 +1529,13 @@ int cc_last_fail_code(void) {
     return g_last_fail_code;
 }
 
-int cc_compile(const char* src, size_t len, unsigned char** out_elf,
-               size_t* out_len) {
+static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
+                         size_t* out_len, int obj_mode) {
     CcLexer lx;
     CcParser p;
     const char magic[] = "CXC_A2";
     size_t i;
-    size_t jmp_entry;
+    size_t jmp_entry = 0;
     size_t entry_at;
     size_t expanded_len = 0;
     static CcEmit em;
@@ -1557,8 +1561,10 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.nenums = 0;
     em.ncalls = 0;
     em.nexports = 0;
+    em.ntypedefs = 0;
     em.failed = 0;
     em.fail_code = 0;
+    em.obj_mode = obj_mode ? 1 : 0;
     cc_reloc_reset();
     cc_link_reset();
     cc_lib_reset();
@@ -1588,8 +1594,10 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     p.lx = &lx;
     p.em = &em;
 
-    /* jmp entry; fn/struct/global/extern defs; linked TUs; CRT _start */
-    jmp_entry = emit_jmp32(&em);
+    /* ET_EXEC: jmp over fns to CRT. ET_REL: fn bodies from offset 0. */
+    if (!em.obj_mode) {
+        jmp_entry = emit_jmp32(&em);
+    }
     parse_defs(&p);
     {
         int li;
@@ -1644,6 +1652,32 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
         g_last_fail_code = em.fail_code ? em.fail_code : 11;
         return -1;
     }
+    if (em.obj_mode) {
+        int fi;
+        if (cc_fn_find(&em, "main") >= 0) {
+            g_last_fail_code = 30;
+            return -1;
+        }
+        if (em.nfns < 1) {
+            g_last_fail_code = 30;
+            return -1;
+        }
+        for (fi = 0; fi < em.nfns; fi++) {
+            if (!em.fns[fi].defined) {
+                g_last_fail_code = 11;
+                return -1;
+            }
+        }
+        if (lx.tok != TOK_EOF) {
+            g_last_fail_code = 30;
+            return -1;
+        }
+        if (cc_build_rel_elf(&em, out_elf, out_len) != 0) {
+            g_last_fail_code = 20;
+            return -1;
+        }
+        return 0;
+    }
     entry_at = em.code_len;
     patch_rel32(&em, jmp_entry, entry_at);
     clear_locals(&em);
@@ -1686,4 +1720,14 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
         return -1;
     }
     return cc_build_elf(&em, out_elf, out_len);
+}
+
+int cc_compile(const char* src, size_t len, unsigned char** out_elf,
+               size_t* out_len) {
+    return cc_compile_ex(src, len, out_elf, out_len, 0);
+}
+
+int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
+                   size_t* out_len) {
+    return cc_compile_ex(src, len, out_elf, out_len, 1);
 }

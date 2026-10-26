@@ -8,6 +8,9 @@ enum {
     SYS_EXIT = 60
 };
 
+/* Shared by ET_EXEC / ET_REL emitters (not re-entrant). */
+static unsigned char g_elf_buf[CC_CODE_MAX + CC_DATA_MAX + 256];
+
 static void patch_rel32_local(CcEmit* em, size_t at, size_t target) {
     int rel = (int)(target - (at + 4));
     em->code[at] = (unsigned char)(rel);
@@ -342,6 +345,30 @@ void cc_emit_fn_prologue(CcEmit* em, int arity) {
     }
 }
 
+void cc_emit_fn_prologue_sysv(CcEmit* em, int arity) {
+    /* Frame without zeroing first — rep stosq would clobber rdi/rsi/rdx/rcx. */
+    cc_emit_byte(em, 0x55);                      /* push rbp */
+    cc_emit_bytes(em, "\x48\x89\xE5", 3);         /* mov rbp, rsp */
+    cc_emit_bytes(em, "\x48\x81\xEC", 3);         /* sub rsp, imm */
+    cc_emit_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
+    if (arity >= 1) {
+        cc_emit_bytes(em, "\x48\x89\xF8", 3); /* mov rax, rdi */
+        cc_emit_store_local(em, 0);
+    }
+    if (arity >= 2) {
+        cc_emit_bytes(em, "\x48\x89\xF0", 3); /* mov rax, rsi */
+        cc_emit_store_local(em, 1);
+    }
+    if (arity >= 3) {
+        cc_emit_bytes(em, "\x48\x89\xD0", 3); /* mov rax, rdx */
+        cc_emit_store_local(em, 2);
+    }
+    if (arity >= 4) {
+        cc_emit_bytes(em, "\x48\x89\xC8", 3); /* mov rax, rcx */
+        cc_emit_store_local(em, 3);
+    }
+}
+
 void cc_emit_leave_ret(CcEmit* em) {
     cc_emit_byte(em, 0xC9); /* leave */
     cc_emit_byte(em, 0xC3); /* ret */
@@ -434,7 +461,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_MUSL_PASS\n";
+    static const char pass[] = "ONBOX_OBJ_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
@@ -607,11 +634,10 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         memsz = 4096;
     }
     /* Cap emitted ELF so a static buffer can hold it (ehdr+phdr+code+data). */
-    static unsigned char elf_buf[CC_CODE_MAX + CC_DATA_MAX + 256];
-    if (total > sizeof(elf_buf)) {
+    if (total > sizeof(g_elf_buf)) {
         return -1;
     }
-    elf = elf_buf;
+    elf = g_elf_buf;
     memset(elf, 0, total);
 
     /* ELF64 header */
@@ -694,6 +720,231 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
 
     memcpy(elf + file_off, em->code, em->code_len);
     memcpy(elf + data_file_off, em->data, em->data_len);
+    *out = elf;
+    *out_len = total;
+    return 0;
+}
+
+/* ET_REL for #lib: .text + STB_GLOBAL STT_FUNC exports (SysV bodies). */
+int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
+    enum { MAX_SYM = CC_FN_MAX };
+    int order[MAX_SYM];
+    size_t sizes[MAX_SYM];
+    int nfn = 0;
+    int i;
+    int j;
+    size_t strtab_len;
+    size_t shstr_len;
+    size_t off_text;
+    size_t off_shstr;
+    size_t off_sym;
+    size_t off_str;
+    size_t off_sh;
+    size_t nsym;
+    size_t total;
+    size_t name_off;
+    unsigned char* elf;
+    static const char shstr[] = "\0.text\0.shstrtab\0.symtab\0.strtab";
+
+    if (!em || em->failed || em->code_len == 0 ||
+        em->code_len > CC_CODE_MAX) {
+        return -1;
+    }
+    /* M113: no .data / RIP lea in objects (keep import path simple). */
+    if (em->data_len != 0 || g_nrelocs != 0) {
+        return -1;
+    }
+    if (em->nfns < 1 || em->nfns > CC_FN_MAX) {
+        return -1;
+    }
+    for (i = 0; i < em->nfns; i++) {
+        if (!em->fns[i].defined || em->fns[i].name[0] == 0) {
+            continue;
+        }
+        if (nfn >= MAX_SYM) {
+            return -1;
+        }
+        order[nfn++] = i;
+    }
+    if (nfn < 1) {
+        return -1;
+    }
+    /* Sort by entry ascending for size calc. */
+    for (i = 0; i < nfn - 1; i++) {
+        for (j = i + 1; j < nfn; j++) {
+            if (em->fns[order[j]].entry < em->fns[order[i]].entry) {
+                int t = order[i];
+                order[i] = order[j];
+                order[j] = t;
+            }
+        }
+    }
+    for (i = 0; i < nfn; i++) {
+        size_t start = em->fns[order[i]].entry;
+        size_t end =
+            (i + 1 < nfn) ? em->fns[order[i + 1]].entry : em->code_len;
+        if (end <= start || end > em->code_len) {
+            return -1;
+        }
+        sizes[i] = end - start;
+    }
+
+    strtab_len = 1;
+    for (i = 0; i < nfn; i++) {
+        size_t nl = 0;
+        while (nl < CC_IDENT_MAX && em->fns[order[i]].name[nl] != 0) {
+            nl++;
+        }
+        if (nl == 0 || em->fns[order[i]].name[nl] != 0) {
+            return -1;
+        }
+        strtab_len += nl + 1;
+    }
+    shstr_len = sizeof(shstr);
+    nsym = (size_t)nfn + 1;
+    off_text = 64;
+    if (em->code_len > sizeof(g_elf_buf) - 64) {
+        return -1;
+    }
+    off_shstr = off_text + em->code_len;
+    off_sym = (off_shstr + shstr_len + 7u) & ~(size_t)7;
+    off_str = off_sym + nsym * 24;
+    off_sh = (off_str + strtab_len + 7u) & ~(size_t)7;
+    total = off_sh + 5 * 64;
+    if (total < off_sh || total > sizeof(g_elf_buf)) {
+        return -1;
+    }
+    elf = g_elf_buf;
+    memset(elf, 0, total);
+
+    /* ELF64 ET_REL header */
+    elf[0] = 0x7f;
+    elf[1] = 'E';
+    elf[2] = 'L';
+    elf[3] = 'F';
+    elf[4] = 2;
+    elf[5] = 1;
+    elf[6] = 1;
+    elf[16] = 1; /* ET_REL */
+    elf[18] = 62;
+    elf[20] = 1;
+    {
+        unsigned long long shoff = (unsigned long long)off_sh;
+        size_t o = 40;
+        for (i = 0; i < 8; i++) {
+            elf[o + i] = (unsigned char)(shoff >> (8 * i));
+        }
+    }
+    elf[52] = 64; /* e_ehsize */
+    elf[58] = 64; /* e_shentsize */
+    elf[60] = 5;  /* e_shnum */
+    elf[62] = 2;  /* e_shstrndx */
+
+    memcpy(elf + off_text, em->code, em->code_len);
+    memcpy(elf + off_shstr, shstr, shstr_len);
+
+    /* null symbol */
+    memset(elf + off_sym, 0, 24);
+    name_off = 1;
+    elf[off_str] = 0;
+    {
+        size_t so = 1;
+        for (i = 0; i < nfn; i++) {
+            unsigned char* sy = elf + off_sym + (size_t)(i + 1) * 24;
+            size_t nl = 0;
+            while (nl < CC_IDENT_MAX && em->fns[order[i]].name[nl] != 0) {
+                nl++;
+            }
+            memcpy(elf + off_str + so, em->fns[order[i]].name, nl);
+            elf[off_str + so + nl] = 0;
+            sy[0] = (unsigned char)name_off;
+            sy[1] = (unsigned char)(name_off >> 8);
+            sy[2] = (unsigned char)(name_off >> 16);
+            sy[3] = (unsigned char)(name_off >> 24);
+            sy[4] = (unsigned char)((1u << 4) | 2u); /* STB_GLOBAL STT_FUNC */
+            sy[6] = 1;                               /* .text shndx */
+            {
+                unsigned long long v =
+                    (unsigned long long)em->fns[order[i]].entry;
+                unsigned long long sz = (unsigned long long)sizes[i];
+                int k;
+                for (k = 0; k < 8; k++) {
+                    sy[8 + k] = (unsigned char)(v >> (8 * k));
+                    sy[16 + k] = (unsigned char)(sz >> (8 * k));
+                }
+            }
+            name_off += nl + 1;
+            so += nl + 1;
+        }
+    }
+
+    /* Section headers: 0 null, 1 .text, 2 .shstrtab, 3 .symtab, 4 .strtab */
+    {
+        unsigned char* sh = elf + off_sh;
+        /* 0 */
+        memset(sh, 0, 64);
+        /* 1 .text name=1 type=PROGBITS flags=6 */
+        {
+            unsigned char* s = sh + 64;
+            unsigned long long off = (unsigned long long)off_text;
+            unsigned long long sz = (unsigned long long)em->code_len;
+            int k;
+            s[0] = 1;
+            s[4] = 1; /* SHT_PROGBITS */
+            s[8] = 6; /* ALLOC|EXEC */
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1; /* addralign */
+        }
+        /* 2 .shstrtab name=7 */
+        {
+            unsigned char* s = sh + 128;
+            unsigned long long off = (unsigned long long)off_shstr;
+            unsigned long long sz = (unsigned long long)shstr_len;
+            int k;
+            s[0] = 7;
+            s[4] = 3; /* SHT_STRTAB */
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1;
+        }
+        /* 3 .symtab name=17 link=4 info=1 entsize=24 */
+        {
+            unsigned char* s = sh + 192;
+            unsigned long long off = (unsigned long long)off_sym;
+            unsigned long long sz = (unsigned long long)(nsym * 24);
+            int k;
+            s[0] = 17;
+            s[4] = 2; /* SHT_SYMTAB */
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[40] = 4; /* link .strtab */
+            s[44] = 1; /* info first global */
+            s[48] = 8; /* addralign */
+            s[56] = 24;
+        }
+        /* 4 .strtab name=25 */
+        {
+            unsigned char* s = sh + 256;
+            unsigned long long off = (unsigned long long)off_str;
+            unsigned long long sz = (unsigned long long)strtab_len;
+            int k;
+            s[0] = 25;
+            s[4] = 3;
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1;
+        }
+    }
+
     *out = elf;
     *out_len = total;
     return 0;

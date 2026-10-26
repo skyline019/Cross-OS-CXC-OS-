@@ -1,0 +1,4 @@
+feat: M113 mini-cc self ET_REL SysV #lib ONBOX_OBJ_PASS (v2.4.0)
+
+Compile disk/lib.c to ET_REL lib.o (SysV), then #lib into out.elf.
+Evidence WMSG:OB + DMSG:21 + DHINT:UND + ONBOX_OBJ_PASS.

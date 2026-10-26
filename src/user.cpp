@@ -1922,30 +1922,27 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M112: memset/memcmp + typedef + cwrite/strlen; edge DMSG+DHINT.
+    // M113: self ET_REL lib.o (SysV) + #lib; edge DMSG+DHINT.
+    static const char lib_text[] =
+        "CXC_A2\n"
+        "fn bump(x){\n"
+        "return x+7;\n"
+        "}\n";
     static const char src_text[] =
         "CXC_A2\n"
-        "#lib \"rt.elf\"\n"
-        "#lib \"crt.elf\"\n"
+        "#lib \"lib.o\"\n"
         "#lib \"io.elf\"\n"
-        "import fn ans();\n"
+        "import fn bump(x);\n"
         "import fn cwrite(p,n);\n"
         "import fn strlen(s);\n"
-        "import fn memset(d,c,n);\n"
-        "import fn memcmp(a,b,n);\n"
-        "typedef int i32;\n"
         "fn main(){\n"
-        "i32 n;\n"
-        "i32 m;\n"
-        "i32 d;\n"
-        "buf[2];\n"
-        "memset(&buf[0], 0, 16);\n"
-        "d=memcmp(&buf[0], &buf[0], 16);\n"
-        "m=strlen(\"WMSG:MS\\n\");\n"
-        "cwrite(\"WMSG:MS\\n\", m);\n"
-        "n=ans();\n"
+        "int n;\n"
+        "int m;\n"
+        "m=strlen(\"WMSG:OB\\n\");\n"
+        "cwrite(\"WMSG:OB\\n\", m);\n"
+        "n=bump(35);\n"
         "print n;\n"
-        "return n+d;\n"
+        "return n;\n"
         "}\n";
     static const char bad_src[] =
         "CXC_A2\n"
@@ -2023,6 +2020,26 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
     }
 
+    {
+        const int64_t lsrc = fs::open_path(
+            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (lsrc < 0) {
+            result.failure = 46;
+            return false;
+        }
+        const size_t lib_len = sizeof(lib_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(lsrc), lib_text, lib_len) !=
+            static_cast<int64_t>(lib_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(lsrc));
+            result.failure = 47;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(lsrc)) != 0) {
+            result.failure = 48;
+            return false;
+        }
+    }
+
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (sfd < 0) {
@@ -2092,8 +2109,10 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG, no XLIB_PASS.
+    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG; drop lib.c so
+    // the driver does not re-emit lib.o on this pass.
     result.stage = 6;
+    (void)fs::unlink_path("disk/lib.c");
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (bfd < 0) {

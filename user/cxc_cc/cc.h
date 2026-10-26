@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): musl-ish CRT plant + typedef + DMSG/DHINT. */
+/* CXC mini-cc (A2): self ET_REL obj + #lib SysV + DMSG/DHINT. */
 #pragma once
 
 #ifdef CC_HOST
@@ -193,6 +193,7 @@ typedef struct CcEmit {
     int nexports;
     CcTypedef typedefs[CC_TYPEDEF_MAX];
     int ntypedefs;
+    int obj_mode; /* 1: emit ET_REL SysV fns (no CRT) */
 } CcEmit;
 
 void cc_lex_init(CcLexer* lx, const char* src, size_t len);
@@ -237,6 +238,7 @@ void cc_emit_load_global(CcEmit* em, size_t data_off);
 void cc_emit_store_global(CcEmit* em, size_t data_off);
 void cc_emit_prologue(CcEmit* em);
 void cc_emit_fn_prologue(CcEmit* em, int arity);
+void cc_emit_fn_prologue_sysv(CcEmit* em, int arity);
 void cc_emit_leave_ret(CcEmit* em);
 size_t cc_emit_call_rel32(CcEmit* em);
 void cc_emit_write_lit2(CcEmit* em, const char* lit);
@@ -246,6 +248,7 @@ void cc_emit_input_slot(CcEmit* em, int slot);
 void cc_emit_exit_rax(CcEmit* em);
 void cc_reloc_reset(void);
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
+int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 
 int cc_preprocess(const char* in, size_t in_len, char* out, size_t out_cap,
                   size_t* out_len);
@@ -261,3 +264,5 @@ int cc_last_fail_code(void);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);
+int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
+                   size_t* out_len);
