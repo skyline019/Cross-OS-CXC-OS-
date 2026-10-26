@@ -155,6 +155,8 @@ LOAD128_PASS = "LOAD128_PASS"
 LOAD128_PROBE_SUCCESS = "load128: pass: 1"
 HEAP_PASS = "HEAP_PASS"
 HEAP_PROBE_SUCCESS = "heap: pass: 1"
+TIME_PASS = "TIME_PASS"
+TIME_PROBE_SUCCESS = "time: pass: 1"
 
 
 @dataclass
@@ -640,6 +642,11 @@ class ContractRunner:
         assert b"brk_kib: 768" in serial
         assert b"mmap_kib: 512" in serial
         assert b"ceiling_kib: 1024" in serial
+        assert TIME_PASS.encode() in serial
+        assert TIME_PROBE_SUCCESS.encode() in serial
+        assert b"access: 1" in serial
+        assert b"clock: 1" in serial
+        assert b"gettimeofday: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -648,7 +655,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M90 heap/mmap 1MiB"
+            "kernel PASS + net + M75–M91 access/time"
         )
 
     def negative_evidence(self, work: Path) -> str:

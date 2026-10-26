@@ -258,6 +258,11 @@ jobs:
           grep -F 'brk_kib: 768' build/uefi/qemu-test/serial.log
           grep -F 'mmap_kib: 512' build/uefi/qemu-test/serial.log
           grep -F 'ceiling_kib: 1024' build/uefi/qemu-test/serial.log
+          grep -F 'TIME_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'time: pass: 1' build/uefi/qemu-test/serial.log
+          grep -F 'access: 1' build/uefi/qemu-test/serial.log
+          grep -F 'clock: 1' build/uefi/qemu-test/serial.log
+          grep -F 'gettimeofday: 1' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log

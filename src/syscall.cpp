@@ -3,6 +3,7 @@
 #include <cxc/fs.hpp>
 #include <cxc/log.hpp>
 #include <cxc/pmm.hpp>
+#include <cxc/scheduler.hpp>
 #include <cxc/smp.hpp>
 #include <cxc/user.hpp>
 #include <cxc/vmm.hpp>
@@ -67,7 +68,14 @@ constexpr char expected_nest_pass[] = "NEST_PASS\n";
 constexpr char expected_cap_pass[] = "CAP_PASS\n";
 constexpr char expected_load128_pass[] = "LOAD128_PASS\n";
 constexpr char expected_heap_pass[] = "HEAP_PASS\n";
+constexpr char expected_time_pass[] = "TIME_PASS\n";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
+constexpr int64_t errno_inval = -22;  // -EINVAL
+constexpr int64_t errno_noent = -2;   // -ENOENT
+// Local APIC periodic ≈ 1 ms/tick (see kernel calibration log).
+constexpr uint64_t ticks_per_sec = 1000;
+// Fixed realtime epoch so gettimeofday is non-zero for toolchain clocks.
+constexpr uint64_t realtime_epoch_sec = 1700000000ull;
 constexpr int64_t errno_fault_cwd = -14;  // -EFAULT
 constexpr uint64_t fcntl_getfd = 1;
 constexpr uint64_t fcntl_setfd = 2;
@@ -75,7 +83,6 @@ constexpr uint64_t fcntl_getfl = 3;
 constexpr uint64_t fcntl_setfl = 4;
 constexpr int64_t mmap_error = -1;
 constexpr uint64_t probe_tid = 1;
-constexpr int64_t errno_inval = -22;
 constexpr int64_t errno_fault = -14;
 constexpr int64_t errno_child = -10;   // -ECHILD
 constexpr int64_t errno_again = -11;   // -EAGAIN
@@ -715,6 +722,19 @@ void note_stdout_pass(const char* bytes, size_t length) {
             current.saw_heap_pass = 1;
         }
     }
+    if (length == sizeof(expected_time_pass) - 1) {
+        bool match = true;
+        for (size_t index = 0; index < sizeof(expected_time_pass) - 1;
+             ++index) {
+            if (bytes[index] != expected_time_pass[index]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            current.saw_time_pass = 1;
+        }
+    }
 }
 
 bool copy_user_path(uint64_t user_path, char* out, size_t capacity) {
@@ -911,8 +931,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "0.91.0");
-    fill_uts_field(local.version, "M90");
+    fill_uts_field(local.release, "0.92.0");
+    fill_uts_field(local.version, "M91");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -1573,6 +1593,112 @@ const Session& session() {
     return current;
 }
 
+void fill_timespec_from_ticks(bool realtime, uint64_t& sec, uint64_t& nsec) {
+    const uint64_t ticks = scheduler::ticks();
+    sec = ticks / ticks_per_sec;
+    nsec = (ticks % ticks_per_sec) * (1000000000ull / ticks_per_sec);
+    if (realtime) {
+        sec += realtime_epoch_sec;
+    }
+}
+
+cpu::InterruptFrame* handle_access(cpu::InterruptFrame* frame) {
+    char path[fs::max_path]{};
+    const uint64_t mode = frame->rsi;
+    if (!copy_user_path(frame->rdi, path, sizeof(path))) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    // Allow F_OK (0) and R/W/X OK bits only.
+    if ((mode & ~(access_r_ok | access_w_ok | access_x_ok)) != 0) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    fs::StatBuf st{};
+    const int64_t rc = fs::stat_path(path, st);
+    if (rc != 0) {
+        frame->rax = static_cast<uint64_t>(errno_noent);
+        return frame;
+    }
+    // No permission bits yet: existence implies R/W/X for A2 toolchain.
+    (void)mode;
+    (void)st;
+    frame->rax = 0;
+    return frame;
+}
+
+cpu::InterruptFrame* handle_gettimeofday(cpu::InterruptFrame* frame) {
+    struct Timeval {
+        int64_t tv_sec;
+        int64_t tv_usec;
+    };
+    const uint64_t tv_user = frame->rdi;
+    const uint64_t tz_user = frame->rsi;
+    if (tv_user != 0) {
+        if (!user_pages_ok(tv_user, sizeof(Timeval), true)) {
+            frame->rax = static_cast<uint64_t>(errno_inval);
+            return frame;
+        }
+        uint64_t sec = 0;
+        uint64_t nsec = 0;
+        fill_timespec_from_ticks(true, sec, nsec);
+        Timeval local{};
+        local.tv_sec = static_cast<int64_t>(sec);
+        local.tv_usec = static_cast<int64_t>(nsec / 1000ull);
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(tv_user)), &local,
+               sizeof(local));
+    }
+    if (tz_user != 0) {
+        // Linux timezone struct is obsolete; zero it when provided.
+        struct Timezone {
+            int32_t tz_minuteswest;
+            int32_t tz_dsttime;
+        };
+        if (!user_pages_ok(tz_user, sizeof(Timezone), true)) {
+            frame->rax = static_cast<uint64_t>(errno_inval);
+            return frame;
+        }
+        Timezone zero{};
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(tz_user)), &zero,
+               sizeof(zero));
+    }
+    frame->rax = 0;
+    return frame;
+}
+
+cpu::InterruptFrame* handle_clock_gettime(cpu::InterruptFrame* frame) {
+    struct Timespec {
+        int64_t tv_sec;
+        int64_t tv_nsec;
+    };
+    const uint64_t clock_id = frame->rdi;
+    const uint64_t tp_user = frame->rsi;
+    if (!user_pages_ok(tp_user, sizeof(Timespec), true)) {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    bool realtime = false;
+    if (clock_id == clock_realtime) {
+        realtime = true;
+    } else if (clock_id == clock_monotonic ||
+               clock_id == clock_monotonic_raw) {
+        realtime = false;
+    } else {
+        frame->rax = static_cast<uint64_t>(errno_inval);
+        return frame;
+    }
+    uint64_t sec = 0;
+    uint64_t nsec = 0;
+    fill_timespec_from_ticks(realtime, sec, nsec);
+    Timespec local{};
+    local.tv_sec = static_cast<int64_t>(sec);
+    local.tv_nsec = static_cast<int64_t>(nsec);
+    memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(tp_user)), &local,
+           sizeof(local));
+    frame->rax = 0;
+    return frame;
+}
+
 cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
     if ((frame->cs & 3u) != 3u) {
         log::panic("int 0x80 from non-CPL3");
@@ -1590,6 +1716,8 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_readv(frame);
     case sys_writev:
         return handle_writev(frame);
+    case sys_access:
+        return handle_access(frame);
     case sys_open:
         return handle_open(frame);
     case sys_close:
@@ -1618,6 +1746,10 @@ cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame) {
         return handle_ioctl(frame);
     case sys_fcntl:
         return handle_fcntl(frame);
+    case sys_gettimeofday:
+        return handle_gettimeofday(frame);
+    case sys_clock_gettime:
+        return handle_clock_gettime(frame);
     case sys_arch_prctl:
         return handle_arch_prctl(frame);
     case sys_rename:

@@ -111,6 +111,8 @@ uint64_t load128_payload_elf_physical = 0;
 uint64_t load128_payload_elf_size = 0;
 uint64_t heap_elf_physical = 0;
 uint64_t heap_elf_size = 0;
+uint64_t time_elf_physical = 0;
+uint64_t time_elf_size = 0;
 
 bool relocate_esp_elf_to_pmm(uint64_t& physical, uint64_t size,
                              const char* label) {
@@ -2018,6 +2020,29 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" brk_kib: 768 mmap_kib: 512 ceiling_kib: 1024\n");
     log::line("HEAP_PASS");
 
+    // M91: access + clock_gettime + gettimeofday (toolchain early path).
+    user::TimeProbeResult time_probe{};
+    const auto* time_image = reinterpret_cast<const uint8_t*>(
+        vmm::direct_map_base + time_elf_physical);
+    if (time_elf_physical == 0 || time_elf_size == 0 ||
+        !user::run_time_probe(time_image, static_cast<size_t>(time_elf_size),
+                              time_probe)) {
+        log::write("[debug] time stage: ");
+        log::decimal(time_probe.stage);
+        log::write(", failure: ");
+        log::decimal(time_probe.failure);
+        log::write(", pass: ");
+        log::decimal(time_probe.wrote_pass);
+        log::write(", exit: ");
+        log::decimal(time_probe.exit_code);
+        log::write('\n');
+        log::panic("M91 access/time probe failed");
+    }
+    log::write("[ok] time: pass: ");
+    log::decimal(time_probe.wrote_pass);
+    log::write(" access: 1 clock: 1 gettimeofday: 1\n");
+    log::line("TIME_PASS");
+
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
     cpu::halt();
@@ -2261,6 +2286,10 @@ void require_mapping(uint64_t address, bool writable, bool executable,
                                  "ESP HEAP.ELF")) {
         log::panic("cannot relocate ESP HEAP.ELF into PMM");
     }
+    if (!relocate_esp_elf_to_pmm(time_elf_physical, time_elf_size,
+                                 "ESP TIME.ELF")) {
+        log::panic("cannot relocate ESP TIME.ELF into PMM");
+    }
 
     kernel_stack_physical = pmm::allocate_pages(vmm::kernel_stack_pages);
     if (kernel_stack_physical == 0) {
@@ -2277,7 +2306,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 0.91.0 - heap/mmap 1MiB (A2/M90)");
+    cxc::log::line("CXC/OS 0.92.0 - access/time (A2/M91)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -2908,6 +2937,22 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     }
     cxc::log::write("[ok] ESP HEAP.ELF bytes: ");
     cxc::log::decimal(cxc::heap_elf_size);
+    cxc::log::write('\n');
+
+    static CHAR16 time_path[] = {
+        u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+        u'T',  u'I', u'M', u'E', u'.',  u'E', u'L', u'F', 0};
+    status = cxc::uefi::load_esp_file(image_handle, system_table, time_path,
+                                      64 * 1024, cxc::time_elf_physical,
+                                      cxc::time_elf_size);
+    if (efi_error(status)) {
+        cxc::log::write("[boot] ESP TIME.ELF load failed, status: ");
+        cxc::log::hex(status);
+        cxc::log::write('\n');
+        return status;
+    }
+    cxc::log::write("[ok] ESP TIME.ELF bytes: ");
+    cxc::log::decimal(cxc::time_elf_size);
     cxc::log::write('\n');
 
     status = cxc::uefi::exit_boot_services(

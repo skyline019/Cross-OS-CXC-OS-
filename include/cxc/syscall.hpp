@@ -21,6 +21,7 @@ constexpr uint64_t sys_brk = 12;
 constexpr uint64_t sys_ioctl = 16;
 constexpr uint64_t sys_readv = 19;
 constexpr uint64_t sys_writev = 20;
+constexpr uint64_t sys_access = 21;
 constexpr uint64_t sys_pipe = 22;
 constexpr uint64_t sys_dup = 32;
 constexpr uint64_t sys_dup2 = 33;
@@ -38,9 +39,22 @@ constexpr uint64_t sys_arch_prctl = 158;
 constexpr uint64_t sys_rename = 82;
 constexpr uint64_t sys_mkdir = 83;
 constexpr uint64_t sys_unlink = 87;
+constexpr uint64_t sys_gettimeofday = 96;
 constexpr uint64_t sys_getppid = 110;
 constexpr uint64_t sys_getdents64 = 217;
 constexpr uint64_t sys_set_tid_address = 218;
+constexpr uint64_t sys_clock_gettime = 228;
+
+// Linux access(2) mode bits.
+constexpr uint64_t access_f_ok = 0;
+constexpr uint64_t access_x_ok = 1;
+constexpr uint64_t access_w_ok = 2;
+constexpr uint64_t access_r_ok = 4;
+
+// Linux clock_gettime clock ids (subset for A2 toolchain).
+constexpr uint64_t clock_realtime = 0;
+constexpr uint64_t clock_monotonic = 1;
+constexpr uint64_t clock_monotonic_raw = 4;
 
 // Linux arch_prctl codes (x86-64). Only FS is supported for user TLS.
 constexpr uint64_t arch_set_gs = 0x1001;
@@ -117,6 +131,7 @@ struct Session {
     uint32_t saw_cap_pass;
     uint32_t saw_load128_pass;
     uint32_t saw_heap_pass;
+    uint32_t saw_time_pass;
     uint64_t user_root;
     uint64_t clear_child_tid;
     uint32_t pid;

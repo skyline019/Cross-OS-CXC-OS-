@@ -153,7 +153,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M88** | CXCFS 128 KiB/文件；16 MiB virtio；`max_io=4096` | 串口 `CAP_PASS`；96 KiB 回读 |
 | **M89** | 静态 ELF 加载器 128 KiB；disk `execve` >64 KiB | 串口 `LOAD128_PASS`；elf_bytes 102400 |
 | **M90** | 用户栈 `0x800000`；`brk`/`mmap` 各 1 MiB | 串口 `HEAP_PASS`；768+512 KiB 探针 |
-| **M91+** | access/time、更大堆 → 机上 g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M91** | `access`/`clock_gettime`/`gettimeofday` | 串口 `TIME_PASS`；ENOENT/EINVAL |
+| **M92+** | 更大堆、机上工具链落地 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 
