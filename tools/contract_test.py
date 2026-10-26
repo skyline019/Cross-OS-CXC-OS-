@@ -157,9 +157,9 @@ HEAP_PASS = "HEAP_PASS"
 HEAP_PROBE_SUCCESS = "heap: pass: 1"
 TIME_PASS = "TIME_PASS"
 TIME_PROBE_SUCCESS = "time: pass: 1"
-ONBOX_HOBJ_PASS = "ONBOX_HOBJ_PASS"
+ONBOX_HUND_PASS = "ONBOX_HUND_PASS"
 ONBOX_CC_PROBE_SUCCESS = "onbox-cc: pass: 1"
-ONBOX_WMSG = "WMSG:GH"
+ONBOX_WMSG = "WMSG:HG"
 ONBOX_NMSG = "NMSG:42"
 ONBOX_DMSG = "DMSG:21"
 ONBOX_DHINT = "DHINT:UND"
@@ -671,7 +671,7 @@ class ContractRunner:
         assert b"access: 1" in serial
         assert b"clock: 1" in serial
         assert b"gettimeofday: 1" in serial
-        assert ONBOX_HOBJ_PASS.encode() in serial
+        assert ONBOX_HUND_PASS.encode() in serial
         assert ONBOX_CC_PROBE_SUCCESS.encode() in serial
         assert ONBOX_WMSG.encode() in serial
         assert ONBOX_NMSG.encode() in serial
@@ -682,7 +682,7 @@ class ContractRunner:
         assert b"run: 1" in serial
         assert b"exit: 42" in serial
         assert b"write: 1" in serial
-        assert b"hobj: 1" in serial
+        assert b"hund: 1" in serial
         assert b"edge: 1" in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
@@ -692,7 +692,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M115 on-box mini-cc host-gcc-obj+edge"
+            "kernel PASS + net + M75–M116 on-box mini-cc host-gcc-rodata-UND+edge"
         )
 
     def negative_evidence(self, work: Path) -> str:

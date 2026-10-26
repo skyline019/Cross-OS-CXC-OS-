@@ -1923,19 +1923,14 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M115: #lib real host-gcc ET_REL (non-self plant); edge DMSG+DHINT.
+    // M116: host-gcc .rodata+UND→io.elf (io before host); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
-        "#lib \"host.o\"\n"
         "#lib \"io.elf\"\n"
+        "#lib \"host.o\"\n"
         "import fn bump(x);\n"
-        "import fn cwrite(p,n);\n"
-        "import fn strlen(s);\n"
         "int main(void){\n"
         "int n;\n"
-        "int m;\n"
-        "m=strlen(\"WMSG:GH\\n\");\n"
-        "cwrite(\"WMSG:GH\\n\", m);\n"
         "n=bump(35);\n"
         "print n;\n"
         "return n;\n"

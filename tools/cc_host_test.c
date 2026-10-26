@@ -418,21 +418,16 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
-            "#lib \"host.o\"\n"
             "#lib \"io.elf\"\n"
+            "#lib \"host.o\"\n"
             "import fn bump(x);\n"
-            "import fn cwrite(p,n);\n"
-            "import fn strlen(s);\n"
             "int main(void){\n"
             "int n;\n"
-            "int m;\n"
-            "m=strlen(\"WMSG:GH\\n\");\n"
-            "cwrite(\"WMSG:GH\\n\", m);\n"
             "n=bump(35);\n"
             "print n;\n"
             "return n;\n"
             "}\n",
-            "m115-host-gcc-obj") != 0) {
+            "m116-host-rodata-und") != 0) {
         fails++;
     }
     if (expect_ok(

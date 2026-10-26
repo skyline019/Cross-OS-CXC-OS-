@@ -1,4 +1,4 @@
-/* Import ET_REL: place .text, PC32/PLT32, cross-#lib UND (M109). */
+/* Import ET_REL: .text+.rodata, PC32/PLT32/32, cross-#lib UND (M116). */
 #include "cxc_cc/cc.h"
 
 #ifdef CC_HOST
@@ -9,9 +9,11 @@ enum {
     SHT_PROGBITS = 1,
     SHT_SYMTAB = 2,
     SHT_RELA = 4,
+    SHF_ALLOC = 2,
     SHF_EXECINSTR = 4,
     R_X86_64_PC32 = 2,
     R_X86_64_PLT32 = 4,
+    R_X86_64_32 = 10,
     CC_FAIL_ELF = 20,
     CC_FAIL_UND = 21,
     CC_FAIL_RELOC = 22,
@@ -125,11 +127,16 @@ int cc_import_elf(CcEmit* em, const char* path) {
     unsigned text_i = 0;
     unsigned text_off = 0;
     unsigned text_sz = 0;
+    unsigned rodata_i = 0;
+    unsigned rodata_off = 0;
+    unsigned rodata_sz = 0;
+    int have_rodata = 0;
     unsigned rela_off = 0;
     unsigned rela_sz = 0;
     unsigned rela_entsz = 24;
     int have_rela = 0;
     size_t text_base;
+    size_t rodata_base = 0;
     const char* strbase;
     if (!em || !path || cc_read_source(path, (char*)buf, sizeof(buf), &n) !=
                             0) {
@@ -148,7 +155,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
     shoff = (unsigned)u64(buf + 40);
     shentsize = u16(buf + 58);
     shnum = u16(buf + 60);
-    if (shentsize < 64 || shnum < 2 || shnum > 32) {
+    if (shentsize < 64 || shnum < 2 || shnum > 48) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
@@ -186,6 +193,12 @@ int cc_import_elf(CcEmit* em, const char* path) {
             text_i = i;
             text_off = off;
             text_sz = sz;
+        } else if (typ == SHT_PROGBITS && (flags & SHF_ALLOC) &&
+                   !(flags & SHF_EXECINSTR) && sz > 0 && !have_rodata) {
+            rodata_i = i;
+            rodata_off = off;
+            rodata_sz = sz;
+            have_rodata = 1;
         } else if (typ == SHT_RELA) {
             rela_off = off;
             rela_sz = sz;
@@ -201,10 +214,16 @@ int cc_import_elf(CcEmit* em, const char* path) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
     }
-    if (text_sz == 0 || text_sz > 2048 || text_off > n ||
+    if (text_sz == 0 || text_sz > 4096 || text_off > n ||
         n - text_off < text_sz) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
+    }
+    if (have_rodata) {
+        if (rodata_sz > 1024 || rodata_off > n || n - rodata_off < rodata_sz) {
+            em->fail_code = CC_FAIL_ELF;
+            return -1;
+        }
     }
     if (have_rela) {
         if (rela_entsz < 24 || rela_sz > 4096 || rela_sz % rela_entsz != 0 ||
@@ -214,12 +233,20 @@ int cc_import_elf(CcEmit* em, const char* path) {
         }
     }
 
-    /* Always place listed #lib .text (exports feed later UND resolves). */
+    /* Place .text then .rodata into RX image (exports feed later UND). */
     text_base = em->code_len;
     cc_emit_bytes(em, buf + text_off, text_sz);
     if (em->failed) {
         em->fail_code = CC_FAIL_ELF;
         return -1;
+    }
+    if (have_rodata) {
+        rodata_base = em->code_len;
+        cc_emit_bytes(em, buf + rodata_off, rodata_sz);
+        if (em->failed) {
+            em->fail_code = CC_FAIL_ELF;
+            return -1;
+        }
     }
     strbase = (const char*)(buf + stroff);
 
@@ -245,7 +272,9 @@ int cc_import_elf(CcEmit* em, const char* path) {
             size_t p_at;
             size_t s_at;
             long long disp;
-            if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32) {
+            unsigned long long absva;
+            if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32 &&
+                r_type != R_X86_64_32) {
                 em->fail_code = CC_FAIL_RELOC;
                 return -1;
             }
@@ -264,6 +293,12 @@ int cc_import_elf(CcEmit* em, const char* path) {
                     return -1;
                 }
                 s_at = text_base + (size_t)t_val;
+            } else if (have_rodata && t_shndx == rodata_i) {
+                if (t_val > rodata_sz) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                s_at = rodata_base + (size_t)t_val;
             } else if (t_shndx == 0) {
                 if (copy_ident(ident, strbase, strsz, t_name_off) != 0) {
                     em->fail_code = CC_FAIL_UND;
@@ -277,12 +312,22 @@ int cc_import_elf(CcEmit* em, const char* path) {
                 em->fail_code = CC_FAIL_UND;
                 return -1;
             }
-            disp = (long long)s_at + r_add - (long long)p_at;
-            if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
-                em->fail_code = CC_FAIL_RELOC;
-                return -1;
+            if (r_type == R_X86_64_32) {
+                absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at +
+                        (unsigned long long)r_add;
+                if (absva > 0xffffffffULL) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                w32(em->code + p_at, (unsigned)absva);
+            } else {
+                disp = (long long)s_at + r_add - (long long)p_at;
+                if (disp < -0x80000000LL || disp > 0x7fffffffLL) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                w32(em->code + p_at, (unsigned)(int)disp);
             }
-            w32(em->code + p_at, (unsigned)(int)disp);
         }
     }
 

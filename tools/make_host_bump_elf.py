@@ -17,13 +17,14 @@ def compile_with_gcc(out: Path) -> None:
     gcc = shutil.which("gcc")
     if not gcc:
         raise RuntimeError("gcc not found")
+    # -fno-pie yields PLT32 (not GOTPCREL) for UND; keep R_X86_64_32 to .rodata.
     cmd = [
         gcc,
         "-c",
         "-m64",
         "-O0",
         "-fno-pic",
-        "-fno-plt",
+        "-fno-pie",
         "-fno-asynchronous-unwind-tables",
         "-fno-ident",
         "-fno-stack-protector",

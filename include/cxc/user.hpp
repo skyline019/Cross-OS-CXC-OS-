@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M115/A2: host-gcc ET_REL #lib + DMSG/DHINT → ONBOX_HOBJ_PASS.
+// M116/A2: host-gcc .rodata+UND→io.elf + DMSG/DHINT → ONBOX_HUND_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);
