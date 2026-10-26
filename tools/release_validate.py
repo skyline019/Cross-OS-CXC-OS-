@@ -206,7 +206,7 @@ def profile_full(work_dir: Path, seed: int, build_type: str, image: Path | None)
         ("smp2", ["--cpus", "2", "--cpu", "qemu64,+x2apic"]),
         ("smp8", ["--cpus", "8", "--cpu", "qemu64,+x2apic"]),
         ("smp16", ["--cpus", "16", "--cpu", "qemu64,+x2apic"]),
-        ("mem64", ["--memory", "64M"]),
+        ("mem128", ["--memory", "128M"]),
         ("mem256", ["--memory", "256M"]),
         ("mem512", ["--cpu", "qemu64,+x2apic", "--memory", "512M"]),
         ("smp16-512", ["--cpus", "16", "--cpu", "qemu64,+x2apic", "--memory", "512M"]),

@@ -155,7 +155,8 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M90** | 用户栈 `0x800000`；`brk`/`mmap` 各 1 MiB | 串口 `HEAP_PASS`；768+512 KiB 探针 |
 | **M91** | `access`/`clock_gettime`/`gettimeofday` | 串口 `TIME_PASS`；ENOENT/EINVAL |
 | **M92** | 机上 `cxc-cc`：in.c→out.elf→execve | 串口 `ONBOX_CC_PASS`；A2 闭环起步 |
-| **M93+** | 真实前端/汇编、更大堆 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M93** | `cxc-cc` 解析 `return N`→exit(N) | 串口 `ONBOX_CGEN_PASS`；`exit: 42` |
+| **M94+** | 表达式/多语句前端、汇编 → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

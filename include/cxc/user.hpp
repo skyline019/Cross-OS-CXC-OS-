@@ -747,7 +747,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M92/A2: plant in.c + cxc-cc on disk/, stub execve → compile → run out.elf.
+// M93/A2: plant in.c + cxc-cc; parse return N → out.elf exit(N) → ONBOX_CGEN_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

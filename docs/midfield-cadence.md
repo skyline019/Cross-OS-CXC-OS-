@@ -16,7 +16,7 @@
 | 第八次 | M75–M84 | [`midpoint-assessment-8.md`](midpoint-assessment-8.md) |
 | 第九次（计划） | 约 M85–M94 | `midpoint-assessment-9.md`（届时新建） |
 
-当前基线：**M92 / v0.93.0**（机上编译→运行闭环；A2 落地起步；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M94**。
+当前基线：**M93 / v0.94.0**（机上 codegen：`return N`→exit N；A2 前端起步；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M94**。
 
 ## 中场窗口必做
 

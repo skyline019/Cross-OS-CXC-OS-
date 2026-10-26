@@ -1903,7 +1903,8 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    static const char src_text[] = "CXC_A2\nint main(void){return 0;}\n";
+    // M93: cxc-cc must parse return N and emit exit(N); N=42 proves real codegen.
+    static const char src_text[] = "CXC_A2\nint main(void){return 42;}\n";
     result = OnboxCcProbeResult{};
     result.stage = 1;
     if (stub_image == nullptr || stub_size == 0 || cc_image == nullptr ||
@@ -1978,7 +1979,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     result.wrote_pass = syscall::session().saw_onbox_cc_pass;
     result.stage = 5;
 
-    if (result.exit_code != 0 || result.wrote_pass == 0) {
+    if (result.exit_code != 42 || result.wrote_pass == 0) {
         syscall::clear_session();
         result.failure = 10;
         return false;
