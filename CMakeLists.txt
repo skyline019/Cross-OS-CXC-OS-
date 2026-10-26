@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.5.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.6.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1555,6 +1555,10 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtio.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtio_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/rtio_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/host_bump.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/host_bump.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_host_bump_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/host_bump_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

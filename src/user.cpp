@@ -1,4 +1,5 @@
 #include <cxc/user.hpp>
+#include <cxc/host_bump_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
@@ -1922,18 +1923,10 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M114: C-decl fns in self ET_REL + SysV internal call; edge DMSG+DHINT.
-    static const char lib_text[] =
-        "CXC_A2\n"
-        "int add(int a, int b){\n"
-        "return a+b;\n"
-        "}\n"
-        "int bump(int x){\n"
-        "return add(x, 7);\n"
-        "}\n";
+    // M115: #lib real host-gcc ET_REL (non-self plant); edge DMSG+DHINT.
     static const char src_text[] =
         "CXC_A2\n"
-        "#lib \"lib.o\"\n"
+        "#lib \"host.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
         "import fn cwrite(p,n);\n"
@@ -1941,8 +1934,8 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "int main(void){\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:CF\\n\");\n"
-        "cwrite(\"WMSG:CF\\n\", m);\n"
+        "m=strlen(\"WMSG:GH\\n\");\n"
+        "cwrite(\"WMSG:GH\\n\", m);\n"
         "n=bump(35);\n"
         "print n;\n"
         "return n;\n"
@@ -2024,20 +2017,20 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
 
     {
-        const int64_t lsrc = fs::open_path(
-            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (lsrc < 0) {
+        const int64_t hfd = fs::open_path(
+            "disk/host.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (hfd < 0) {
             result.failure = 46;
             return false;
         }
-        const size_t lib_len = sizeof(lib_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(lsrc), lib_text, lib_len) !=
-            static_cast<int64_t>(lib_len)) {
-            (void)fs::close_fd(static_cast<uint32_t>(lsrc));
+        if (fs::write_fd(static_cast<uint32_t>(hfd), host_bump_elf,
+                         host_bump_elf_size) !=
+            static_cast<int64_t>(host_bump_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(hfd));
             result.failure = 47;
             return false;
         }
-        if (fs::close_fd(static_cast<uint32_t>(lsrc)) != 0) {
+        if (fs::close_fd(static_cast<uint32_t>(hfd)) != 0) {
             result.failure = 48;
             return false;
         }
@@ -2112,10 +2105,8 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG; drop lib.c so
-    // the driver does not re-emit lib.o on this pass.
+    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG.
     result.stage = 6;
-    (void)fs::unlink_path("disk/lib.c");
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (bfd < 0) {

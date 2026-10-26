@@ -18,7 +18,7 @@
 | 第十次 | 约 M95–M104 | [`midpoint-assessment-10.md`](midpoint-assessment-10.md) |
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 
-当前基线：**M114 / v2.5.0**（机上 mini-cc：C 声明 + 多函数自产 ET_REL；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M124**。
+当前基线：**M115 / v2.6.0**（机上 mini-cc：#lib host-gcc ET_REL；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M124**。
 
 ## 中场窗口必做
 
