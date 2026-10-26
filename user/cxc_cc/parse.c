@@ -85,6 +85,19 @@ static void parse_call(CcParser* p, const char* name) {
         fail(p);
         return;
     }
+    if (p->em->fns[fi].sysv) {
+        if (argc >= 1) {
+            cc_emit_byte(p->em, 0x5F); /* pop rdi  arg0 */
+        }
+        if (argc >= 2) {
+            cc_emit_byte(p->em, 0x5E); /* pop rsi */
+            cc_emit_bytes(p->em, "\x48\x87\xFE", 3); /* xchg rdi, rsi */
+        }
+        if (argc >= 3) {
+            fail(p);
+            return;
+        }
+    }
     call_at = cc_emit_call_rel32(p->em);
     if (p->em->fns[fi].defined) {
         patch_rel32(p->em, call_at, p->em->fns[fi].entry);
@@ -97,7 +110,7 @@ static void parse_call(CcParser* p, const char* name) {
         p->em->calls[p->em->ncalls].fn = fi;
         p->em->ncalls++;
     }
-    if (argc > 0) {
+    if (argc > 0 && !p->em->fns[fi].sysv) {
         /* add rsp, 8*argc */
         cc_emit_bytes(p->em, "\x48\x81\xC4", 3);
         cc_emit_u32(p->em, (unsigned)(argc * 8));
@@ -1202,6 +1215,55 @@ static void parse_extern_fn(CcParser* p) {
     fn->name[n] = 0;
     fn->entry = 0;
     fn->defined = 0;
+    fn->sysv = 0;
+    fn->arity = 0;
+    expect(p, TOK_LPAREN);
+    if (p->lx->tok != TOK_RPAREN) {
+        for (;;) {
+            if (p->lx->tok != TOK_IDENT || arity >= CC_FN_ARGS) {
+                fail(p);
+                return;
+            }
+            arity++;
+            cc_lex_next(p->lx);
+            if (!accept(p, TOK_COMMA)) {
+                break;
+            }
+        }
+    }
+    expect(p, TOK_RPAREN);
+    expect(p, TOK_SEMI);
+    fn->arity = arity;
+    p->em->nfns++;
+}
+
+static void parse_import_fn(CcParser* p) {
+    char name[CC_IDENT_MAX + 1];
+    CcFn* fn;
+    int arity = 0;
+    size_t n;
+    expect(p, TOK_KW_IMPORT);
+    expect(p, TOK_KW_FN);
+    if (p->lx->tok != TOK_IDENT) {
+        fail(p);
+        return;
+    }
+    memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
+    cc_lex_next(p->lx);
+    if (cc_fn_find(p->em, name) >= 0 || p->em->nfns >= CC_FN_MAX) {
+        fail(p);
+        return;
+    }
+    fn = &p->em->fns[p->em->nfns];
+    n = 0;
+    while (n < CC_IDENT_MAX && name[n] != '\0') {
+        fn->name[n] = name[n];
+        n++;
+    }
+    fn->name[n] = 0;
+    fn->entry = 0;
+    fn->defined = 0;
+    fn->sysv = 1;
     fn->arity = 0;
     expect(p, TOK_LPAREN);
     if (p->lx->tok != TOK_RPAREN) {
@@ -1261,6 +1323,7 @@ static void parse_function(CcParser* p) {
     }
     fn->entry = p->em->code_len;
     fn->defined = 1;
+    fn->sysv = 0;
 
     clear_locals(p->em);
     expect(p, TOK_LPAREN);
@@ -1302,13 +1365,15 @@ static void parse_defs(CcParser* p) {
     while (!p->em->failed &&
            (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
             p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_ENUM ||
-            p->lx->tok == TOK_KW_EXTERN)) {
+            p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT)) {
         if (++guard > 64) {
             p->em->failed = 1;
             break;
         }
         if (p->lx->tok == TOK_KW_EXTERN) {
             parse_extern_fn(p);
+        } else if (p->lx->tok == TOK_KW_IMPORT) {
+            parse_import_fn(p);
         } else if (p->lx->tok == TOK_KW_FN) {
             parse_function(p);
         } else if (p->lx->tok == TOK_KW_STRUCT) {
@@ -1371,6 +1436,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
     em.failed = 0;
     cc_reloc_reset();
     cc_link_reset();
+    cc_lib_reset();
 
     if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
         0) {
@@ -1431,6 +1497,16 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
             p.lx = &lx;
         }
     }
+    {
+        int li;
+        for (li = 0; !em.failed && li < cc_lib_count(); li++) {
+            const char* path = cc_lib_at(li);
+            if (!path || cc_import_elf(&em, path) != 0) {
+                em.failed = 1;
+                break;
+            }
+        }
+    }
     if (resolve_calls(&em) != 0) {
         return -1;
     }
@@ -1462,7 +1538,7 @@ int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                 }
                 if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
                     lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM ||
-                    lx.tok == TOK_KW_EXTERN) {
+                    lx.tok == TOK_KW_EXTERN || lx.tok == TOK_KW_IMPORT) {
                     em.failed = 1;
                     break;
                 }

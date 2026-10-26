@@ -19,6 +19,7 @@ SOURCES = [
     CC_DIR / "parse.c",
     CC_DIR / "emit.c",
     CC_DIR / "prep.c",
+    CC_DIR / "elflink.c",
 ]
 
 
@@ -86,6 +87,8 @@ def main() -> int:
         (disk / "lib.c").write_text(
             "fn add(a,b){\nreturn a+b;\n}\n", encoding="utf-8"
         )
+        rt = ROOT / "user" / "prebuilt" / "rtadd.elf"
+        (disk / "rt.elf").write_bytes(rt.read_bytes())
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 1.6.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 1.7.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1369,6 +1369,7 @@ if(CXC_USER_CROSS_USES_GCC)
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
@@ -1383,6 +1384,7 @@ if(CXC_USER_CROSS_USES_GCC)
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
@@ -1542,7 +1544,11 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtadd.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtadd_elf.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/rtadd_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"

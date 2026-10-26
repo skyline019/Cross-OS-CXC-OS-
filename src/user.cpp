@@ -1,4 +1,5 @@
 #include <cxc/user.hpp>
+#include <cxc/rtadd_elf.hpp>
 
 #include <cxc/cpu.hpp>
 #include <cxc/cxcfs.hpp>
@@ -1919,21 +1920,17 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M105: #link + extern fn multi-TU → 42; edge reject.
-    static const char lib_text[] =
-        "fn add(a,b){\n"
-        "return a+b;\n"
-        "}\n";
+    // M106: #lib ET_REL + import SysV add → 42; edge reject.
     static const char src_text[] =
         "CXC_A2\n"
-        "#link \"lib.c\"\n"
-        "extern fn add(a,b);\n"
+        "#lib \"rt.elf\"\n"
+        "import fn add(a,b);\n"
         "fn main(){\n"
         "int n;\n"
         "n=add(10,32);\n"
         "print n;\n"
         "if(n==42){\n"
-        "write \"LN\";\n"
+        "write \"LB\";\n"
         "}\n"
         "return n;\n"
         "}\n";
@@ -1952,14 +1949,13 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
 
     {
         const int64_t lfd = fs::open_path(
-            "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            "disk/rt.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (lfd < 0) {
             result.failure = 16;
             return false;
         }
-        const size_t lib_len = sizeof(lib_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(lfd), lib_text, lib_len) !=
-            static_cast<int64_t>(lib_len)) {
+        if (fs::write_fd(static_cast<uint32_t>(lfd), rtadd_elf, rtadd_elf_size) !=
+            static_cast<int64_t>(rtadd_elf_size)) {
             (void)fs::close_fd(static_cast<uint32_t>(lfd));
             result.failure = 17;
             return false;
@@ -2039,7 +2035,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: illegal source must exit 4 from cxc-cc without FUNC_PASS.
+    // Edge: illegal source must exit 4 from cxc-cc without LIB_PASS.
     result.stage = 6;
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);

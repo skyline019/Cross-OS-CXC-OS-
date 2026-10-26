@@ -257,6 +257,22 @@ int main(void) {
     }
     if (expect_ok(
             "CXC_A2\n"
+            "#lib \"rt.elf\"\n"
+            "import fn add(a,b);\n"
+            "fn main(){\n"
+            "int n;\n"
+            "n=add(10,32);\n"
+            "print n;\n"
+            "if(n==42){\n"
+            "write \"LB\";\n"
+            "}\n"
+            "return n;\n"
+            "}\n",
+            "m106-lib") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
             "a[3];\n"
             "a[0]=7;\n"
             "a[1]=14;\n"
@@ -300,6 +316,19 @@ int main(void) {
     if (expect_fail(
             "CXC_A2\nextern fn missing(a);\nfn main(){\nreturn missing(1);\n}\n",
             "bad-unresolved") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\nimport fn add(a,b);\nfn main(){\nreturn add(1,2);\n}\n",
+            "bad-nolib") != 0) {
+        fails++;
+    }
+    if (expect_fail(
+            "CXC_A2\n"
+            "#lib \"missing.elf\"\n"
+            "import fn add(a,b);\n"
+            "fn main(){\nreturn add(1,2);\n}\n",
+            "bad-missing-lib") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\n*missing=1;\nreturn 0;\n", "bad-deref") != 0) {

@@ -12,9 +12,26 @@ enum { CC_INCLUDE_DEPTH = 4 };
 
 static char g_links[CC_LINK_MAX][128];
 static int g_nlinks;
+static char g_libs[CC_LINK_MAX][128];
+static int g_nlibs;
 
 void cc_link_reset(void) {
     g_nlinks = 0;
+}
+
+void cc_lib_reset(void) {
+    g_nlibs = 0;
+}
+
+int cc_lib_count(void) {
+    return g_nlibs;
+}
+
+const char* cc_lib_at(int i) {
+    if (i < 0 || i >= g_nlibs) {
+        return 0;
+    }
+    return g_libs[i];
 }
 
 int cc_link_count(void) {
@@ -81,6 +98,30 @@ static int add_link(const char* path, size_t path_len) {
     }
     g_links[g_nlinks][i] = 0;
     g_nlinks++;
+    return 0;
+}
+
+static int add_lib(const char* path, size_t path_len) {
+    char full[128];
+    int i;
+    if (g_nlibs >= CC_LINK_MAX) {
+        return -1;
+    }
+    if (make_disk_path(path, path_len, full, sizeof(full)) != 0) {
+        return -1;
+    }
+    for (i = 0; i < g_nlibs; i++) {
+        if (strcmp(g_libs[i], full) == 0) {
+            return 0;
+        }
+    }
+    i = 0;
+    while (full[i] != 0) {
+        g_libs[g_nlibs][i] = full[i];
+        i++;
+    }
+    g_libs[g_nlibs][i] = 0;
+    g_nlibs++;
     return 0;
 }
 
@@ -230,6 +271,39 @@ static int expand(const char* in, size_t in_len, char* out, size_t out_cap,
                 j++;
             }
             if (add_link(in + path_at, path_len) != 0) {
+                return -1;
+            }
+            i = j;
+            continue;
+        }
+        if (is_line_start(in, i) && i + 4 <= in_len && in[i] == '#' &&
+            in[i + 1] == 'l' && in[i + 2] == 'i' && in[i + 3] == 'b') {
+            size_t j = i + 4;
+            size_t path_at;
+            size_t path_len;
+            while (j < in_len && (in[j] == ' ' || in[j] == '\t')) {
+                j++;
+            }
+            if (j >= in_len || in[j] != '"') {
+                return -1;
+            }
+            j++;
+            path_at = j;
+            while (j < in_len && in[j] != '"' && in[j] != '\n') {
+                j++;
+            }
+            if (j >= in_len || in[j] != '"') {
+                return -1;
+            }
+            path_len = j - path_at;
+            j++;
+            while (j < in_len && in[j] != '\n') {
+                j++;
+            }
+            if (j < in_len && in[j] == '\n') {
+                j++;
+            }
+            if (add_lib(in + path_at, path_len) != 0) {
                 return -1;
             }
             i = j;

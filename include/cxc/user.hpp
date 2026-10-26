@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M105/A2: #link + extern fn multi-TU + edge → ONBOX_LINK_PASS.
+// M106/A2: #lib ET_REL + import SysV + edge → ONBOX_LIB_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

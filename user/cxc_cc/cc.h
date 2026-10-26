@@ -1,4 +1,4 @@
-/* CXC mini-cc (A2): CRT/enum + extern fn / #link multi-TU. */
+/* CXC mini-cc (A2): CRT/enum + #link + #lib ET_REL import SysV. */
 #pragma once
 
 #ifdef CC_HOST
@@ -59,6 +59,7 @@ enum CcTok {
     TOK_KW_ENUM,
     TOK_KW_SIZEOF,
     TOK_KW_EXTERN,
+    TOK_KW_IMPORT,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -132,6 +133,7 @@ typedef struct CcFn {
     int arity;
     size_t entry;
     int defined;
+    int sysv;
 } CcFn;
 
 typedef struct CcCallFix {
@@ -232,6 +234,10 @@ void cc_link_reset(void);
 int cc_link_count(void);
 const char* cc_link_at(int i);
 int cc_read_source(const char* path, char* buf, size_t cap, size_t* out_n);
+void cc_lib_reset(void);
+int cc_lib_count(void);
+const char* cc_lib_at(int i);
+int cc_import_elf(CcEmit* em, const char* path);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);
