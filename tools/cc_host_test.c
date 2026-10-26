@@ -897,6 +897,72 @@ int main(void) {
         }
     }
     {
+        /* M131: deferred lea (.text before .rodata) + cmp/je + edges. */
+        unsigned char* o = 0;
+        size_t on = 0;
+        const char* deep =
+            ".text\n"
+            ".globl main\n"
+            "main:\n"
+            "lea s(%rip), %rax\n"
+            "push %rax\n"
+            "pop %rax\n"
+            "cmp $2, %eax\n"
+            "je .Lok\n"
+            "mov $1, %eax\n"
+            "ret\n"
+            ".Lok:\n"
+            "mov $0, %eax\n"
+            "ret\n"
+            ".rodata\n"
+            "s:\n"
+            ".asciz \"AD\"\n"
+            ".data\n"
+            "z:\n"
+            ".zero 4\n";
+        if (as_compile(deep, strlen(deep), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m131-as-deep: deferred lea\n");
+            fails++;
+        }
+        {
+            unsigned char* bad = 0;
+            size_t bn = 0;
+            const char* e1 =
+                ".text\n.globl main\nmain:\nfrob %eax\nret\n";
+            const char* e2 =
+                ".text\n.globl main\nmain:\nlea s(%rip, %rax\nret\n";
+            const char* e3 =
+                ".text\n.globl main\nmain:\nje .Lmissing\nret\n";
+            const char* e4 =
+                ".rodata\ns:\n.asciz \""
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAA\"\n"
+                ".text\n.globl main\nmain:\nret\n";
+            const char* e5 =
+                ".text\n.globl foo\n.globl foo\nfoo:\nret\n";
+            if (as_compile(e1, strlen(e1), &bad, &bn) == 0) {
+                fprintf(stderr, "FAIL edge m131: bad mnemonic accepted\n");
+                fails++;
+            }
+            if (as_compile(e2, strlen(e2), &bad, &bn) == 0) {
+                fprintf(stderr, "FAIL edge m131: missing ) accepted\n");
+                fails++;
+            }
+            if (as_compile(e3, strlen(e3), &bad, &bn) == 0) {
+                fprintf(stderr, "FAIL edge m131: undef label accepted\n");
+                fails++;
+            }
+            if (as_compile(e4, strlen(e4), &bad, &bn) == 0) {
+                fprintf(stderr, "FAIL edge m131: long asciz accepted\n");
+                fails++;
+            }
+            if (as_compile(e5, strlen(e5), &bad, &bn) == 0) {
+                fprintf(stderr, "FAIL edge m131: dup globl accepted\n");
+                fails++;
+            }
+        }
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;

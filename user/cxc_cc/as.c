@@ -1,11 +1,14 @@
-/* M127–M128: freestanding GAS-ish assembler → SysV ET_REL (A2 as subset). */
+/* M127–M131: freestanding GAS-ish assembler → SysV ET_REL (A2 as subset). */
 #include "cxc_cc/cc.h"
 
 enum {
     AS_FAIL = 40,
     AS_TOK_MAX = 64,
-    AS_DATA_MAX = 8,
-    AS_STR_MAX = 64
+    AS_DATA_MAX = 16,
+    AS_STR_MAX = 64,
+    AS_LEA_PEND = 16,
+    AS_LOC_MAX = 16,
+    AS_BR_PEND = 16
 };
 
 static int g_as_fail;
@@ -268,6 +271,15 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
     char dnames[AS_DATA_MAX][CC_IDENT_MAX + 1];
     size_t doffs[AS_DATA_MAX];
     int ndata = 0;
+    char lea_names[AS_LEA_PEND][CC_IDENT_MAX + 1];
+    int lea_ri[AS_LEA_PEND];
+    int nlea_pend = 0;
+    char lnames[AS_LOC_MAX][CC_IDENT_MAX + 1];
+    size_t loffs[AS_LOC_MAX];
+    int nloc = 0;
+    char br_names[AS_BR_PEND][CC_IDENT_MAX + 1];
+    size_t br_at[AS_BR_PEND];
+    int nbr = 0;
     const char* p = src;
     const char* end = src + len;
     int in_text = 0;
@@ -326,10 +338,18 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                         return -1;
                     }
                 } else if (in_text) {
-                    cur_fn = ensure_fn(&em, t0, 1);
-                    if (cur_fn < 0 || em.failed) {
-                        g_as_fail = AS_FAIL;
-                        return -1;
+                    if (t0[0] == '.') {
+                        if (data_define(lnames, loffs, &nloc, t0, em.code_len) <
+                            0) {
+                            g_as_fail = AS_FAIL;
+                            return -1;
+                        }
+                    } else {
+                        cur_fn = ensure_fn(&em, t0, 1);
+                        if (cur_fn < 0 || em.failed) {
+                            g_as_fail = AS_FAIL;
+                            return -1;
+                        }
                     }
                 } else {
                     g_as_fail = AS_FAIL;
@@ -351,7 +371,7 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
         if (eq(t0, ".text")) {
             in_text = 1;
             in_rodata = 0;
-        } else if (eq(t0, ".rodata")) {
+        } else if (eq(t0, ".rodata") || eq(t0, ".data") || eq(t0, ".bss")) {
             in_text = 0;
             in_rodata = 1;
             cur_fn = -1;
@@ -360,7 +380,8 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                 g_as_fail = AS_FAIL;
                 return -1;
             }
-            if (eq(t1, ".rodata") || eq(t1, "rodata")) {
+            if (eq(t1, ".rodata") || eq(t1, "rodata") || eq(t1, ".data") ||
+                eq(t1, "data") || eq(t1, ".bss") || eq(t1, "bss")) {
                 in_text = 0;
                 in_rodata = 1;
                 cur_fn = -1;
@@ -371,8 +392,32 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                 g_as_fail = AS_FAIL;
                 return -1;
             }
+        } else if (eq(t0, ".zero") || eq(t0, ".skip")) {
+            long n = 0;
+            char z = 0;
+            if (!in_rodata) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0 ||
+                parse_imm(t1, &n) != 0 || n < 1 || n > 256) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            while (n-- > 0) {
+                (void)cc_data_push(&em, &z, 1);
+                if (em.failed) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+            }
         } else if (eq(t0, ".globl") || eq(t0, ".global")) {
             if (read_tok(&p, end, t1, sizeof(t1)) <= 0 || !t1[0]) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            /* M131: duplicate .globl is a hard reject (stable fail). */
+            if (cc_fn_find(&em, t1) >= 0) {
                 g_as_fail = AS_FAIL;
                 return -1;
             }
@@ -444,11 +489,12 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
         } else if (eq(t0, "lea") || eq(t0, "leaq")) {
             int di;
             size_t d_off;
+            size_t k;
             if (!in_text || cur_fn < 0) {
                 g_as_fail = AS_FAIL;
                 return -1;
             }
-            /* lea name(%rip), %rax */
+            /* lea name(%rip), %rax — name may be defined later (M131). */
             if (read_tok(&p, end, t1, sizeof(t1)) <= 0 || !t1[0] ||
                 read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != '(' ||
                 read_tok(&p, end, t3, sizeof(t3)) <= 0 ||
@@ -459,20 +505,163 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                 g_as_fail = AS_FAIL;
                 return -1;
             }
-            di = data_find(dnames, doffs, ndata, t1);
-            if (di < 0) {
-                g_as_fail = AS_FAIL;
-                return -1;
-            }
-            d_off = doffs[di];
             if (!(eq(t3, "%rax") || eq(t3, "%eax"))) {
                 g_as_fail = AS_FAIL;
                 return -1;
             }
-            /* Forward lea needs label already defined — require .rodata first
-             * OR define-before-use. Allow lea after label via two-order:
-             * put .rodata before use, or scan: we require label exists. */
+            di = data_find(dnames, doffs, ndata, t1);
+            d_off = di >= 0 ? doffs[di] : 0;
             cc_emit_lea_data(&em, d_off);
+            if (di < 0) {
+                if (nlea_pend >= AS_LEA_PEND) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                k = 0;
+                while (k < CC_IDENT_MAX && t1[k]) {
+                    lea_names[nlea_pend][k] = t1[k];
+                    k++;
+                }
+                if (t1[k] != 0) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                lea_names[nlea_pend][k] = 0;
+                lea_ri[nlea_pend] = cc_reloc_count() - 1;
+                nlea_pend++;
+            }
+        } else if (eq(t0, "push") || eq(t0, "pushq")) {
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (eq(t1, "%rax") || eq(t1, "%eax")) {
+                cc_emit_byte(&em, 0x50);
+            } else if (eq(t1, "%rdi") || eq(t1, "%edi")) {
+                cc_emit_byte(&em, 0x57);
+            } else if (eq(t1, "%rsi") || eq(t1, "%esi")) {
+                cc_emit_byte(&em, 0x56);
+            } else {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+        } else if (eq(t0, "pop") || eq(t0, "popq")) {
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (eq(t1, "%rax") || eq(t1, "%eax")) {
+                cc_emit_byte(&em, 0x58);
+            } else if (eq(t1, "%rdi") || eq(t1, "%edi")) {
+                cc_emit_byte(&em, 0x5F);
+            } else if (eq(t1, "%rsi") || eq(t1, "%esi")) {
+                cc_emit_byte(&em, 0x5E);
+            } else {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+        } else if (eq(t0, "sub") || eq(t0, "subl")) {
+            long imm = 0;
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0 || t1[0] != '$' ||
+                parse_imm(t1 + 1, &imm) != 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != ',' ||
+                read_tok(&p, end, t3, sizeof(t3)) <= 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (!(eq(t3, "%eax") || eq(t3, "%rax"))) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (imm >= -128 && imm <= 127) {
+                cc_emit_bytes(&em, "\x83\xE8", 2);
+                cc_emit_byte(&em, (unsigned char)imm);
+            } else {
+                cc_emit_byte(&em, 0x2D);
+                cc_emit_u32(&em, (unsigned)imm);
+            }
+        } else if (eq(t0, "cmp") || eq(t0, "cmpl")) {
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0 ||
+                read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != ',' ||
+                read_tok(&p, end, t3, sizeof(t3)) <= 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (eq(t1, "%eax") && eq(t3, "%eax")) {
+                cc_emit_bytes(&em, "\x39\xC0", 2);
+            } else if (eq(t1, "%edi") && eq(t3, "%eax")) {
+                cc_emit_bytes(&em, "\x39\xF8", 2);
+            } else if (t1[0] == '$') {
+                long imm = 0;
+                if (parse_imm(t1 + 1, &imm) != 0 ||
+                    !(eq(t3, "%eax") || eq(t3, "%rax"))) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                if (imm >= -128 && imm <= 127) {
+                    cc_emit_bytes(&em, "\x83\xF8", 2);
+                    cc_emit_byte(&em, (unsigned char)imm);
+                } else {
+                    cc_emit_byte(&em, 0x3D);
+                    cc_emit_u32(&em, (unsigned)imm);
+                }
+            } else {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+        } else if (eq(t0, "je") || eq(t0, "jz") || eq(t0, "jne") ||
+                   eq(t0, "jnz")) {
+            size_t k;
+            int is_ne = eq(t0, "jne") || eq(t0, "jnz");
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (read_tok(&p, end, t1, sizeof(t1)) <= 0 || !t1[0]) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            if (is_ne) {
+                cc_emit_bytes(&em, "\x0F\x85", 2);
+            } else {
+                cc_emit_bytes(&em, "\x0F\x84", 2);
+            }
+            if (nbr >= AS_BR_PEND) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            br_at[nbr] = em.code_len;
+            cc_emit_i32(&em, 0);
+            k = 0;
+            while (k < CC_IDENT_MAX && t1[k]) {
+                br_names[nbr][k] = t1[k];
+                k++;
+            }
+            if (t1[k] != 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            br_names[nbr][k] = 0;
+            nbr++;
         } else if (eq(t0, "mov") || eq(t0, "movl") || eq(t0, "movq")) {
             long imm = 0;
             if (!in_text || cur_fn < 0) {
@@ -622,10 +811,25 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
         g_as_fail = AS_FAIL;
         return -1;
     }
-    for (i = 0; i < em.nfns; i++) {
-        if (!em.fns[i].defined) {
-            continue;
+    for (i = 0; i < nlea_pend; i++) {
+        int di = data_find(dnames, doffs, ndata, lea_names[i]);
+        if (di < 0 || cc_reloc_set_data(lea_ri[i], doffs[di]) != 0) {
+            g_as_fail = AS_FAIL;
+            return -1;
         }
+    }
+    for (i = 0; i < nbr; i++) {
+        int li = data_find(lnames, loffs, nloc, br_names[i]);
+        int rel;
+        if (li < 0) {
+            g_as_fail = AS_FAIL;
+            return -1;
+        }
+        rel = (int)(loffs[li] - (br_at[i] + 4));
+        em.code[br_at[i]] = (unsigned char)(rel);
+        em.code[br_at[i] + 1] = (unsigned char)(rel >> 8);
+        em.code[br_at[i] + 2] = (unsigned char)(rel >> 16);
+        em.code[br_at[i] + 3] = (unsigned char)(rel >> 24);
     }
     if (cc_build_rel_elf(&em, out_elf, out_len) != 0) {
         g_as_fail = AS_FAIL;

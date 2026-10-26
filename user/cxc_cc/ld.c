@@ -102,7 +102,7 @@ int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
     cc_emit_bytes(&em, "\x89\xD8", 2); /* mov eax, ebx for NMSG */
     cc_emit_print_rax(&em);
     cc_emit_byte(&em, 0x5B); /* pop rbx */
-    cc_emit_write_lit2(&em, "LL");
+    cc_emit_write_lit2(&em, "AD");
     cc_emit_write_pass(&em);
     cc_emit_exit_rax(&em);
 

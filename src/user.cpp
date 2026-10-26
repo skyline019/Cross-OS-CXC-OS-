@@ -1937,7 +1937,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M130: ld link.rsp chains musl string .o + as main/lib; edge via cc.
+    // M131: deferred lea + push/cmp/je; ld+musl; edge via cc.
     static const char lib_s_text[] =
         ".text\n"
         ".globl add\n"
@@ -1951,18 +1951,23 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "call add\n"
         "ret\n";
     static const char main_s_text[] =
-        ".rodata\n"
-        "s:\n"
-        ".asciz \"LL\"\n"
         ".text\n"
         ".globl main\n"
         "main:\n"
         "lea s(%rip), %rax\n"
         "mov %rax, %rdi\n"
         "call strlen\n"
+        "cmp $2, %eax\n"
+        "je .Lok\n"
+        "mov $1, %eax\n"
+        "ret\n"
+        ".Lok:\n"
         "mov $0, %edi\n"
         "call bump\n"
-        "ret\n";
+        "ret\n"
+        ".rodata\n"
+        "s:\n"
+        ".asciz \"AD\"\n";
     /* slen via io.elf (avoid DUP with musl_strlen.o). */
     static const char link_rsp_text[] =
         "disk/main.o\n"

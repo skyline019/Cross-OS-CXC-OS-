@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M130/A2: ld+musl string kit via link.rsp + DMSG/DHINT → ONBOX_LDLIB_PASS.
+// M131/A2: as deferred-lea/branch + ld+musl → ONBOX_ASDP_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

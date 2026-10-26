@@ -260,6 +260,8 @@ void cc_emit_print_rax(CcEmit* em);
 void cc_emit_input_slot(CcEmit* em, int slot);
 void cc_emit_exit_rax(CcEmit* em);
 void cc_reloc_reset(void);
+int cc_reloc_count(void);
+int cc_reloc_set_data(int i, size_t data_off);
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 

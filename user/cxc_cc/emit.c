@@ -397,6 +397,18 @@ void cc_reloc_reset(void) {
     g_nrelocs = 0;
 }
 
+int cc_reloc_count(void) {
+    return g_nrelocs;
+}
+
+int cc_reloc_set_data(int i, size_t data_off) {
+    if (i < 0 || i >= g_nrelocs) {
+        return -1;
+    }
+    g_relocs[i].data_off = data_off;
+    return 0;
+}
+
 void cc_reloc_add(size_t code_off, size_t data_off) {
     if (g_nrelocs >= CC_RELOC_MAX) {
         return;
@@ -461,7 +473,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_LDLIB_PASS\n";
+    static const char pass[] = "ONBOX_ASDP_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
