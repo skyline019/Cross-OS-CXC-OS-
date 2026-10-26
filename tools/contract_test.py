@@ -852,7 +852,11 @@ class ContractRunner:
             category = index % 3
             name = f"chaos-{index + 1:02d}"
             cpus = rng.choice((1, 2, 4, 8, 16))
-            memory_choices = ("256M", "512M") if cpus >= 8 else ("64M", "128M", "256M", "512M")
+            # M88+: 64M dropped (BOOTX64 ~9.4 MiB); 8-way needs 512M for stable OVMF boot.
+            if cpus >= 8:
+                memory_choices = ("512M",)
+            else:
+                memory_choices = ("128M", "256M", "512M")
             memory = rng.choice(memory_choices)
             cpu = rng.choice(("qemu64,-x2apic", "qemu64,+x2apic"))
             if category == 0:
