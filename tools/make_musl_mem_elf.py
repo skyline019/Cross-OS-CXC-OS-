@@ -21,6 +21,9 @@ MEMBERS = {
     "memcpy": "memcpy.lo",
     "atoi": "atoi.lo",
     "strcmp": "strcmp.lo",
+    "strncmp": "strncmp.lo",
+    "strcpy": "strcpy.lo",
+    "stpcpy": "stpcpy.lo",
 }
 
 

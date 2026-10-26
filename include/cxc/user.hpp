@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M123/A2: self ET_REL .rodata+PC32 + musl strcmp + DMSG/DHINT → ONBOX_RDAT_PASS.
+// M124/A2: strcpy→__stpcpy + strncmp + .rodata + DMSG/DHINT → ONBOX_SCPY_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

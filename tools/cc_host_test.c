@@ -526,7 +526,7 @@ int main(void) {
             "return add(x, 42);\n"
             "}\n"
             "int msg(void){\n"
-            "return \"RD\";\n"
+            "return \"CP\";\n"
             "}\n";
         if (cc_compile_obj(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
             fprintf(stderr, "FAIL ok m123-rodata-obj: compile_obj\n");
@@ -574,12 +574,41 @@ int main(void) {
             "int m;\n"
             "m=strlen(\"WMSG:RD\\n\");\n"
             "cwrite(\"WMSG:RD\\n\", m);\n"
-            "n=strcmp(msg(), \"RD\");\n"
+            "n=strcmp(msg(), \"CP\");\n"
             "n=bump(n);\n"
             "print n;\n"
             "return n;\n"
             "}\n",
             "m123-rodata-strcmp") != 0) {
+        fails++;
+    }
+    if (expect_ok(
+            "CXC_A2\n"
+            "#lib \"lib.o\"\n"
+            "#lib \"stpc.o\"\n"
+            "#lib \"scpy.o\"\n"
+            "#lib \"sncmp.o\"\n"
+            "#lib \"slen.o\"\n"
+            "#lib \"io.elf\"\n"
+            "import fn bump(x);\n"
+            "import fn msg();\n"
+            "import fn strcpy(d,s);\n"
+            "import fn strncmp(a,b,n);\n"
+            "import fn strlen(s);\n"
+            "import fn cwrite(p,n);\n"
+            "int main(void){\n"
+            "int buf[4];\n"
+            "int n;\n"
+            "int m;\n"
+            "m=strlen(\"WMSG:CP\\n\");\n"
+            "cwrite(\"WMSG:CP\\n\", m);\n"
+            "strcpy(&buf[0], msg());\n"
+            "n=strncmp(&buf[0], \"CP\", 2);\n"
+            "n=bump(n);\n"
+            "print n;\n"
+            "return n;\n"
+            "}\n",
+            "m124-strcpy-stpcpy") != 0) {
         fails++;
     }
     {

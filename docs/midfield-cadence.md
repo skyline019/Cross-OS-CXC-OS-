@@ -17,8 +17,9 @@
 | 第九次 | M85–M94 | [`midpoint-assessment-9.md`](midpoint-assessment-9.md) |
 | 第十次 | 约 M95–M104 | [`midpoint-assessment-10.md`](midpoint-assessment-10.md) |
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
+| 第十二次 | 约 M115–M124 | [`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 
-当前基线：**M123 / v2.14.0**（机上 mini-cc：自产 `.rodata`/PC32 + musl strcmp；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M124**。
+当前基线：**M124 / v2.15.0**（机上 mini-cc：strcpy→__stpcpy + strncmp；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M134**。
 
 ## 中场窗口必做
 

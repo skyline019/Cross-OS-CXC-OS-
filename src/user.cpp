@@ -7,6 +7,9 @@
 #include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
 #include <cxc/musl_strcmp_elf.hpp>
+#include <cxc/musl_strcpy_elf.hpp>
+#include <cxc/musl_stpcpy_elf.hpp>
+#include <cxc/musl_strncmp_elf.hpp>
 #include <cxc/musl_strlen_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
@@ -1931,7 +1934,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M123: self lib.c .rodata+PC32 + PLT32; musl strcmp; edge DMSG+DHINT.
+    // M124: strcpy→__stpcpy cross-#lib + strncmp + self .rodata; edge.
     static const char lib_text[] =
         "CXC_A2\n"
         "int add(int a, int b){\n"
@@ -1941,25 +1944,30 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "return add(x, 42);\n"
         "}\n"
         "int msg(void){\n"
-        "return \"RD\";\n"
+        "return \"CP\";\n"
         "}\n";
     static const char src_text[] =
         "CXC_A2\n"
         "#lib \"lib.o\"\n"
-        "#lib \"scmp.o\"\n"
+        "#lib \"stpc.o\"\n"
+        "#lib \"scpy.o\"\n"
+        "#lib \"sncmp.o\"\n"
         "#lib \"slen.o\"\n"
         "#lib \"io.elf\"\n"
         "import fn bump(x);\n"
         "import fn msg();\n"
-        "import fn strcmp(a,b);\n"
+        "import fn strcpy(d,s);\n"
+        "import fn strncmp(a,b,n);\n"
         "import fn strlen(s);\n"
         "import fn cwrite(p,n);\n"
         "int main(void){\n"
+        "int buf[4];\n"
         "int n;\n"
         "int m;\n"
-        "m=strlen(\"WMSG:RD\\n\");\n"
-        "cwrite(\"WMSG:RD\\n\", m);\n"
-        "n=strcmp(msg(), \"RD\");\n"
+        "m=strlen(\"WMSG:CP\\n\");\n"
+        "cwrite(\"WMSG:CP\\n\", m);\n"
+        "strcpy(&buf[0], msg());\n"
+        "n=strncmp(&buf[0], \"CP\", 2);\n"
         "n=bump(n);\n"
         "print n;\n"
         "return n;\n"
@@ -2208,6 +2216,63 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
         if (fs::close_fd(static_cast<uint32_t>(cfd)) != 0) {
             result.failure = 75;
+            return false;
+        }
+    }
+    {
+        const int64_t pfd = fs::open_path(
+            "disk/stpc.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (pfd < 0) {
+            result.failure = 76;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(pfd), musl_stpcpy_elf,
+                         musl_stpcpy_elf_size) !=
+            static_cast<int64_t>(musl_stpcpy_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(pfd));
+            result.failure = 77;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfd)) != 0) {
+            result.failure = 78;
+            return false;
+        }
+    }
+    {
+        const int64_t yfd2 = fs::open_path(
+            "disk/scpy.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (yfd2 < 0) {
+            result.failure = 79;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(yfd2), musl_strcpy_elf,
+                         musl_strcpy_elf_size) !=
+            static_cast<int64_t>(musl_strcpy_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(yfd2));
+            result.failure = 80;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(yfd2)) != 0) {
+            result.failure = 81;
+            return false;
+        }
+    }
+    {
+        const int64_t nfd = fs::open_path(
+            "disk/sncmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (nfd < 0) {
+            result.failure = 82;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nfd), musl_strncmp_elf,
+                         musl_strncmp_elf_size) !=
+            static_cast<int64_t>(musl_strncmp_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(nfd));
+            result.failure = 83;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(nfd)) != 0) {
+            result.failure = 84;
             return false;
         }
     }
