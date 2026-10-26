@@ -1,4 +1,4 @@
-/* On-box CXC mini-cc: optional disk/lib.s|lib.c→lib.o, then in.c→out.elf. */
+/* On-box CXC: as lib/msg/main.s; optional link.rsp→ld; else in.c→cc. */
 #include "cxc_cc/cc.h"
 #include "mini_libc/fcntl.h"
 #include "mini_libc/unistd.h"
@@ -93,6 +93,9 @@ static void write_dmsg(int code) {
     case 40:
         hint = "DHINT:ASM\n";
         break;
+    case 50:
+        hint = "DHINT:LNK\n";
+        break;
     default:
         hint = "DHINT:UNK\n";
         break;
@@ -143,7 +146,6 @@ static int compile_write(const char* in_path, const char* out_path, int obj) {
     return 0;
 }
 
-/* M127: assemble GAS subset → SysV ET_REL. */
 static int assemble_write(const char* in_path, const char* out_path) {
     static char src_buf[CC_SRC_MAX];
     size_t src_len = 0;
@@ -178,54 +180,89 @@ static int assemble_write(const char* in_path, const char* out_path) {
     return 0;
 }
 
-int main(int argc, char** argv) {
-    char* out_argv[2];
-    char* out_envp[1];
-    int rc;
-    (void)argc;
-    (void)argv;
-
-    /* M127–M128: disk/lib.s|msg.s → as; else M113 disk/lib.c. */
-    {
-        int sfd = open("disk/lib.s", O_RDONLY, 0);
-        if (sfd >= 0) {
-            close(sfd);
-            rc = assemble_write("disk/lib.s", "disk/lib.o");
-            if (rc == -4) {
-                _exit(4);
-            }
-            if (rc != 0) {
-                _exit(9);
-            }
-        } else {
-            int lfd = open("disk/lib.c", O_RDONLY, 0);
-            if (lfd >= 0) {
-                close(lfd);
-                rc = compile_write("disk/lib.c", "disk/lib.o", 1);
-                if (rc == -4) {
-                    _exit(4);
-                }
-                if (rc != 0) {
-                    _exit(9);
-                }
-            }
-        }
+/* M129: parse disk/link.rsp (one path per line) → ld_link → out.elf. */
+static int link_rsp_write(const char* rsp_path, const char* out_path) {
+    static char rsp_buf[CC_SRC_MAX];
+    static char path_store[CC_LINK_MAX][CC_IDENT_MAX + 8];
+    static const char* paths[CC_LINK_MAX];
+    size_t rsp_len = 0;
+    unsigned char* elf = 0;
+    size_t elf_len = 0;
+    int npaths = 0;
+    size_t i = 0;
+    int fd = open(rsp_path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -2;
     }
-    {
-        int mfd = open("disk/msg.s", O_RDONLY, 0);
-        if (mfd >= 0) {
-            close(mfd);
-            rc = assemble_write("disk/msg.s", "disk/msg.o");
-            if (rc == -4) {
-                _exit(4);
-            }
-            if (rc != 0) {
-                _exit(9);
-            }
-        }
+    if (read_all(fd, rsp_buf, CC_SRC_MAX - 1, &rsp_len) != 0) {
+        close(fd);
+        return -3;
     }
+    close(fd);
+    rsp_buf[rsp_len] = 0;
+    while (i < rsp_len && npaths < CC_LINK_MAX) {
+        size_t start;
+        size_t len;
+        while (i < rsp_len &&
+               (rsp_buf[i] == ' ' || rsp_buf[i] == '\t' || rsp_buf[i] == '\r' ||
+                rsp_buf[i] == '\n')) {
+            i++;
+        }
+        if (i >= rsp_len) {
+            break;
+        }
+        if (rsp_buf[i] == '#' || rsp_buf[i] == ';') {
+            while (i < rsp_len && rsp_buf[i] != '\n') {
+                i++;
+            }
+            continue;
+        }
+        start = i;
+        while (i < rsp_len && rsp_buf[i] != '\n' && rsp_buf[i] != '\r') {
+            i++;
+        }
+        len = i - start;
+        while (len > 0 && (rsp_buf[start + len - 1] == ' ' ||
+                           rsp_buf[start + len - 1] == '\t')) {
+            len--;
+        }
+        if (len == 0 || len >= sizeof(path_store[0])) {
+            write_dmsg(50);
+            return -4;
+        }
+        {
+            size_t k;
+            for (k = 0; k < len; k++) {
+                path_store[npaths][k] = rsp_buf[start + k];
+            }
+            path_store[npaths][len] = 0;
+        }
+        paths[npaths] = path_store[npaths];
+        npaths++;
+    }
+    if (npaths < 1) {
+        write_dmsg(50);
+        return -4;
+    }
+    if (ld_link(paths, npaths, &elf, &elf_len) != 0 || !elf || elf_len == 0) {
+        write_dmsg(ld_last_fail_code());
+        return -4;
+    }
+    fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        return -5;
+    }
+    if (write_all(fd, elf, elf_len) != 0) {
+        close(fd);
+        return -6;
+    }
+    if (close(fd) != 0) {
+        return -7;
+    }
+    return 0;
+}
 
-    rc = compile_write("disk/in.c", "disk/out.elf", 0);
+static void fail_rc(int rc) {
     if (rc == -2) {
         _exit(2);
     }
@@ -246,6 +283,60 @@ int main(int argc, char** argv) {
     }
     if (rc != 0) {
         _exit(9);
+    }
+}
+
+int main(int argc, char** argv) {
+    char* out_argv[2];
+    char* out_envp[1];
+    int rc;
+    (void)argc;
+    (void)argv;
+
+    /* Assemble optional .s sources before link/cc. */
+    {
+        int sfd = open("disk/lib.s", O_RDONLY, 0);
+        if (sfd >= 0) {
+            close(sfd);
+            rc = assemble_write("disk/lib.s", "disk/lib.o");
+            fail_rc(rc);
+        } else {
+            int lfd = open("disk/lib.c", O_RDONLY, 0);
+            if (lfd >= 0) {
+                close(lfd);
+                rc = compile_write("disk/lib.c", "disk/lib.o", 1);
+                fail_rc(rc);
+            }
+        }
+    }
+    {
+        int mfd = open("disk/msg.s", O_RDONLY, 0);
+        if (mfd >= 0) {
+            close(mfd);
+            rc = assemble_write("disk/msg.s", "disk/msg.o");
+            fail_rc(rc);
+        }
+    }
+    {
+        int afd = open("disk/main.s", O_RDONLY, 0);
+        if (afd >= 0) {
+            close(afd);
+            rc = assemble_write("disk/main.s", "disk/main.o");
+            fail_rc(rc);
+        }
+    }
+
+    /* M129: prefer disk/link.rsp → mini-ld; else in.c → cc. */
+    {
+        int rfd = open("disk/link.rsp", O_RDONLY, 0);
+        if (rfd >= 0) {
+            close(rfd);
+            rc = link_rsp_write("disk/link.rsp", "disk/out.elf");
+            fail_rc(rc);
+        } else {
+            rc = compile_write("disk/in.c", "disk/out.elf", 0);
+            fail_rc(rc);
+        }
     }
 
     out_argv[0] = (char*)"disk/out.elf";

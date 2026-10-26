@@ -19,7 +19,7 @@
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 | 第十二次 | 约 M115–M124 | [`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 
-当前基线：**M128 / v2.19.0**（机上 mini-cc：多文件 as + `.rodata`/`lea`；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M134**。
+当前基线：**M129 / v2.20.0**（机上 mini-cc：as + mini-ld `link.rsp`→ET_EXEC；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M134**。
 
 ## 中场窗口必做
 

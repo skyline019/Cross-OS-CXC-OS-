@@ -21,6 +21,7 @@ SOURCES = [
     CC_DIR / "prep.c",
     CC_DIR / "elflink.c",
     CC_DIR / "as.c",
+    CC_DIR / "ld.c",
 ]
 
 

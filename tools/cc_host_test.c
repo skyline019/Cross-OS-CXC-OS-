@@ -757,6 +757,65 @@ int main(void) {
         fails++;
     }
     {
+        unsigned char* o = 0;
+        size_t on = 0;
+        unsigned char* elf = 0;
+        size_t en = 0;
+        FILE* f;
+        const char* paths[2];
+        const char* lib =
+            ".text\n"
+            ".globl add\n"
+            "add:\n"
+            "mov %edi, %eax\n"
+            "add %esi, %eax\n"
+            "ret\n"
+            ".globl bump\n"
+            "bump:\n"
+            "mov $42, %esi\n"
+            "call add\n"
+            "ret\n";
+        const char* main_s =
+            ".text\n"
+            ".globl main\n"
+            "main:\n"
+            "mov $0, %edi\n"
+            "call bump\n"
+            "ret\n";
+        if (as_compile(lib, strlen(lib), &o, &on) != 0 || !o || on < 64) {
+            fprintf(stderr, "FAIL ok m129-ld: as lib\n");
+            fails++;
+        } else {
+            f = fopen("disk/lib.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m129-ld: write lib.o\n");
+                fails++;
+            }
+        }
+        o = 0;
+        on = 0;
+        if (as_compile(main_s, strlen(main_s), &o, &on) != 0 || !o ||
+            on < 64) {
+            fprintf(stderr, "FAIL ok m129-ld: as main\n");
+            fails++;
+        } else {
+            f = fopen("disk/main.o", "wb");
+            if (!f || fwrite(o, 1, on, f) != on || fclose(f) != 0) {
+                fprintf(stderr, "FAIL ok m129-ld: write main.o\n");
+                fails++;
+            }
+        }
+        paths[0] = "disk/main.o";
+        paths[1] = "disk/lib.o";
+        if (ld_link(paths, 2, &elf, &en) != 0 || !elf || en < 64) {
+            fprintf(stderr, "FAIL ok m129-ld: ld_link\n");
+            fails++;
+        } else if (elf[16] != 2) {
+            fprintf(stderr, "FAIL ok m129-ld: not ET_EXEC\n");
+            fails++;
+        }
+    }
+    {
         /* Restore bump+7 lib.o for m113 regression. */
         unsigned char* o = 0;
         size_t on = 0;

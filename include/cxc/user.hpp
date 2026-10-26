@@ -748,7 +748,7 @@ struct OnboxCcProbeResult {
     uint64_t exit_code;
 };
 
-// M128/A2: multi-as + .rodata/lea + string-kit + DMSG/DHINT → ONBOX_ASRO_PASS.
+// M129/A2: as + mini-ld link.rsp→ET_EXEC + DMSG/DHINT → ONBOX_LD_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);

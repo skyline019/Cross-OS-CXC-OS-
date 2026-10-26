@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.19.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.20.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -1371,6 +1371,7 @@ if(CXC_USER_CROSS_USES_GCC)
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
@@ -1387,6 +1388,7 @@ if(CXC_USER_CROSS_USES_GCC)
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
@@ -1548,6 +1550,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtmath.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtmath_elf.py"

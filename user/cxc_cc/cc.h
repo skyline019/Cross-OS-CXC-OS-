@@ -285,3 +285,8 @@ int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
 int as_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);
 int as_last_fail_code(void);
+
+/* M129: mini-ld — ET_REL paths + CRT → ET_EXEC. */
+int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
+            size_t* out_len);
+int ld_last_fail_code(void);

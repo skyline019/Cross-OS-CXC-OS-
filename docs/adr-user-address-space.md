@@ -190,8 +190,9 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M125** | 延迟 `#lib` UND + 自产 ET_REL UND | 曾用 `ONBOX_LUND_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M126** | musl `strcat`+`strchr` 多跳闭包 | 曾用 `ONBOX_SKIT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M127** | 机上 as 子集 `lib.s`→ET_REL | 曾用 `ONBOX_ASM_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M128** | 多文件 as + `.rodata`/`lea` | `ONBOX_ASRO_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
-| **M129+** | 机上 ld / 更大 musl → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
+| **M128** | 多文件 as + `.rodata`/`lea` | 曾用 `ONBOX_ASRO_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M129** | 机上 mini-ld ET_REL→ET_EXEC | `ONBOX_LD_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M130+** | 更大 ld/as / musl → g++/gcc | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考
 

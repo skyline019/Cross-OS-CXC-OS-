@@ -1937,7 +1937,7 @@ const TimeProbeResult& time_probe_result() {
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result) {
-    // M128: multi-file as + .rodata/.asciz/lea + string-kit; edge.
+    // M129: as main.s+lib.s → mini-ld link.rsp → ET_EXEC; edge via cc.
     static const char lib_s_text[] =
         ".text\n"
         ".globl add\n"
@@ -1950,49 +1950,20 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "mov $42, %esi\n"
         "call add\n"
         "ret\n";
-    static const char msg_s_text[] =
-        ".rodata\n"
-        "xa:\n"
-        ".asciz \"XA\"\n"
+    static const char main_s_text[] =
         ".text\n"
-        ".globl msg\n"
-        "msg:\n"
-        "lea xa(%rip), %rax\n"
+        ".globl main\n"
+        "main:\n"
+        "mov $0, %edi\n"
+        "call bump\n"
         "ret\n";
+    static const char link_rsp_text[] =
+        "disk/main.o\n"
+        "disk/lib.o\n";
     static const char src_text[] =
         "CXC_A2\n"
-        "#lib \"lib.o\"\n"
-        "#lib \"msg.o\"\n"
-        "#lib \"scat.o\"\n"
-        "#lib \"schr.o\"\n"
-        "#lib \"snul.o\"\n"
-        "#lib \"scpy.o\"\n"
-        "#lib \"stpc.o\"\n"
-        "#lib \"sncmp.o\"\n"
-        "#lib \"slen.o\"\n"
-        "#lib \"io.elf\"\n"
-        "import fn bump(x);\n"
-        "import fn msg();\n"
-        "import fn strcpy(d,s);\n"
-        "import fn strcat(d,s);\n"
-        "import fn strchr(s,c);\n"
-        "import fn strncmp(a,b,n);\n"
-        "import fn strlen(s);\n"
-        "import fn cwrite(p,n);\n"
-        "int main(void){\n"
-        "int buf[8];\n"
-        "int p;\n"
-        "int n;\n"
-        "int m;\n"
-        "m=strlen(\"WMSG:RO\\n\");\n"
-        "cwrite(\"WMSG:RO\\n\", m);\n"
-        "strcpy(&buf[0], msg());\n"
-        "strcat(&buf[0], \"YZ\");\n"
-        "p=strchr(&buf[0], 65);\n"
-        "n=strncmp(p, \"AYZ\", 3);\n"
-        "n=bump(n);\n"
-        "print n;\n"
-        "return n;\n"
+        "fn main(){\n"
+        "return 0;\n"
         "}\n";
     static const char bad_src[] =
         "CXC_A2\n"
@@ -2376,21 +2347,40 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
     }
     {
-        const int64_t mfd = fs::open_path(
-            "disk/msg.s", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (mfd < 0) {
+        const int64_t afd = fs::open_path(
+            "disk/main.s", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (afd < 0) {
             result.failure = 94;
             return false;
         }
-        const size_t msg_len = sizeof(msg_s_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(mfd), msg_s_text, msg_len) !=
-            static_cast<int64_t>(msg_len)) {
-            (void)fs::close_fd(static_cast<uint32_t>(mfd));
+        const size_t main_len = sizeof(main_s_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(afd), main_s_text, main_len) !=
+            static_cast<int64_t>(main_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(afd));
             result.failure = 95;
             return false;
         }
-        if (fs::close_fd(static_cast<uint32_t>(mfd)) != 0) {
+        if (fs::close_fd(static_cast<uint32_t>(afd)) != 0) {
             result.failure = 96;
+            return false;
+        }
+    }
+    {
+        const int64_t rfd = fs::open_path(
+            "disk/link.rsp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (rfd < 0) {
+            result.failure = 97;
+            return false;
+        }
+        const size_t rsp_len = sizeof(link_rsp_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(rfd), link_rsp_text, rsp_len) !=
+            static_cast<int64_t>(rsp_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(rfd));
+            result.failure = 98;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(rfd)) != 0) {
+            result.failure = 99;
             return false;
         }
     }
@@ -2463,8 +2453,12 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     syscall::clear_session();
 
-    // Edge: cross-#lib UND (crt without rt) → exit 4 + DMSG.
+    // Edge: drop link.rsp so cc path runs; cross-#lib UND → exit 4 + DMSG.
     result.stage = 6;
+    if (fs::unlink_path("disk/link.rsp") != 0) {
+        result.failure = 100;
+        return false;
+    }
     const int64_t bfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
     if (bfd < 0) {
