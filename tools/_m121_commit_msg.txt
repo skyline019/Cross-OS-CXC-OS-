@@ -1,0 +1,4 @@
+feat: M121 mini-cc musl mem/str trio ONBOX_MMEM_PASS (v2.12.0)
+
+Link musl strlen/memcmp/memcpy; keep-first exports; st_size==0; raise
+link/ident caps. Evidence WMSG:MM + ONBOX_MMEM_PASS.

@@ -1,0 +1,4 @@
+feat: M111 mini-cc strlen/memcpy plant ONBOX_CSTR_PASS (v2.2.0)
+
+io.elf gains strlen+memcpy; probe cwrite(..., strlen(...)) then ans→42.
+Evidence WMSG:ST + DMSG:21 + ONBOX_CSTR_PASS.

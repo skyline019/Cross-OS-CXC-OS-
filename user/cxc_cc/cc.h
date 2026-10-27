@@ -14,10 +14,9 @@
 
 enum {
     CC_SRC_MAX = 16384,
-    CC_CODE_MAX = 32768,
-    CC_DATA_MAX = 8192,
-    CC_LOCAL_MAX = 48,
-    CC_IDENT_MAX = 16,
+    CC_CODE_MAX = 65536,
+    CC_LOCAL_MAX = 56,
+    CC_IDENT_MAX = 20,
     CC_PATH_MAX = 48,
     CC_LIT_MAX = 8,
     CC_STR_MAX = 16,
@@ -25,18 +24,19 @@ enum {
     CC_BREAK_MAX = 8,
     CC_FN_MAX = 64,
     CC_FN_ARGS = 4,
-    CC_STRUCT_MAX = 4,
-    CC_STRUCT_FIELDS = 4,
+    CC_STRUCT_MAX = 6,
+    CC_STRUCT_FIELDS = 6,
     CC_GLOBAL_MAX = 16,
     CC_ENUM_MAX = 16,
     CC_CALL_MAX = 64,
-    CC_LINK_MAX = 32,
-    CC_EXPORT_MAX = 128,
+    CC_LINK_MAX = 96, /* M252: deep musl closure headroom */
+    CC_EXPORT_MAX = 256,
     CC_GOT_MAX = 64,
-    CC_TEXT_SEC_MAX = 24,
-    CC_RELA_SEC_MAX = 32,
-    CC_UND_PEND_MAX = 128,
+    CC_TEXT_SEC_MAX = 32,
+    CC_RELA_SEC_MAX = 40,
+    CC_UND_PEND_MAX = 256,
     CC_TYPEDEF_MAX = 8,
+    CC_DATA_MAX = 16384, /* raised with deep plants / RO split */
     CC_LOAD_VA = 0x400000
 };
 
@@ -70,6 +70,7 @@ enum CcTok {
     TOK_KW_TYPEDEF,
     TOK_KW_VOID,
     TOK_KW_CHAR,
+    TOK_KW_LONG,
     TOK_KW_CONST,
     TOK_KW_UNSIGNED,
     TOK_LPAREN,
@@ -81,6 +82,7 @@ enum CcTok {
     TOK_SEMI,
     TOK_COMMA,
     TOK_DOT,
+    TOK_ARROW,
     TOK_COLON,
     TOK_QUESTION,
     TOK_ASSIGN,
@@ -125,6 +127,7 @@ typedef struct CcLocal {
     int stype; /* -1, or struct type index */
     int is_char;  /* M132: word slot + truncate on store */
     int is_const; /* M132: reject assignment after init */
+    int is_ptr;   /* M140: pointer to stype (Pt* p) */
 } CcLocal;
 
 typedef struct CcGlobal {
@@ -173,7 +176,10 @@ typedef struct CcTypedef {
 typedef struct CcStruct {
     char name[CC_IDENT_MAX + 1];
     char fields[CC_STRUCT_FIELDS][CC_IDENT_MAX + 1];
+    int fsizes[CC_STRUCT_FIELDS]; /* char→1, else→8 */
+    int foffs[CC_STRUCT_FIELDS];  /* M248: compact offs from fsizes */
     int nfields;
+    int ssize; /* M248: packed layout + natural align */
 } CcStruct;
 
 typedef struct CcEnumConst {
@@ -185,9 +191,16 @@ typedef struct CcEmit {
     unsigned char* code;
     size_t code_len;
     size_t code_cap;
-    unsigned char* data;
+    unsigned char* data; /* final [RO|RW] after seal, or RW staging */
     size_t data_len;
     size_t data_cap;
+    unsigned char* ro; /* M245: staging for .rodata (any order vs .data) */
+    size_t ro_len;
+    size_t ro_cap;
+    size_t bss_len; /* M245: NOBITS after RW (not in file) */
+    size_t rw_len;  /* staging RW length before seal into data[] */
+    int data_sec;   /* 0 none, 1 ro, 2 rw, 3 bss */
+    int sealed;     /* 1: data[] = ro|rw concatenated, ro_len final */
     CcLocal locals[CC_LOCAL_MAX];
     int nlocals;
     int next_slot;
@@ -225,6 +238,13 @@ int cc_local_slot(CcEmit* em, const char* name, int create);
 int cc_fn_find(CcEmit* em, const char* name);
 int cc_struct_find(CcEmit* em, const char* name);
 int cc_struct_field(CcEmit* em, int stype, const char* field);
+int cc_struct_field_size(CcEmit* em, int stype, const char* field);
+void cc_emit_lea_local_bytes(CcEmit* em, int slot, int byte_off);
+void cc_emit_load_local_bytes(CcEmit* em, int slot, int byte_off, int width);
+void cc_emit_store_local_bytes(CcEmit* em, int slot, int byte_off, int width);
+void cc_emit_load_indirect_width(CcEmit* em, int width);
+void cc_emit_store_indirect_width(CcEmit* em, int width);
+void cc_emit_setup_fs_tcb(CcEmit* em); /* M252: ARCH_SET_FS canary TCB */
 int cc_global_find(CcEmit* em, const char* name);
 int cc_global_define(CcEmit* em, const char* name, unsigned long long init);
 int cc_enum_find(CcEmit* em, const char* name);
@@ -237,6 +257,12 @@ void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
 void cc_emit_u32(CcEmit* em, unsigned v);
 void cc_emit_i32(CcEmit* em, int v);
 size_t cc_data_push(CcEmit* em, const void* p, size_t n);
+size_t cc_ro_push(CcEmit* em, const void* p, size_t n);
+size_t cc_bss_bump(CcEmit* em, size_t n);
+void cc_data_set_sec(CcEmit* em, int sec); /* 1=ro 2=rw 3=bss */
+size_t cc_data_cur_off(CcEmit* em); /* current label off (sec-tagged) */
+size_t cc_data_resolve_off(const CcEmit* em, size_t tagged);
+int cc_data_seal(CcEmit* em); /* concat ro|rw → data[]; fix reloc/globals */
 
 void cc_emit_mov_eax_imm(CcEmit* em, unsigned imm);
 void cc_emit_mov_edi_eax(CcEmit* em);
@@ -253,6 +279,7 @@ void cc_emit_index_lea(CcEmit* em, int base_slot);
 void cc_emit_load_indirect(CcEmit* em);
 void cc_emit_store_indirect(CcEmit* em);
 void cc_emit_lea_data(CcEmit* em, size_t data_off);
+void cc_emit_mov_data(CcEmit* em, size_t data_off);
 void cc_emit_load_global(CcEmit* em, size_t data_off);
 void cc_emit_store_global(CcEmit* em, size_t data_off);
 void cc_emit_prologue(CcEmit* em);
@@ -268,6 +295,8 @@ void cc_emit_exit_rax(CcEmit* em);
 void cc_reloc_reset(void);
 int cc_reloc_count(void);
 int cc_reloc_set_data(int i, size_t data_off);
+void cc_reloc_add(size_t code_off, size_t data_off);
+void cc_reloc_add_abs(size_t code_off, size_t data_off);
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 

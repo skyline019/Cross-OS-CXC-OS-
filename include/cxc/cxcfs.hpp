@@ -11,10 +11,11 @@ namespace cxc::cxcfs {
 // `disk/` prefix at the fs façade (e.g. disk/persist.txt).
 // LBA0–1 reserved (M75 magic / M76 R/W). Superblock at LBA 2.
 
-// M79→M81: 64 files × 32 KiB; M88 raises extent to 128 KiB for toolchain objs.
-constexpr uint32_t max_files = 64;
-constexpr uint32_t max_file_bytes = 131072;  // 256 sectors
-constexpr uint32_t sectors_per_file = max_file_bytes / 512;
+// M255–M256: shared data pool (not fixed per-inode extents). Caps are
+// per-file / inode-count ceilings; total bytes fit virtio ≥128 MiB.
+constexpr uint32_t max_files = 256;
+constexpr uint32_t max_file_bytes = 4u * 1024u * 1024u;  // 4 MiB
+constexpr uint32_t max_sectors_per_file = max_file_bytes / 512;
 
 struct MountResult {
     uint32_t stage;
@@ -28,6 +29,8 @@ struct MountResult {
     uint32_t pass;
     uint32_t inode_count;
     uint64_t capacity_sectors;
+    uint32_t fat_ok;       // M255: >128 KiB round-trip
+    uint32_t inode_edge;   // M256: inode-full / oversize rejected
 };
 
 bool is_mounted();

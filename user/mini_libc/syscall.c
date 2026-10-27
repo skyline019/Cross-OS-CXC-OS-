@@ -3,6 +3,8 @@
 #include "mini_libc/unistd.h"
 #include "mini_libc/utsname.h"
 
+/* run_tool returns -EINVAL etc.; keep errno macros visible. */
+
 enum {
     SYS_READ = 0,
     SYS_WRITE = 1,
@@ -11,8 +13,10 @@ enum {
     SYS_BRK = 12,
     SYS_WRITEV = 20,
     SYS_GETPID = 39,
+    SYS_FORK = 57,
     SYS_EXECVE = 59,
     SYS_EXIT = 60,
+    SYS_WAIT4 = 61,
     SYS_UNAME = 63,
     SYS_GETPPID = 110,
     SYS_SET_TID_ADDRESS = 218,
@@ -28,6 +32,19 @@ static long syscall3(long number, long a, long b, long c) {
     __asm__ volatile("int $0x80"
                      : "+r"(rax)
                      : "r"(rdi), "r"(rsi), "r"(rdx)
+                     : "memory", "rcx", "r11");
+    return rax;
+}
+
+static long syscall4(long number, long a, long b, long c, long d) {
+    register long rax __asm__("rax") = number;
+    register long rdi __asm__("rdi") = a;
+    register long rsi __asm__("rsi") = b;
+    register long rdx __asm__("rdx") = c;
+    register long r10 __asm__("r10") = d;
+    __asm__ volatile("int $0x80"
+                     : "+r"(rax)
+                     : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10)
                      : "memory", "rcx", "r11");
     return rax;
 }
@@ -116,4 +133,46 @@ pid_t getpid(void) {
 
 pid_t getppid(void) {
     return (pid_t)syscall3(SYS_GETPPID, 0, 0, 0);
+}
+
+pid_t fork(void) {
+    long r = syscall3(SYS_FORK, 0, 0, 0);
+    if (r < 0) {
+        errno = (int)(-r);
+        return (pid_t)-1;
+    }
+    return (pid_t)r;
+}
+
+pid_t waitpid(pid_t pid, int* status, int options) {
+    long r = syscall4(SYS_WAIT4, (long)pid, (long)status, (long)options, 0);
+    if (r < 0) {
+        errno = (int)(-r);
+        return (pid_t)-1;
+    }
+    return (pid_t)r;
+}
+
+int run_tool(const char* path, char* const argv[]) {
+    char* empty_env[1];
+    pid_t pid;
+    int status;
+    empty_env[0] = 0;
+    if (path == 0 || argv == 0) {
+        errno = EINVAL;
+        return -EINVAL;
+    }
+    pid = fork();
+    if (pid < 0) {
+        return -errno;
+    }
+    if (pid == 0) {
+        execve(path, argv, empty_env);
+        _exit(127);
+    }
+    if (waitpid(pid, &status, 0) < 0) {
+        return -errno;
+    }
+    /* Kernel stores (exit & 0xff) << 8 — same as Linux WEXITSTATUS. */
+    return (status >> 8) & 0xff;
 }

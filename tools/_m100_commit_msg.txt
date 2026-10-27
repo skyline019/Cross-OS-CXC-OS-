@@ -1,0 +1,4 @@
+feat: M100 mini-cc struct/pointer ONBOX_DATA_PASS (v1.1.0)
+
+Add struct types/fields and &/* pointer subset to on-box cxc-cc;
+keep edge reject and host bad-field/deref strict tests.

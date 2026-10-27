@@ -1,0 +1,4 @@
+feat: M120 mini-cc musl isdigit multi-text ONBOX_MDIG_PASS (v2.11.0)
+
+Place all non-empty EXECINSTR sections; apply .rela via sh_info.
+Plant isdigit.lo + labs.lo. Evidence WMSG:MD + ONBOX_MDIG_PASS.

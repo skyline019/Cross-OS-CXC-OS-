@@ -1,0 +1,3 @@
+feat: M68 musl-gcc static CRT via PHDR-in-LOAD (v0.69.0)
+
+Map FILEHDR+PHDRS into the text PT_LOAD, seed AT_PHDR from the loader, and run a real musl-gcc static CRT probe (LIBMCR.ELF / USER_MUSL_CRT_PASS).

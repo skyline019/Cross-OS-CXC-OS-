@@ -1,0 +1,4 @@
+feat: M106 mini-cc #lib/import ET_REL SysV ONBOX_LIB_PASS (v1.7.0)
+
+Merge planted ET_REL FUNC bytes via #lib and import fn (SysV rdi/rsi);
+missing lib and unresolved imports fail. Evidence WMSG:LB + ONBOX_LIB_PASS.

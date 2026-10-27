@@ -1,0 +1,4 @@
+feat: M122 mini-cc self .rela + musl atoi ONBOX_ATOI_PASS (v2.13.0)
+
+Emit R_X86_64_PLT32 in self ET_REL; plant musl atoi; lib.c bump+atoi→42.
+Evidence WMSG:AT + ONBOX_ATOI_PASS + edge:1 + peer_ok=1.

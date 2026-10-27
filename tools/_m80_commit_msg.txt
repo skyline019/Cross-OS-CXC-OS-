@@ -1,0 +1,3 @@
+feat: M80 execve from durable disk/run.elf (v0.81.0)
+
+Add Linux execve (59): replace user address space from a CXCFS path. Stub EXSTB.ELF execve's disk/run.elf written from DEXEC.ELF payload; proves A2-shaped load-and-run from the persistent root. Fix teardown to destroy the live root after execve replacement.

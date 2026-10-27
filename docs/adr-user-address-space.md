@@ -197,7 +197,22 @@ PMM：`allocate_pages` / `allocate_pages_below`；DMA 上限另计。本 ADR **�
 | **M132** | `char` 截断 + `const` | 曾用 `ONBOX_CHAR_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M133** | as+cc+ld+musl 合流 | `ONBOX_MERG_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
 | **M134** | 第十三次中场 + host chaos | 合同锁定 MERG + [`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
-| **M136** | 扩大 musl kit | `ONBOX_MKIT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M136** | 扩大 musl kit | 曾用 `ONBOX_MKIT_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M138** | as gas 加深 | 曾用 `ONBOX_AGAS_PASS`；[`a2-mini-cc.md`](a2-mini-cc.md) |
+| **M144** | 整链压力 | 曾用 `ONBOX_WHOL_PASS`；[`midpoint-assessment-14.md`](midpoint-assessment-14.md) |
+| **M154** | 整链加深 | 曾用 `ONBOX_DEEP_PASS`；[`midpoint-assessment-15.md`](midpoint-assessment-15.md) |
+| **M164** | musl 闭包加深 | 曾用 `ONBOX_MCLS_PASS`；[`midpoint-assessment-16.md`](midpoint-assessment-16.md) |
+| **M174** | 调用面闭合 | `ONBOX_CLSR_PASS`；[`midpoint-assessment-17.md`](midpoint-assessment-17.md) |
+| **M184** | musl 表面 + 无 io memcpy | `ONBOX_SURF_PASS`；[`midpoint-assessment-18.md`](midpoint-assessment-18.md) |
+| **M194** | ctype 加宽 + 布局 sizeof | 曾用 `ONBOX_WIDE_PASS`；[`midpoint-assessment-19.md`](midpoint-assessment-19.md) |
+| **M204** | ctype 叶子 + as 加厚 | 曾用 `ONBOX_CTYP_PASS`；[`midpoint-assessment-20.md`](midpoint-assessment-20.md) |
+| **M214** | 剩余浅叶子 + as | 曾用 `ONBOX_LEAF_PASS`；[`midpoint-assessment-21.md`](midpoint-assessment-21.md) |
+| **M224** | 浅 walk + mem-walk as | 曾用 `ONBOX_WALK_PASS`；[`midpoint-assessment-22.md`](midpoint-assessment-22.md) |
+| **M234** | 浅 wrap + as 加厚 | 曾用 `ONBOX_WRAP_PASS`；[`midpoint-assessment-23.md`](midpoint-assessment-23.md) |
+| **M244** | 浅 netw + as rolw/bswap | 曾用 `ONBOX_NETW_PASS`；[`midpoint-assessment-24.md`](midpoint-assessment-24.md) |
+| **M254** | HARD RO/bss+紧凑ABI+深musl | `ONBOX_HARD_PASS`；[`midpoint-assessment-25.md`](midpoint-assessment-25.md) |
+| **M264** | OS 容量 + 胖 ELF + as 首跨 | `ONBOX_TCAP_PASS`；[`midpoint-assessment-26.md`](midpoint-assessment-26.md) |
+| **M184** | musl 表面加深 | `ONBOX_SURF_PASS`；[`midpoint-assessment-18.md`](midpoint-assessment-18.md) |
 | **M131+** | as/前端加深 → 第十三次中场 | 对齐 [`product-goals.md`](product-goals.md) A2 |
 
 ## 6. 参考

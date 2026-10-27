@@ -1,0 +1,3 @@
+feat: M71 musl-gcc fopen probe (v0.72.0)
+
+Run real musl fopen/fwrite/fread/fclose against ramfs; raise brk/stack for larger stdio image; stub mprotect/ioctl/fcntl; implement readv for musl __stdio_read; ship ESP LIBFOP.ELF with prebuilt fallback.

@@ -1,0 +1,4 @@
+feat: M123 mini-cc self .rodata+PC32 + strcmp ONBOX_RDAT_PASS (v2.14.0)
+
+Emit .rodata and R_X86_64_PC32 in self ET_REL; plant musl strcmp;
+msg()+"RD" → 42. Evidence WMSG:RD + ONBOX_RDAT_PASS + edge:1 + peer_ok=1.

@@ -6,6 +6,34 @@
 #include <cxc/musl_atoi_elf.hpp>
 #include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
+#include <cxc/musl_memchr_elf.hpp>
+#include <cxc/musl_tolower_elf.hpp>
+#include <cxc/musl_toupper_elf.hpp>
+#include <cxc/musl_isspace_elf.hpp>
+#include <cxc/musl_isalpha_elf.hpp>
+#include <cxc/musl_isalnum_elf.hpp>
+#include <cxc/musl_islower_elf.hpp>
+#include <cxc/musl_isupper_elf.hpp>
+#include <cxc/musl_isblank_elf.hpp>
+#include <cxc/musl_isgraph_elf.hpp>
+#include <cxc/musl_isprint_elf.hpp>
+#include <cxc/musl_isxdigit_elf.hpp>
+#include <cxc/musl_iscntrl_elf.hpp>
+#include <cxc/musl_ispunct_elf.hpp>
+#include <cxc/musl_abs_elf.hpp>
+#include <cxc/musl_bzero_elf.hpp>
+#include <cxc/musl_strnlen_elf.hpp>
+#include <cxc/musl_isascii_elf.hpp>
+#include <cxc/musl_llabs_elf.hpp>
+#include <cxc/musl_toascii_elf.hpp>
+#include <cxc/musl_imaxabs_elf.hpp>
+#include <cxc/musl_bcmp_elf.hpp>
+#include <cxc/musl_ffs_elf.hpp>
+#include <cxc/musl_htons_elf.hpp>
+#include <cxc/musl_htonl_elf.hpp>
+#include <cxc/musl_ntohs_elf.hpp>
+#include <cxc/musl_ntohl_elf.hpp>
+#include <cxc/musl_memset_elf.hpp>
 #include <cxc/musl_strcmp_elf.hpp>
 #include <cxc/musl_strcat_elf.hpp>
 #include <cxc/musl_strchr_elf.hpp>
@@ -14,6 +42,24 @@
 #include <cxc/musl_stpcpy_elf.hpp>
 #include <cxc/musl_strncmp_elf.hpp>
 #include <cxc/musl_strlen_elf.hpp>
+#include <cxc/musl_strcspn_elf.hpp>
+#include <cxc/musl_strspn_elf.hpp>
+#include <cxc/musl_strpbrk_elf.hpp>
+#include <cxc/musl_strrchr_elf.hpp>
+#include <cxc/musl_memmove_elf.hpp>
+#include <cxc/musl_strdup_elf.hpp>
+#include <cxc/musl_strtol_elf.hpp>
+#include <cxc/musl_intscan_elf.hpp>
+#include <cxc/musl_shgetc_elf.hpp>
+#include <cxc/musl_memrchr_elf.hpp>
+#include <cxc/hard_stubs_elf.hpp>
+#include <cxc/fat42_elf.hpp>
+#include <cxc/fat_stub_elf.hpp>
+#include <cxc/mini_as_elf.hpp>
+#include <cxc/as_cli_elf.hpp>
+#include <cxc/ld_cli_elf.hpp>
+#include <cxc/as_stub_elf.hpp>
+#include <cxc/tcap_bridge_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
@@ -61,18 +107,20 @@ constexpr uint64_t at_random = 25;
 
 // M67/M81/M82: seed argc/argv/envp/auxv at the top of the user stack page so
 // musl `_start` (`mov %rsp,%rdi`) can read a Linux-shaped process image.
-uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
-                               uint64_t entry, uint64_t phdr_va,
-                               uint64_t phent, uint64_t phnum,
+uint64_t seed_linux_user_stack(uint8_t* stack_base, uint64_t stack_va_base,
+                               uint64_t stack_pages, uint64_t entry,
+                               uint64_t phdr_va, uint64_t phent, uint64_t phnum,
                                const char* const* argv, uint32_t argc,
                                const char* const* envp, uint32_t envc) {
-    memset(page, 0, pmm::page_size);
-    uint8_t* cursor = page + pmm::page_size;
+    const size_t stack_bytes =
+        static_cast<size_t>(stack_pages) * pmm::page_size;
+    memset(stack_base, 0, stack_bytes);
+    uint8_t* cursor = stack_base + stack_bytes;
 
     auto push_bytes = [&](const void* src, size_t length) -> uint64_t {
         cursor -= length;
         memcpy(cursor, src, length);
-        return page_va + static_cast<uint64_t>(cursor - page);
+        return stack_va_base + static_cast<uint64_t>(cursor - stack_base);
     };
 
     static const char default_arg0[] = "musl";
@@ -161,7 +209,7 @@ uint64_t seed_linux_user_stack(uint8_t* page, uint64_t page_va,
     }
     push_u64(argc);
 
-    return page_va + static_cast<uint64_t>(cursor - page);
+    return stack_va_base + static_cast<uint64_t>(cursor - stack_base);
 }
 
 ElfProbeResult elf_probe{};
@@ -208,10 +256,10 @@ Load128ProbeResult load128_probe{};
 HeapProbeResult heap_probe{};
 TimeProbeResult time_probe{};
 OnboxCcProbeResult onbox_cc_probe{};
-/* M90: above brk (≤0x509000) and mmap (≤0x700000) windows. */
-constexpr uint64_t user_stack_base = 0x0000000000800000ull;
-// A2 mini-cc needs more than one page (parse/emit frames); 32 KiB floor.
-constexpr uint64_t user_stack_pages = 8;
+/* M257: above brk (≤0x1409000) and mmap (≤0x3000000) windows. */
+constexpr uint64_t user_stack_base = 0x0000000003800000ull;
+// M259: long argv/env needs >64 KiB; keep headroom for mini-cc frames.
+constexpr uint64_t user_stack_pages = 64;
 constexpr uint64_t privilege_stack_base = 0xffffffff5e000000ull;
 
 bool map_user_stack(uint64_t user_root, uint64_t& stack_physical,
@@ -278,12 +326,13 @@ bool launch_user_elf(const uint8_t* image, size_t image_size, uint64_t& entry,
     }
 
     const uint64_t kernel_root = vmm::kernel_address_space();
-    auto* const stack_page = reinterpret_cast<uint8_t*>(
-        vmm::direct_map_base + stack_physical +
-        (user_stack_pages - 1) * pmm::page_size);
+    (void)top_page_va;
+    auto* const stack_base = reinterpret_cast<uint8_t*>(
+        vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
-        stack_page, top_page_va, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum, nullptr, 0, nullptr, 0);
+        stack_base, user_stack_base, user_stack_pages, loaded.entry,
+        loaded.at_phdr, loaded.at_phent, loaded.at_phnum, nullptr, 0, nullptr,
+        0);
     syscall::begin_session(reinterpret_cast<uint64_t>(&ring3_after_user));
     syscall::set_user_root(user_root);
 
@@ -1447,10 +1496,10 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
         failure = 3;
         return false;
     }
+    // BSS image buffer: sector FS allows ≤4 MiB files; avoid full memset.
     static uint8_t image[cxcfs::max_file_bytes];
-    memset(image, 0, sizeof(image));
     const int64_t got =
-        fs::read_fd(static_cast<uint32_t>(fd), image, sizeof(image));
+        fs::read_fd(static_cast<uint32_t>(fd), image, cxcfs::max_file_bytes);
     (void)fs::close_fd(static_cast<uint32_t>(fd));
     if (got <= 0) {
         failure = 4;
@@ -1488,12 +1537,13 @@ bool exec_replace(const char* path, cpu::InterruptFrame* frame,
         return false;
     }
 
-    auto* const stack_page = reinterpret_cast<uint8_t*>(
-        vmm::direct_map_base + stack_physical +
-        (user_stack_pages - 1) * pmm::page_size);
+    (void)top_page_va;
+    auto* const stack_base = reinterpret_cast<uint8_t*>(
+        vmm::direct_map_base + stack_physical);
     const uint64_t user_rsp = seed_linux_user_stack(
-        stack_page, top_page_va, loaded.entry, loaded.at_phdr,
-        loaded.at_phent, loaded.at_phnum, argv, argc, envp, envc);
+        stack_base, user_stack_base, user_stack_pages, loaded.entry,
+        loaded.at_phdr, loaded.at_phent, loaded.at_phnum, argv, argc, envp,
+        envc);
 
     if (!vmm::destroy_user_address_space(old_root)) {
         (void)vmm::destroy_user_address_space(new_root);
@@ -1936,50 +1986,520 @@ const TimeProbeResult& time_probe_result() {
 
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
-                        OnboxCcProbeResult& result) {
-    // M135–M136: expand musl kit (atoi/scmp/labs/dig); strlen via io only.
+                        OnboxCcProbeResult& result_out) {
+    // Keep the working result in .bss — M260 fat plant + musl-static as
+    // push UEFI stack hard enough to clobber a caller stack-local result.
+    OnboxCcProbeResult& result = onbox_cc_probe;
+    // M204: ctype isupper/isblank/isgraph/isprint + sete/jbe; layout kept.
     static const char lib_c_text[] =
         "CXC_A2\n"
-        "int add(int a, int b){\n"
-        "return a+b;\n"
-        "}\n"
-        "int bump(int x){\n"
-        "return add(x, 42);\n"
+        "struct Pt {\n"
+        "char t;\n"
+        "int x;\n"
+        "int y;\n"
+        "};\n"
+        "struct Pair {\n"
+        "char a;\n"
+        "char b;\n"
+        "};\n"
+        "typedef unsigned long size_t;\n"
+        "import fn a_sum();\n"
+        "import fn b_val();\n"
+        "fn score(){\n"
+        "Pt p;\n"
+        "Pt* sp;\n"
+        "Pair q;\n"
+        "void* vp;\n"
+        "void** vpp;\n"
+        "long n;\n"
+        "unsigned u;\n"
+        "size_t z;\n"
+        "char* cp;\n"
+        "char** pp;\n"
+        "p.t=1;\n"
+        "p.x=6;\n"
+        "p.y=7;\n"
+        "sp=&p;\n"
+        "vp=sp;\n"
+        "vpp=&vp;\n"
+        "n=sp->x*sp->y;\n"
+        "u=42;\n"
+        "z=sizeof(char);\n"
+        "if(z!=1){return 1;}\n"
+        "z=sizeof(size_t);\n"
+        "if(z!=8){return 2;}\n"
+        "z=sizeof(void*);\n"
+        "if(z!=8){return 3;}\n"
+        "z=sizeof(char**);\n"
+        "if(z!=8){return 5;}\n"
+        "z=sizeof(void**);\n"
+        "if(z!=8){return 7;}\n"
+        "z=sizeof(Pt);\n"
+        "if(z!=24){return 8;}\n"
+        "z=sizeof(Pair);\n"
+        "if(z!=2){return 9;}\n"
+        "q.a=1;\n"
+        "q.b=2;\n"
+        "cp=\"ok\";\n"
+        "pp=&cp;\n"
+        "if(n!=42){return 4;}\n"
+        "if(u!=42){return 6;}\n"
+        "if(a_sum()!=42){return 10;}\n"
+        "if(b_val()!=42){return 11;}\n"
+        "return n;\n"
         "}\n";
+    static const char a_c_text[] =
+        "CXC_A2\n"
+        "#include \"hdr.h\"\n"
+        "fn a_sum(){\n"
+        "int a[4];\n"
+        "int i;\n"
+        "int s;\n"
+        "s=0;\n"
+        "a[0]=10;\n"
+        "a[1]=10;\n"
+        "a[2]=10;\n"
+        "a[3]=12;\n"
+        "for(i=0;i<4;i=i+1){s=s+a[i];}\n"
+        "return s;\n"
+        "}\n";
+    static const char b_c_text[] =
+        "CXC_A2\n"
+        "fn b_val(){\n"
+        "int n;\n"
+        "n=0;\n"
+        "while(n<42){n=n+1;}\n"
+        "return n;\n"
+        "}\n";
+    /* Empty include body — lexer has no // or block-comment subset. */
+    static const char hdr_h_text[] = "\n";
     static const char main_s_text[] =
         ".text\n"
         ".globl main\n"
         "main:\n"
+        "push %rbp\n"
+        "mov %rsp, %rbp\n"
+        "sub $32, %rsp\n"
+        "mov $6, %eax\n"
+        "imul $7, %eax\n"
+        "cmp $42, %eax\n"
+        "jne .Lim\n"
+        "mov $84, %eax\n"
+        "cdq\n"
+        "mov $2, %ecx\n"
+        "idiv %ecx\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "xor %edx, %edx\n"
+        "mov $84, %eax\n"
+        "mov $2, %ecx\n"
+        "div %ecx\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "mov $21, %eax\n"
+        "shl $1, %eax\n"
+        "mov $42, %ecx\n"
+        "cmp %ecx, %eax\n"
+        "jne .Ldv\n"
+        "mov $42, %eax\n"
+        "mov $255, %ecx\n"
+        "and %ecx, %eax\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "mov $298, %eax\n"
+        "movzbl %al, %eax\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "mov $-42, %eax\n"
+        "neg %eax\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "mov $214, %eax\n"
+        "movsbl %al, %eax\n"
+        "cmp $-42, %eax\n"
+        "jne .Ldv\n"
+        "neg %eax\n"
+        "cmp $42, %eax\n"
+        "jne .Ldv\n"
+        "endbr64\n"
+        "mov $42, %edi\n"
+        "cmp $42, %edi\n"
+        "sete %al\n"
+        "movzbl %al, %eax\n"
+        "cmp $1, %eax\n"
+        "jne .Ldv\n"
+        "mov $50, %edi\n"
+        "sub $8, %edi\n"
+        "cmp $42, %edi\n"
+        "jne .Ldv\n"
+        "mov $40, %edi\n"
+        "cmp $42, %edi\n"
+        "setne %dl\n"
+        "movzbl %dl, %eax\n"
+        "cmp $1, %eax\n"
+        "jne .Ldv\n"
+        "mov $40, %edi\n"
+        "cmp $42, %edi\n"
+        "jbe .Lokj\n"
+        "jmp .Ldv\n"
+        ".Lokj:\n"
+        "mov $50, %edi\n"
+        "cmp $42, %edi\n"
+        "jae .Lokb\n"
+        "jmp .Ldv\n"
+        ".Lokb:\n"
+        "mov $40, %edi\n"
+        "cmp $42, %edi\n"
+        "jb .Lokc\n"
+        "jmp .Ldv\n"
+        ".Lokc:\n"
+        "xor %edx, %edx\n"
+        "mov q(%rip), %rax\n"
+        "cmp $42, %eax\n"
+        "jne .Lmv\n"
+        "call score\n"
+        "cmp $42, %eax\n"
+        "jne .Lsc\n"
+        "lea buf(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s4(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strcpy\n"
+        "lea buf(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s2(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strcat\n"
+        "lea buf(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $2, %edx\n"
+        "call strncmp\n"
+        "cmp $0, %eax\n"
+        "jne .Lstr\n"
+        "lea buf2(%rip), %rax\n"
+        "mov %rax, %rdi\n"
         "lea sa(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call stpcpy\n"
+        "lea buf2(%rip), %rax\n"
         "mov %rax, %rdi\n"
         "lea sa(%rip), %rax\n"
         "mov %rax, %rsi\n"
         "call strcmp\n"
         "cmp $0, %eax\n"
-        "jne .Lbad\n"
+        "jne .Lstr\n"
         "mov $53, %edi\n"
         "call isdigit\n"
-        "cmp $0, %eax\n"
-        "je .Lbad\n"
-        "lea s42(%rip), %rax\n"
+        "test %eax, %eax\n"
+        "je .Lstr\n"
+        "lea buf(%rip), %rax\n"
         "mov %rax, %rdi\n"
         "call atoi\n"
         "cmp $42, %eax\n"
-        "jne .Lbad\n"
+        "jne .Lstr\n"
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $3, %edx\n"
+        "call memcpy\n"
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $52, %esi\n"
+        "mov $2, %edx\n"
+        "call memchr\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $2, %edx\n"
+        "call memcmp\n"
+        "cmp $0, %eax\n"
+        "jne .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $50, %esi\n"
+        "call strchr\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "xor %esi, %esi\n"
+        "call strchrnul\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "mov $65, %edi\n"
+        "call tolower\n"
+        "cmp $97, %eax\n"
+        "jne .Lmc\n"
+        "mov $97, %edi\n"
+        "call toupper\n"
+        "cmp $65, %eax\n"
+        "jne .Lmc\n"
+        "mov $32, %edi\n"
+        "call isspace\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $65, %edi\n"
+        "call isalpha\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $50, %edi\n"
+        "call isalnum\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $97, %edi\n"
+        "call islower\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $65, %edi\n"
+        "call isupper\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $32, %edi\n"
+        "call isblank\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $65, %edi\n"
+        "call isgraph\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $32, %edi\n"
+        "call isprint\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $65, %edi\n"
+        "call isxdigit\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $7, %edi\n"
+        "call iscntrl\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $33, %edi\n"
+        "call ispunct\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $-42, %edi\n"
+        "call abs\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        "mov $65, %edi\n"
+        "call isascii\n"
+        "test %eax, %eax\n"
+        "je .Lmc\n"
+        "mov $42, %edi\n"
+        "call llabs\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        "lea -8(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "xor %esi, %esi\n"
+        "mov $4, %edx\n"
+        "call memset\n"
+        "lea buf(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $4, %esi\n"
+        "call bzero\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $8, %esi\n"
+        "call strnlen\n"
+        "cmp $2, %eax\n"
+        "jne .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "movzbl (%rdi), %eax\n"
+        "cmp $52, %eax\n"
+        "jne .Lmc\n"
+        "add $1, %rdi\n"
+        "movzbl (%rdi), %eax\n"
+        "cmp $50, %eax\n"
+        "jne .Lmc\n"
+        "mov $1, %edx\n"
+        "test %rdx, %rdx\n"
+        "je .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $52, %eax\n"
+        "cmp %al, (%rdi)\n"
+        "jne .Lmc\n"
+        "mov $0x141, %edi\n"
+        "call toascii\n"
+        "cmp $65, %eax\n"
+        "jne .Lmc\n"
+        "mov $42, %edi\n"
+        "call imaxabs\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $2, %edx\n"
+        "call bcmp\n"
+        "test %eax, %eax\n"
+        "jne .Lmc\n"
+        "mov $8, %edi\n"
+        "call ffs\n"
+        "cmp $4, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x1234, %edi\n"
+        "call htons\n"
+        "cmp $0x3412, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x12345678, %edi\n"
+        "call htonl\n"
+        "cmp $0x78563412, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x3412, %edi\n"
+        "call ntohs\n"
+        "cmp $0x1234, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x78563412, %edi\n"
+        "call ntohl\n"
+        "cmp $0x12345678, %eax\n"
+        "jne .Lmc\n"
+        "mov $40, %edi\n"
+        "inc %rdi\n"
+        "inc %rdi\n"
+        "cmp $42, %edi\n"
+        "jne .Lmc\n"
+        "mov $3, %edx\n"
+        "sub $1, %rdx\n"
+        "cmp $2, %edx\n"
+        "jne .Lmc\n"
+        "mov $40, %edi\n"
+        "cmp $42, %edi\n"
+        "setb %cl\n"
+        "movzbl %cl, %eax\n"
+        "cmp $1, %eax\n"
+        "jne .Lmc\n"
+        "mov $50, %edi\n"
+        "cmp $42, %edi\n"
+        "seta %cl\n"
+        "movzbl %cl, %eax\n"
+        "cmp $1, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x1234, %eax\n"
+        "rolw $8, %ax\n"
+        "cmp $0x3412, %eax\n"
+        "jne .Lmc\n"
+        "mov $0x12345678, %eax\n"
+        "bswap %eax\n"
+        "cmp $0x78563412, %eax\n"
+        "jne .Lmc\n"
+        "mov $0xab, %eax\n"
+        "movzwl %ax, %eax\n"
+        "cmp $0xab, %eax\n"
+        "jne .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea ssep(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strcspn\n"
+        "cmp $2, %eax\n"
+        "jne .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea sdig(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strspn\n"
+        "cmp $2, %eax\n"
+        "jne .Lmc\n"
+        "lea spair(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea ssep(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strpbrk\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $50, %esi\n"
+        "call strrchr\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $3, %edx\n"
+        "call memmove\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "call strdup\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "xor %esi, %esi\n"
+        "mov $10, %edx\n"
+        "call strtol\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
         "mov $42, %edi\n"
         "call labs\n"
+        "leave\n"
+        "and $255, %eax\n"
         "ret\n"
-        ".Lbad:\n"
-        "mov $1, %eax\n"
+        ".Lim:\n"
+        "mov $22, %eax\n"
+        "jmp .Lout\n"
+        ".Ldv:\n"
+        "mov $25, %eax\n"
+        "jmp .Lout\n"
+        ".Lmv:\n"
+        "mov $23, %eax\n"
+        "jmp .Lout\n"
+        ".Lsc:\n"
+        "and $255, %eax\n"
+        "jmp .Lout\n"
+        ".Lstr:\n"
+        "mov $24, %eax\n"
+        "jmp .Lout\n"
+        ".Lmc:\n"
+        "mov $26, %eax\n"
+        "jmp .Lout\n"
+        ".Lout:\n"
+        "mov %rbp, %rsp\n"
+        "pop %rbp\n"
         "ret\n"
+        ".data\n"
+        "buf:\n"
+        ".zero 16\n"
+        "buf2:\n"
+        ".zero 16\n"
         ".rodata\n"
         "sa:\n"
-        ".asciz \"MK\"\n"
+        ".asciz \"HD\"\n"
+        "s4:\n"
+        ".asciz \"4\"\n"
+        "s2:\n"
+        ".asciz \"2\"\n"
         "s42:\n"
-        ".asciz \"42\"\n";
-    static const char link_rsp_text[] =
-        "disk/main.o\n"
-        "disk/lib.o\n"
+        ".asciz \"42\"\n"
+        "spair:\n"
+        ".asciz \"4,2\"\n"
+        "ssep:\n"
+        ".asciz \",;\"\n"
+        "sdig:\n"
+        ".asciz \"0123456789\"\n"
+        "q:\n"
+        ".quad 42\n";
+    /* CCDRV job.rsp: .s first (small forks), nested a.c/b.c, then lib.c. */
+    static const char job_rsp_text[] =
+        "disk/main.s\n"
+        "disk/x1.s\n"
+        "disk/x2.s\n"
+        "disk/t.s\n"
+        "disk/a.c\n"
+        "disk/b.c\n"
+        "disk/lib.c\n"
         "disk/atoi.o\n"
         "disk/scmp.o\n"
         "disk/labs.o\n"
@@ -1991,7 +2511,48 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "disk/stpc.o\n"
         "disk/sncmp.o\n"
         "disk/mcmp.o\n"
-        "disk/io.elf\n";
+        "disk/mchr.o\n"
+        "disk/tlwr.o\n"
+        "disk/tupr.o\n"
+        "disk/ispc.o\n"
+        "disk/ialp.o\n"
+        "disk/ialn.o\n"
+        "disk/ilwr.o\n"
+        "disk/iupr.o\n"
+        "disk/iblk.o\n"
+        "disk/igrp.o\n"
+        "disk/iprt.o\n"
+        "disk/ixdg.o\n"
+        "disk/ictl.o\n"
+        "disk/ipct.o\n"
+        "disk/iabs.o\n"
+        "disk/bzro.o\n"
+        "disk/snln.o\n"
+        "disk/iasc.o\n"
+        "disk/llab.o\n"
+        "disk/tasc.o\n"
+        "disk/imax.o\n"
+        "disk/bcmp.o\n"
+        "disk/iffs.o\n"
+        "disk/htns.o\n"
+        "disk/htnl.o\n"
+        "disk/ntns.o\n"
+        "disk/ntnl.o\n"
+        "disk/mset.o\n"
+        "disk/scsp.o\n"
+        "disk/sspn.o\n"
+        "disk/spbk.o\n"
+        "disk/srch.o\n"
+        "disk/mmov.o\n"
+        "disk/sdup.o\n"
+        "disk/stol.o\n"
+        "disk/iscn.o\n"
+        "disk/shgt.o\n"
+        "disk/mrch.o\n"
+        "disk/hstb.o\n"
+        "disk/mcpy.o\n"
+        "disk/slen.o\n"
+        "disk/tcap_br.o\n";
     static const char src_text[] =
         "CXC_A2\n"
         "fn main(){\n"
@@ -2358,6 +2919,579 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             return false;
         }
     }
+    {
+        const int64_t mfd2 = fs::open_path(
+            "disk/mchr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (mfd2 < 0) {
+            result.failure = 104;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(mfd2), musl_memchr_elf,
+                         musl_memchr_elf_size) !=
+            static_cast<int64_t>(musl_memchr_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(mfd2));
+            result.failure = 105;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(mfd2)) != 0) {
+            result.failure = 106;
+            return false;
+        }
+    }
+    {
+        const int64_t tfd2 = fs::open_path(
+            "disk/tlwr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (tfd2 < 0) {
+            result.failure = 107;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(tfd2), musl_tolower_elf,
+                         musl_tolower_elf_size) !=
+            static_cast<int64_t>(musl_tolower_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(tfd2));
+            result.failure = 108;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(tfd2)) != 0) {
+            result.failure = 109;
+            return false;
+        }
+    }
+    {
+        const int64_t ufd3 = fs::open_path(
+            "disk/tupr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ufd3 < 0) {
+            result.failure = 110;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ufd3), musl_toupper_elf,
+                         musl_toupper_elf_size) !=
+            static_cast<int64_t>(musl_toupper_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ufd3));
+            result.failure = 111;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ufd3)) != 0) {
+            result.failure = 112;
+            return false;
+        }
+    }
+    {
+        const int64_t ifd = fs::open_path(
+            "disk/ispc.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ifd < 0) {
+            result.failure = 113;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ifd), musl_isspace_elf,
+                         musl_isspace_elf_size) !=
+            static_cast<int64_t>(musl_isspace_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ifd));
+            result.failure = 114;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ifd)) != 0) {
+            result.failure = 115;
+            return false;
+        }
+    }
+    {
+        const int64_t afd2 = fs::open_path(
+            "disk/ialp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (afd2 < 0) {
+            result.failure = 116;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(afd2), musl_isalpha_elf,
+                         musl_isalpha_elf_size) !=
+            static_cast<int64_t>(musl_isalpha_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(afd2));
+            result.failure = 117;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(afd2)) != 0) {
+            result.failure = 118;
+            return false;
+        }
+    }
+    {
+        const int64_t nfd2 = fs::open_path(
+            "disk/ialn.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (nfd2 < 0) {
+            result.failure = 122;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nfd2), musl_isalnum_elf,
+                         musl_isalnum_elf_size) !=
+            static_cast<int64_t>(musl_isalnum_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(nfd2));
+            result.failure = 123;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(nfd2)) != 0) {
+            result.failure = 124;
+            return false;
+        }
+    }
+    {
+        const int64_t lfd2 = fs::open_path(
+            "disk/ilwr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (lfd2 < 0) {
+            result.failure = 125;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(lfd2), musl_islower_elf,
+                         musl_islower_elf_size) !=
+            static_cast<int64_t>(musl_islower_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(lfd2));
+            result.failure = 126;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(lfd2)) != 0) {
+            result.failure = 127;
+            return false;
+        }
+    }
+    {
+        const int64_t ufd4 = fs::open_path(
+            "disk/iupr.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ufd4 < 0) {
+            result.failure = 128;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ufd4), musl_isupper_elf,
+                         musl_isupper_elf_size) !=
+            static_cast<int64_t>(musl_isupper_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ufd4));
+            result.failure = 129;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ufd4)) != 0) {
+            result.failure = 130;
+            return false;
+        }
+    }
+    {
+        const int64_t bfd2 = fs::open_path(
+            "disk/iblk.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (bfd2 < 0) {
+            result.failure = 131;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(bfd2), musl_isblank_elf,
+                         musl_isblank_elf_size) !=
+            static_cast<int64_t>(musl_isblank_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(bfd2));
+            result.failure = 132;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(bfd2)) != 0) {
+            result.failure = 133;
+            return false;
+        }
+    }
+    {
+        const int64_t gfd = fs::open_path(
+            "disk/igrp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (gfd < 0) {
+            result.failure = 134;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(gfd), musl_isgraph_elf,
+                         musl_isgraph_elf_size) !=
+            static_cast<int64_t>(musl_isgraph_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(gfd));
+            result.failure = 135;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(gfd)) != 0) {
+            result.failure = 136;
+            return false;
+        }
+    }
+    {
+        const int64_t pfd3 = fs::open_path(
+            "disk/iprt.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (pfd3 < 0) {
+            result.failure = 137;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(pfd3), musl_isprint_elf,
+                         musl_isprint_elf_size) !=
+            static_cast<int64_t>(musl_isprint_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(pfd3));
+            result.failure = 138;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfd3)) != 0) {
+            result.failure = 139;
+            return false;
+        }
+    }
+    {
+        const int64_t xfd = fs::open_path(
+            "disk/ixdg.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (xfd < 0) {
+            result.failure = 140;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(xfd), musl_isxdigit_elf,
+                         musl_isxdigit_elf_size) !=
+            static_cast<int64_t>(musl_isxdigit_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(xfd));
+            result.failure = 141;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(xfd)) != 0) {
+            result.failure = 142;
+            return false;
+        }
+    }
+    {
+        const int64_t cfd2 = fs::open_path(
+            "disk/ictl.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (cfd2 < 0) {
+            result.failure = 143;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(cfd2), musl_iscntrl_elf,
+                         musl_iscntrl_elf_size) !=
+            static_cast<int64_t>(musl_iscntrl_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(cfd2));
+            result.failure = 144;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(cfd2)) != 0) {
+            result.failure = 145;
+            return false;
+        }
+    }
+    {
+        const int64_t pfd4 = fs::open_path(
+            "disk/ipct.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (pfd4 < 0) {
+            result.failure = 146;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(pfd4), musl_ispunct_elf,
+                         musl_ispunct_elf_size) !=
+            static_cast<int64_t>(musl_ispunct_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(pfd4));
+            result.failure = 147;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(pfd4)) != 0) {
+            result.failure = 148;
+            return false;
+        }
+    }
+    {
+        const int64_t afd = fs::open_path(
+            "disk/iabs.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (afd < 0) {
+            result.failure = 149;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(afd), musl_abs_elf,
+                         musl_abs_elf_size) !=
+            static_cast<int64_t>(musl_abs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(afd));
+            result.failure = 150;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(afd)) != 0) {
+            result.failure = 151;
+            return false;
+        }
+    }
+    {
+        const int64_t bzd = fs::open_path(
+            "disk/bzro.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (bzd < 0) {
+            result.failure = 152;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(bzd), musl_bzero_elf,
+                         musl_bzero_elf_size) !=
+            static_cast<int64_t>(musl_bzero_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(bzd));
+            result.failure = 153;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(bzd)) != 0) {
+            result.failure = 154;
+            return false;
+        }
+    }
+    {
+        const int64_t snd = fs::open_path(
+            "disk/snln.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (snd < 0) {
+            result.failure = 155;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(snd), musl_strnlen_elf,
+                         musl_strnlen_elf_size) !=
+            static_cast<int64_t>(musl_strnlen_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(snd));
+            result.failure = 156;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(snd)) != 0) {
+            result.failure = 157;
+            return false;
+        }
+    }
+    {
+        const int64_t asd = fs::open_path(
+            "disk/iasc.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (asd < 0) {
+            result.failure = 158;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(asd), musl_isascii_elf,
+                         musl_isascii_elf_size) !=
+            static_cast<int64_t>(musl_isascii_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(asd));
+            result.failure = 159;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(asd)) != 0) {
+            result.failure = 160;
+            return false;
+        }
+    }
+    {
+        const int64_t lld = fs::open_path(
+            "disk/llab.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (lld < 0) {
+            result.failure = 161;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(lld), musl_llabs_elf,
+                         musl_llabs_elf_size) !=
+            static_cast<int64_t>(musl_llabs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(lld));
+            result.failure = 162;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(lld)) != 0) {
+            result.failure = 163;
+            return false;
+        }
+    }
+    {
+        const int64_t tad = fs::open_path(
+            "disk/tasc.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (tad < 0) {
+            result.failure = 164;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(tad), musl_toascii_elf,
+                         musl_toascii_elf_size) !=
+            static_cast<int64_t>(musl_toascii_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(tad));
+            result.failure = 165;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(tad)) != 0) {
+            result.failure = 166;
+            return false;
+        }
+    }
+    {
+        const int64_t imd = fs::open_path(
+            "disk/imax.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (imd < 0) {
+            result.failure = 167;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(imd), musl_imaxabs_elf,
+                         musl_imaxabs_elf_size) !=
+            static_cast<int64_t>(musl_imaxabs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(imd));
+            result.failure = 168;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(imd)) != 0) {
+            result.failure = 169;
+            return false;
+        }
+    }
+    {
+        const int64_t bcd = fs::open_path(
+            "disk/bcmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (bcd < 0) {
+            result.failure = 170;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(bcd), musl_bcmp_elf,
+                         musl_bcmp_elf_size) !=
+            static_cast<int64_t>(musl_bcmp_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(bcd));
+            result.failure = 171;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(bcd)) != 0) {
+            result.failure = 172;
+            return false;
+        }
+    }
+    {
+        const int64_t ffd = fs::open_path(
+            "disk/iffs.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (ffd < 0) {
+            result.failure = 173;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ffd), musl_ffs_elf,
+                         musl_ffs_elf_size) !=
+            static_cast<int64_t>(musl_ffs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ffd));
+            result.failure = 174;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ffd)) != 0) {
+            result.failure = 175;
+            return false;
+        }
+    }
+    {
+        const int64_t hsd = fs::open_path(
+            "disk/htns.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (hsd < 0) {
+            result.failure = 176;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(hsd), musl_htons_elf,
+                         musl_htons_elf_size) !=
+            static_cast<int64_t>(musl_htons_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(hsd));
+            result.failure = 177;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(hsd)) != 0) {
+            result.failure = 178;
+            return false;
+        }
+    }
+    {
+        const int64_t hld = fs::open_path(
+            "disk/htnl.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (hld < 0) {
+            result.failure = 179;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(hld), musl_htonl_elf,
+                         musl_htonl_elf_size) !=
+            static_cast<int64_t>(musl_htonl_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(hld));
+            result.failure = 180;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(hld)) != 0) {
+            result.failure = 181;
+            return false;
+        }
+    }
+    {
+        const int64_t nsd = fs::open_path(
+            "disk/ntns.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (nsd < 0) {
+            result.failure = 182;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nsd), musl_ntohs_elf,
+                         musl_ntohs_elf_size) !=
+            static_cast<int64_t>(musl_ntohs_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(nsd));
+            result.failure = 183;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(nsd)) != 0) {
+            result.failure = 184;
+            return false;
+        }
+    }
+    {
+        const int64_t nld = fs::open_path(
+            "disk/ntnl.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (nld < 0) {
+            result.failure = 185;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(nld), musl_ntohl_elf,
+                         musl_ntohl_elf_size) !=
+            static_cast<int64_t>(musl_ntohl_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(nld));
+            result.failure = 186;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(nld)) != 0) {
+            result.failure = 187;
+            return false;
+        }
+    }
+    {
+        const int64_t mfd3 = fs::open_path(
+            "disk/mset.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (mfd3 < 0) {
+            result.failure = 119;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(mfd3), musl_memset_elf,
+                         musl_memset_elf_size) !=
+            static_cast<int64_t>(musl_memset_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(mfd3));
+            result.failure = 120;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(mfd3)) != 0) {
+            result.failure = 121;
+            return false;
+        }
+    }
+
+
+    {
+        struct Plant {
+            const char* path;
+            const unsigned char* blob;
+            unsigned size;
+            uint32_t fail;
+        };
+        const Plant plants[] = {
+            {"disk/scsp.o", musl_strcspn_elf, musl_strcspn_elf_size, 200},
+            {"disk/sspn.o", musl_strspn_elf, musl_strspn_elf_size, 203},
+            {"disk/spbk.o", musl_strpbrk_elf, musl_strpbrk_elf_size, 206},
+            {"disk/srch.o", musl_strrchr_elf, musl_strrchr_elf_size, 209},
+            {"disk/mmov.o", musl_memmove_elf, musl_memmove_elf_size, 212},
+            {"disk/sdup.o", musl_strdup_elf, musl_strdup_elf_size, 215},
+            {"disk/stol.o", musl_strtol_elf, musl_strtol_elf_size, 218},
+            {"disk/iscn.o", musl_intscan_elf, musl_intscan_elf_size, 221},
+            {"disk/shgt.o", musl_shgetc_elf, musl_shgetc_elf_size, 224},
+            {"disk/mrch.o", musl_memrchr_elf, musl_memrchr_elf_size, 227},
+            {"disk/hstb.o", hard_stubs_elf, hard_stubs_elf_size, 230},
+        };
+        for (const Plant& pl : plants) {
+            const int64_t pfd = fs::open_path(
+                pl.path, fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            if (pfd < 0) {
+                result.failure = pl.fail;
+                return false;
+            }
+            if (fs::write_fd(static_cast<uint32_t>(pfd), pl.blob, pl.size) !=
+                static_cast<int64_t>(pl.size)) {
+                (void)fs::close_fd(static_cast<uint32_t>(pfd));
+                result.failure = pl.fail + 1;
+                return false;
+            }
+            if (fs::close_fd(static_cast<uint32_t>(pfd)) != 0) {
+                result.failure = pl.fail + 2;
+                return false;
+            }
+        }
+    }
 
     {
         const int64_t lfd = fs::open_path(
@@ -2399,13 +3533,13 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     {
         const int64_t rfd = fs::open_path(
-            "disk/link.rsp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            "disk/job.rsp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (rfd < 0) {
             result.failure = 97;
             return false;
         }
-        const size_t rsp_len = sizeof(link_rsp_text) - 1;
-        if (fs::write_fd(static_cast<uint32_t>(rfd), link_rsp_text, rsp_len) !=
+        const size_t rsp_len = sizeof(job_rsp_text) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(rfd), job_rsp_text, rsp_len) !=
             static_cast<int64_t>(rsp_len)) {
             (void)fs::close_fd(static_cast<uint32_t>(rfd));
             result.failure = 98;
@@ -2414,6 +3548,40 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         if (fs::close_fd(static_cast<uint32_t>(rfd)) != 0) {
             result.failure = 99;
             return false;
+        }
+    }
+    {
+        struct SrcPlant2 {
+            const char* path;
+            const char* text;
+            uint32_t fail;
+        };
+        const SrcPlant2 extras[] = {
+            {"disk/a.c", a_c_text, 360},
+            {"disk/b.c", b_c_text, 370},
+            {"disk/hdr.h", hdr_h_text, 380},
+        };
+        for (const SrcPlant2& sp : extras) {
+            const int64_t sfd = fs::open_path(
+                sp.path, fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            if (sfd < 0) {
+                result.failure = sp.fail;
+                return false;
+            }
+            size_t n = 0;
+            while (sp.text[n] != 0) {
+                ++n;
+            }
+            if (fs::write_fd(static_cast<uint32_t>(sfd), sp.text, n) !=
+                static_cast<int64_t>(n)) {
+                (void)fs::close_fd(static_cast<uint32_t>(sfd));
+                result.failure = sp.fail + 1;
+                return false;
+            }
+            if (fs::close_fd(static_cast<uint32_t>(sfd)) != 0) {
+                result.failure = sp.fail + 2;
+                return false;
+            }
         }
     }
     const int64_t sfd = fs::open_path(
@@ -2452,8 +3620,102 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         result.failure = 8;
         return false;
     }
+    // Same ELF as disk/cc so nested `cc -c` hits audited path.
+    {
+        const int64_t cc2 = fs::open_path(
+            "disk/cc", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+        if (cc2 < 0) {
+            result.failure = 301;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(cc2), cc_image, cc_size) !=
+            static_cast<int64_t>(cc_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(cc2));
+            result.failure = 302;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(cc2)) != 0) {
+            result.failure = 303;
+            return false;
+        }
+    }
     result.wrote_cc = 1;
     result.stage = 3;
+
+    // M266–M267: plant freestanding as/ld CLIs before driver spawn.
+    {
+        struct ToolPlant {
+            const char* path;
+            const unsigned char* blob;
+            unsigned size;
+            uint32_t fail;
+        };
+        const ToolPlant tools[] = {
+            {"disk/as", as_cli_elf, as_cli_elf_size, 300},
+            {"disk/ld", ld_cli_elf, ld_cli_elf_size, 310},
+            {"disk/tcap_br.o", tcap_bridge_elf, tcap_bridge_elf_size, 320},
+        };
+        for (const ToolPlant& tp : tools) {
+            const int64_t tfd = fs::open_path(
+                tp.path, fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+            if (tfd < 0) {
+                result.failure = tp.fail;
+                return false;
+            }
+            if (fs::write_fd(static_cast<uint32_t>(tfd), tp.blob, tp.size) !=
+                static_cast<int64_t>(tp.size)) {
+                (void)fs::close_fd(static_cast<uint32_t>(tfd));
+                result.failure = tp.fail + 1;
+                return false;
+            }
+            if (fs::close_fd(static_cast<uint32_t>(tfd)) != 0) {
+                result.failure = tp.fail + 2;
+                return false;
+            }
+        }
+        static const char x1_s[] =
+            ".text\n.globl tdrv_x1\ntdrv_x1:\nmov $1, %eax\nret\n";
+        static const char x2_s[] =
+            ".text\n.globl tdrv_x2\ntdrv_x2:\nmov $2, %eax\nret\n";
+        static const char t_s[] =
+            ".text\n"
+            ".globl tcap_add\n"
+            "tcap_add:\n"
+            "mov $42, %eax\n"
+            "ret\n";
+        struct SrcPlant {
+            const char* path;
+            const char* text;
+            uint32_t fail;
+        };
+        const SrcPlant srcs[] = {
+            {"disk/x1.s", x1_s, 330},
+            {"disk/x2.s", x2_s, 340},
+            {"disk/t.s", t_s, 350},
+        };
+        for (const SrcPlant& sp : srcs) {
+            const int64_t sfd = fs::open_path(
+                sp.path, fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+            if (sfd < 0) {
+                result.failure = sp.fail;
+                return false;
+            }
+            size_t n = 0;
+            while (sp.text[n] != 0) {
+                ++n;
+            }
+            if (fs::write_fd(static_cast<uint32_t>(sfd), sp.text, n) !=
+                static_cast<int64_t>(n)) {
+                (void)fs::close_fd(static_cast<uint32_t>(sfd));
+                result.failure = sp.fail + 1;
+                return false;
+            }
+            if (fs::close_fd(static_cast<uint32_t>(sfd)) != 0) {
+                result.failure = sp.fail + 2;
+                return false;
+            }
+        }
+    }
 
     cxcfs::MountResult remounted{};
     if (!cxcfs::remount(remounted)) {
@@ -2476,6 +3738,10 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     result.exited = 1;
     result.exit_code = syscall::session().exit_code;
     result.wrote_pass = syscall::session().saw_onbox_cc_pass;
+    // Kernel-audited spawn counts from this HARD session only (before clear).
+    result.spawn_as = syscall::session().exec_disk_as;
+    result.spawn_ld = syscall::session().exec_disk_ld;
+    result.spawn_cc = syscall::session().exec_disk_cc;
     result.stage = 5;
 
     if (result.exit_code != 42 || result.wrote_pass == 0) {
@@ -2483,30 +3749,86 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         result.failure = 10;
         return false;
     }
+    // 4×as + 1×ld + cc top + 2× nested cc -c (a.c/b.c).
+    if (result.spawn_as != 4 || result.spawn_ld != 1 || result.spawn_cc < 3) {
+        syscall::clear_session();
+        result.failure = 291;
+        return false;
+    }
     syscall::clear_session();
 
-    // Edge: drop link.rsp so cc path runs; cross-#lib UND → exit 4 + DMSG.
+    // HARD products: nested cc .o + as .o + ld ET_EXEC.
+    {
+        auto elf_type_ok = [](const char* path, unsigned char want_type) -> bool {
+            const int64_t fd = fs::open_path(path, fs::o_rdonly, 0);
+            if (fd < 0) {
+                return false;
+            }
+            unsigned char hdr[20]{};
+            const int64_t got =
+                fs::read_fd(static_cast<uint32_t>(fd), hdr, sizeof(hdr));
+            (void)fs::close_fd(static_cast<uint32_t>(fd));
+            return got >= 20 && hdr[0] == 0x7f && hdr[1] == 'E' &&
+                   hdr[2] == 'L' && hdr[3] == 'F' && hdr[16] == want_type &&
+                   hdr[17] == 0;
+        };
+        if (!elf_type_ok("disk/lib.o", 1) || !elf_type_ok("disk/a.o", 1) ||
+            !elf_type_ok("disk/b.o", 1) || !elf_type_ok("disk/main.o", 1) ||
+            !elf_type_ok("disk/x1.o", 1) || !elf_type_ok("disk/x2.o", 1) ||
+            !elf_type_ok("disk/t.o", 1)) {
+            result.failure = 292;
+            return false;
+        }
+        if (!elf_type_ok("disk/out.elf", 2)) {
+            result.failure = 293;
+            return false;
+        }
+    }
+
+    // Edge: rewrite job.rsp → bad.c only (UND via nested cc -c + ld).
     result.stage = 6;
-    if (fs::unlink_path("disk/link.rsp") != 0) {
+    if (fs::unlink_path("disk/job.rsp") != 0) {
         result.failure = 100;
         return false;
     }
-    const int64_t bfd = fs::open_path(
-        "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-    if (bfd < 0) {
-        result.failure = 11;
-        return false;
+    {
+        const int64_t bfd = fs::open_path(
+            "disk/bad.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (bfd < 0) {
+            result.failure = 11;
+            return false;
+        }
+        const size_t bad_len = sizeof(bad_src) - 1;
+        if (fs::write_fd(static_cast<uint32_t>(bfd), bad_src, bad_len) !=
+            static_cast<int64_t>(bad_len)) {
+            (void)fs::close_fd(static_cast<uint32_t>(bfd));
+            result.failure = 12;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(bfd)) != 0) {
+            result.failure = 13;
+            return false;
+        }
     }
-    const size_t bad_len = sizeof(bad_src) - 1;
-    if (fs::write_fd(static_cast<uint32_t>(bfd), bad_src, bad_len) !=
-        static_cast<int64_t>(bad_len)) {
-        (void)fs::close_fd(static_cast<uint32_t>(bfd));
-        result.failure = 12;
-        return false;
-    }
-    if (fs::close_fd(static_cast<uint32_t>(bfd)) != 0) {
-        result.failure = 13;
-        return false;
+    {
+        static const char bad_job[] = "disk/bad.c\n";
+        const int64_t jfd = fs::open_path(
+            "disk/job.rsp", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
+        if (jfd < 0) {
+            result.failure = 101;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(jfd), bad_job,
+                         sizeof(bad_job) - 1) !=
+            static_cast<int64_t>(sizeof(bad_job) - 1)) {
+            (void)fs::close_fd(static_cast<uint32_t>(jfd));
+            result.failure = 102;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(jfd)) != 0) {
+            result.failure = 103;
+            return false;
+        }
     }
     cxcfs::MountResult remount_edge{};
     if (!cxcfs::remount(remount_edge)) {
@@ -2534,7 +3856,188 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     result.edge_ok = 1;
     result.stage = 7;
-    onbox_cc_probe = result;
+
+    // M260: plant >1 MiB static ELF and execve (long argv via fat stub).
+    {
+        constexpr size_t fat_target = 1024u * 1024u + 512u;
+        const int64_t ffd = fs::open_path(
+            "disk/fat.elf", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+        if (ffd < 0) {
+            result.failure = 240;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(ffd), fat42_elf,
+                         fat42_elf_size) !=
+            static_cast<int64_t>(fat42_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(ffd));
+            result.failure = 241;
+            return false;
+        }
+        static uint8_t pad[4096];
+        for (size_t i = 0; i < sizeof(pad); ++i) {
+            pad[i] = 0xA5;
+        }
+        size_t remaining = fat_target - fat42_elf_size;
+        while (remaining > 0) {
+            const size_t chunk =
+                remaining < sizeof(pad) ? remaining : sizeof(pad);
+            if (fs::write_fd(static_cast<uint32_t>(ffd), pad, chunk) !=
+                static_cast<int64_t>(chunk)) {
+                (void)fs::close_fd(static_cast<uint32_t>(ffd));
+                result.failure = 242;
+                return false;
+            }
+            remaining -= chunk;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(ffd)) != 0) {
+            result.failure = 243;
+            return false;
+        }
+        result.fat_bytes = static_cast<uint32_t>(fat_target);
+        cxcfs::MountResult fat_remount{};
+        if (!cxcfs::remount(fat_remount)) {
+            result.failure = 244;
+            return false;
+        }
+        {
+            const int64_t rfd = fs::open_path("disk/fat.elf", fs::o_rdonly, 0);
+            if (rfd < 0) {
+                result.failure = 246;
+                return false;
+            }
+            fs::StatBuf st{};
+            if (fs::fstat_fd(static_cast<uint32_t>(rfd), st) != 0 ||
+                st.st_size != static_cast<int64_t>(fat_target)) {
+                (void)fs::close_fd(static_cast<uint32_t>(rfd));
+                result.failure = 247;
+                result.exit_code = static_cast<uint64_t>(st.st_size);
+                return false;
+            }
+            (void)fs::close_fd(static_cast<uint32_t>(rfd));
+        }
+        uint64_t entry = 0;
+        uint32_t stage = 0;
+        uint32_t failure = 0;
+        if (!launch_user_elf(fat_stub_elf, fat_stub_elf_size, entry, stage,
+                             failure)) {
+            result.stage = stage;
+            result.failure = 250 + failure;
+            return false;
+        }
+        const uint64_t fat_exit = syscall::session().exit_code;
+        syscall::clear_session();
+        if (fat_exit != 42) {
+            result.failure = 245;
+            result.exit_code = fat_exit;
+            return false;
+        }
+        result.fat_ok = 1;
+    }
+    result.stage = 8;
+
+    // M261/M266: HARD already spawned disk/as → disk/t.o; keep mini-as as
+    // capacity plant (disk/mini_as) without overwriting the driver CLI.
+    {
+        const int64_t mfd = fs::open_path(
+            "disk/mini_as", fs::o_wronly | fs::o_creat | fs::o_trunc, 0755);
+        if (mfd < 0) {
+            result.failure = 260;
+            return false;
+        }
+        if (fs::write_fd(static_cast<uint32_t>(mfd), mini_as_elf,
+                         mini_as_elf_size) !=
+            static_cast<int64_t>(mini_as_elf_size)) {
+            (void)fs::close_fd(static_cast<uint32_t>(mfd));
+            result.failure = 261;
+            return false;
+        }
+        if (fs::close_fd(static_cast<uint32_t>(mfd)) != 0) {
+            result.failure = 262;
+            return false;
+        }
+        cxcfs::MountResult as_remount{};
+        if (!cxcfs::remount(as_remount)) {
+            result.failure = 266;
+            return false;
+        }
+        // Re-run as_stub against driver disk/as (CLI) → refresh disk/t.o.
+        uint64_t entry = 0;
+        uint32_t stage = 0;
+        uint32_t failure = 0;
+        if (!launch_user_elf(as_stub_elf, as_stub_elf_size, entry, stage,
+                             failure)) {
+            result.stage = stage;
+            result.failure = 270 + failure;
+            return false;
+        }
+        const uint64_t as_exit = syscall::session().exit_code;
+        syscall::clear_session();
+        if (as_exit != 0) {
+            result.failure = 267;
+            result.exit_code = as_exit;
+            return false;
+        }
+        const int64_t tofd = fs::open_path("disk/t.o", fs::o_rdonly, 0);
+        if (tofd < 0) {
+            result.failure = 268;
+            return false;
+        }
+        unsigned char hdr[20]{};
+        const int64_t got =
+            fs::read_fd(static_cast<uint32_t>(tofd), hdr, sizeof(hdr));
+        (void)fs::close_fd(static_cast<uint32_t>(tofd));
+        if (got < 20 || hdr[0] != 0x7f || hdr[1] != 'E' || hdr[2] != 'L' ||
+            hdr[3] != 'F' || hdr[16] != 1 || hdr[17] != 0) {
+            result.failure = 269;
+            return false;
+        }
+        result.as_ok = 1;
+    }
+    result.stage = 9;
+
+    // M262: bridge plant — verify on-disk ET_REL bytes (not open-only / BSS write).
+    {
+        if (tcap_bridge_elf_size < 20 || tcap_bridge_elf[0] != 0x7f ||
+            tcap_bridge_elf[1] != 'E' || tcap_bridge_elf[2] != 'L' ||
+            tcap_bridge_elf[3] != 'F' || tcap_bridge_elf[16] != 1) {
+            result.failure = 283;
+            return false;
+        }
+        const int64_t bfd = fs::open_path("disk/tcap_br.o", fs::o_rdonly, 0);
+        if (bfd < 0) {
+            result.failure = 280;
+            return false;
+        }
+        unsigned char hdr[20]{};
+        const int64_t got =
+            fs::read_fd(static_cast<uint32_t>(bfd), hdr, sizeof(hdr));
+        (void)fs::close_fd(static_cast<uint32_t>(bfd));
+        if (got < 20 || hdr[0] != 0x7f || hdr[1] != 'E' || hdr[2] != 'L' ||
+            hdr[3] != 'F' || hdr[16] != 1 || hdr[17] != 0) {
+            result.failure = 281;
+            return false;
+        }
+        result.bridge_ok = 1;
+    }
+
+    // Derive capacity / driver flags from evidence only — no volatile BSS paint.
+    result.tcap = (result.fat_ok == 1 && result.as_ok == 1 &&
+                   result.bridge_ok == 1)
+                      ? 1u
+                      : 0u;
+    result.tdrv = (result.spawn_as == 4 && result.spawn_ld == 1) ? 1u : 0u;
+    result.ccdrv = (result.wrote_pass == 1 && result.edge_ok == 1 &&
+                    result.tcap == 1 && result.tdrv == 1 &&
+                    result.spawn_cc >= 1)
+                       ? 1u
+                       : 0u;
+    result.stage = 10;
+    if (result.ccdrv != 1) {
+        result.failure = 290;
+        result_out = result;
+        return false;
+    }
+    result_out = result;
     return true;
 }
 

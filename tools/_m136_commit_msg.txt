@@ -1,0 +1,4 @@
+feat: M135-136 musl kit expand ONBOX_MKIT_PASS (v2.26.0)
+
+Raise CC_* / elflink caps; MERG links atoi/scmp/labs/dig; strlen via io only.
+Evidence WMSG:MK + ONBOX_MKIT_PASS + edge:1 + peer_ok=1.

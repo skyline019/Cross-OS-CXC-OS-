@@ -1,0 +1,4 @@
+feat: M132 char truncate + const ONBOX_CHAR_PASS (v2.23.0)
+
+Frontend word-slot char with and-0xff store; const rejects reassign.
+Evidence WMSG:CH + ONBOX_CHAR_PASS + edge:1 + peer_ok=1.

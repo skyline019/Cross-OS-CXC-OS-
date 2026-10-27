@@ -1,0 +1,4 @@
+feat: M128 multi-as + .rodata/lea ONBOX_ASRO_PASS (v2.19.0)
+
+cxc-as gains .rodata/.asciz/lea; main assembles lib.s+msg.s; msg() from
+as-rodata feeds string-kit. Evidence WMSG:RO + ONBOX_ASRO_PASS + edge:1 + peer_ok=1.

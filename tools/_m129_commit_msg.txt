@@ -1,0 +1,4 @@
+feat: M129 on-box mini-ld as+link.rsp ONBOX_LD_PASS (v2.20.0)
+
+cxc-ld links ET_REL objs from link.rsp with CRT to ET_EXEC; as builds
+main.s+lib.s. Evidence WMSG:LD + ONBOX_LD_PASS + edge:1 + peer_ok=1.

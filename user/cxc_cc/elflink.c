@@ -9,11 +9,15 @@ enum {
     SHT_PROGBITS = 1,
     SHT_SYMTAB = 2,
     SHT_RELA = 4,
+    SHT_NOBITS = 8,
+    SHF_WRITE = 1,
     SHF_ALLOC = 2,
     SHF_EXECINSTR = 4,
+    R_X86_64_64 = 1,
     R_X86_64_PC32 = 2,
     R_X86_64_PLT32 = 4,
     R_X86_64_32 = 10,
+    R_X86_64_32S = 11,
     R_X86_64_GOTPCREL = 41,
     CC_FAIL_ELF = 20,
     CC_FAIL_UND = 21,
@@ -203,6 +207,13 @@ static int patch_at(CcEmit* em, size_t p_at, size_t s_at, long long r_add,
     long long disp;
     unsigned long long absva;
     char got_name[CC_IDENT_MAX + 1];
+    if (r_type == R_X86_64_64) {
+        /* M152: absolute 64-bit VA (quad load targets). */
+        absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at +
+                (unsigned long long)r_add;
+        w64(em->code + p_at, absva);
+        return 0;
+    }
     if (r_type == R_X86_64_32) {
         absva = (unsigned long long)CC_LOAD_VA + (unsigned long long)s_at +
                 (unsigned long long)r_add;
@@ -282,16 +293,18 @@ int cc_import_elf(CcEmit* em, const char* path) {
     size_t tex_base[CC_TEXT_SEC_MAX];
     int sec_tex[64];
     int ntex = 0;
-    unsigned rodata_i = 0;
-    unsigned rodata_off = 0;
-    unsigned rodata_sz = 0;
-    int have_rodata = 0;
+    enum { CC_DSEC_MAX = 12 };
+    unsigned d_off[CC_DSEC_MAX];
+    unsigned d_sz[CC_DSEC_MAX];
+    int d_kind[CC_DSEC_MAX]; /* 1=ro 2=rw 3=bss */
+    size_t d_base[CC_DSEC_MAX];
+    int sec_data[64];
+    int ndsec = 0;
     unsigned rela_off[CC_RELA_SEC_MAX];
     unsigned rela_sz[CC_RELA_SEC_MAX];
     unsigned rela_entsz[CC_RELA_SEC_MAX];
     unsigned rela_info[CC_RELA_SEC_MAX];
     int nrela_sec = 0;
-    size_t rodata_base = 0;
     const char* strbase;
     int si;
     if (!em || !path || cc_read_source(path, (char*)buf, sizeof(buf), &n) !=
@@ -321,6 +334,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
     }
     for (si = 0; si < 64; si++) {
         sec_tex[si] = -1;
+        sec_data[si] = -1;
     }
     for (i = 0; i < shnum; i++) {
         const unsigned char* sh = buf + shoff + i * shentsize;
@@ -357,12 +371,25 @@ int cc_import_elf(CcEmit* em, const char* path) {
             tex_sz[ntex] = sz;
             sec_tex[i] = ntex;
             ntex++;
-        } else if (typ == SHT_PROGBITS && (flags & SHF_ALLOC) &&
-                   !(flags & SHF_EXECINSTR) && sz > 0 && !have_rodata) {
-            rodata_i = i;
-            rodata_off = off;
-            rodata_sz = sz;
-            have_rodata = 1;
+        } else if ((typ == SHT_PROGBITS || typ == SHT_NOBITS) &&
+                   (flags & SHF_ALLOC) && !(flags & SHF_EXECINSTR) && sz > 0) {
+            int kind;
+            if (ndsec >= CC_DSEC_MAX || i >= 64) {
+                em->fail_code = CC_FAIL_ELF;
+                return -1;
+            }
+            if (typ == SHT_NOBITS) {
+                kind = 3;
+            } else if (flags & SHF_WRITE) {
+                kind = 2;
+            } else {
+                kind = 1;
+            }
+            d_off[ndsec] = off;
+            d_sz[ndsec] = sz;
+            d_kind[ndsec] = kind;
+            sec_data[i] = ndsec;
+            ndsec++;
         } else if (typ == SHT_RELA) {
             if (nrela_sec >= CC_RELA_SEC_MAX) {
                 em->fail_code = CC_FAIL_ELF;
@@ -394,10 +421,17 @@ int cc_import_elf(CcEmit* em, const char* path) {
             return -1;
         }
     }
-    if (have_rodata) {
-        if (rodata_sz > 1024 || rodata_off > n || n - rodata_off < rodata_sz) {
+    for (si = 0; si < ndsec; si++) {
+        /* M252: hard_stubs heap / deep rodata may exceed legacy 4KiB. */
+        if (d_sz[si] > (unsigned)CC_DATA_MAX) {
             em->fail_code = CC_FAIL_ELF;
             return -1;
+        }
+        if (d_kind[si] != 3) {
+            if (d_off[si] > n || n - d_off[si] < d_sz[si]) {
+                em->fail_code = CC_FAIL_ELF;
+                return -1;
+            }
         }
     }
     for (si = 0; si < nrela_sec; si++) {
@@ -411,7 +445,7 @@ int cc_import_elf(CcEmit* em, const char* path) {
         }
     }
 
-    /* Place all non-empty EXECINSTR sections, then .rodata. */
+    /* Place all non-empty EXECINSTR sections, then RO/RW/BSS data. */
     for (si = 0; si < ntex; si++) {
         tex_base[si] = em->code_len;
         cc_emit_bytes(em, buf + tex_off[si], tex_sz[si]);
@@ -420,9 +454,14 @@ int cc_import_elf(CcEmit* em, const char* path) {
             return -1;
         }
     }
-    if (have_rodata) {
-        rodata_base = em->code_len;
-        cc_emit_bytes(em, buf + rodata_off, rodata_sz);
+    for (si = 0; si < ndsec; si++) {
+        if (d_kind[si] == 1) {
+            d_base[si] = cc_ro_push(em, buf + d_off[si], d_sz[si]);
+        } else if (d_kind[si] == 2) {
+            d_base[si] = cc_data_push(em, buf + d_off[si], d_sz[si]);
+        } else {
+            d_base[si] = cc_bss_bump(em, d_sz[si]);
+        }
         if (em->failed) {
             em->fail_code = CC_FAIL_ELF;
             return -1;
@@ -437,7 +476,8 @@ int cc_import_elf(CcEmit* em, const char* path) {
         int apply_slot;
         unsigned apply_sz;
         size_t apply_base;
-        if (nrela > 64) {
+        /* M254: full HARD probe main.o has ~80 PLT32/PC32 relocs. */
+        if (nrela > 256) {
             em->fail_code = CC_FAIL_RELOC;
             return -1;
         }
@@ -464,8 +504,9 @@ int cc_import_elf(CcEmit* em, const char* path) {
             size_t p_at;
             size_t s_at;
             int tslot;
-            if (r_type != R_X86_64_PC32 && r_type != R_X86_64_PLT32 &&
-                r_type != R_X86_64_32 && r_type != R_X86_64_GOTPCREL) {
+            if (r_type != R_X86_64_64 && r_type != R_X86_64_PC32 &&
+                r_type != R_X86_64_PLT32 && r_type != R_X86_64_32 &&
+                r_type != R_X86_64_32S && r_type != R_X86_64_GOTPCREL) {
                 em->fail_code = CC_FAIL_RELOC;
                 return -1;
             }
@@ -486,12 +527,43 @@ int cc_import_elf(CcEmit* em, const char* path) {
                     return -1;
                 }
                 s_at = tex_base[tslot] + (size_t)t_val;
-            } else if (have_rodata && t_shndx == rodata_i) {
-                if (t_val > rodata_sz) {
+            } else if (t_shndx < 64 && sec_data[t_shndx] >= 0) {
+                int dslot = sec_data[t_shndx];
+                if (t_val > d_sz[dslot]) {
                     em->fail_code = CC_FAIL_RELOC;
                     return -1;
                 }
-                s_at = rodata_base + (size_t)t_val;
+                /* Defer PC-relative data fixups to cc_build_elf (data VA page).
+                   ET_REL lea uses section sym + addend (data_off-4); named
+                   syms use st_value + addend -4. Normalize to tagged data_off. */
+                if (r_type == R_X86_64_PC32 || r_type == R_X86_64_PLT32 ||
+                    r_type == R_X86_64_GOTPCREL) {
+                    size_t base = d_base[dslot];
+                    size_t tagged = base + (size_t)t_val;
+                    long long norm = (long long)tagged + r_add + 4;
+                    if (norm < 0) {
+                        em->fail_code = CC_FAIL_RELOC;
+                        return -1;
+                    }
+                    cc_reloc_add(p_at, (size_t)norm);
+                    continue;
+                }
+                if (r_type == R_X86_64_32 || r_type == R_X86_64_32S) {
+                    size_t base = d_base[dslot];
+                    size_t tagged = base + (size_t)t_val;
+                    long long norm = (long long)tagged + r_add;
+                    if (norm < 0) {
+                        em->fail_code = CC_FAIL_RELOC;
+                        return -1;
+                    }
+                    cc_reloc_add_abs(p_at, (size_t)norm);
+                    continue;
+                }
+                if (r_type == R_X86_64_64) {
+                    em->fail_code = CC_FAIL_RELOC;
+                    return -1;
+                }
+                s_at = d_base[dslot] + (size_t)t_val;
             } else if (t_shndx == 0) {
                 if (copy_ident(ident, strbase, strsz, t_name_off) != 0) {
                     em->fail_code = CC_FAIL_UND;
@@ -529,7 +601,10 @@ int cc_import_elf(CcEmit* em, const char* path) {
         int fi;
         int tslot;
         size_t entry;
-        if (bind != 1 || type != 2 || shndx >= 64 || sec_tex[shndx] < 0) {
+        /* STB_GLOBAL=1 / STB_WEAK=2. STT_FUNC=2; also STT_NOTYPE=0 for musl
+         * text aliases (e.g. __memcpy_fwd HIDDEN NOTYPE at memcpy). */
+        if ((bind != 1 && bind != 2) || (type != 2 && type != 0) ||
+            shndx >= 64 || sec_tex[shndx] < 0) {
             continue;
         }
         tslot = sec_tex[shndx];

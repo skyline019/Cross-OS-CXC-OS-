@@ -1,0 +1,4 @@
+feat: M99 mini-cc fn call/recursion ONBOX_FUNC_PASS (v1.0.0)
+
+Add function definitions and calls (nested + recursive) to on-box
+cxc-cc; keep edge reject and host arity/unknown-symbol strict tests.

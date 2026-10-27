@@ -69,6 +69,8 @@ static void set_kw_or_ident(CcLexer* lx) {
         lx->tok = TOK_KW_VOID;
     } else if (strcmp(lx->text, "char") == 0) {
         lx->tok = TOK_KW_CHAR;
+    } else if (strcmp(lx->text, "long") == 0) {
+        lx->tok = TOK_KW_LONG;
     } else if (strcmp(lx->text, "const") == 0) {
         lx->tok = TOK_KW_CONST;
     } else if (strcmp(lx->text, "unsigned") == 0) {
@@ -240,6 +242,9 @@ void cc_lex_next(CcLexer* lx) {
         } else if (lx->pos < lx->len && lx->src[lx->pos] == '-') {
             lx->pos++;
             lx->tok = TOK_MINUSMINUS;
+        } else if (lx->pos < lx->len && lx->src[lx->pos] == '>') {
+            lx->pos++;
+            lx->tok = TOK_ARROW;
         } else {
             lx->tok = TOK_MINUS;
         }

@@ -31,9 +31,9 @@ FIRMWARE_CANDIDATES = [
 ]
 
 # M75+: second disk for virtio-blk / CXCFS (sector 0 magic CXCBLK01).
-# M88: 16 MiB so 64×128 KiB file extents fit with headroom.
+# M88: 16 MiB; M252: 20 MiB; M255: 128 MiB shared pool (4 MiB/file × 256 inodes).
 VIRTIO_BLK_MAGIC = b"CXCBLK01"
-VIRTIO_BLK_BYTES = 16 * 1024 * 1024
+VIRTIO_BLK_BYTES = 128 * 1024 * 1024
 
 
 def ensure_virtio_blk_image(path: Path) -> Path:
@@ -71,7 +71,8 @@ def main() -> int:
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--check", action="store_true", help="wait for serial and network evidence")
     parser.add_argument("--expect", default="CXC_OS_SELF_TEST_PASS")
-    parser.add_argument("--memory", default="128M", help="QEMU guest RAM size, e.g. 64M or 256M")
+    # M255: 128 MiB virtio-blk + 4 MiB exec image + raised heaps need headroom.
+    parser.add_argument("--memory", default="256M", help="QEMU guest RAM size, e.g. 64M or 256M")
     parser.add_argument("--cpu", default="qemu64", help="QEMU CPU model/properties")
     parser.add_argument("--cpus", type=int, default=4, help="guest CPU count (1-16); default: 4")
     parser.add_argument("--no-edu", action="store_true", help="do not attach QEMU's EDU device")
@@ -130,8 +131,8 @@ def main() -> int:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=60.0,
-        help="seconds to wait for serial/network evidence (M14 stress needs ~60s)",
+        default=180.0,
+        help="seconds to wait for serial/network evidence (M260 fat I/O needs ~180s)",
     )
     arguments = parser.parse_args()
 

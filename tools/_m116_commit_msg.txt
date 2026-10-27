@@ -1,0 +1,4 @@
+feat: M116 mini-cc host-gcc .rodata+UND ONBOX_HUND_PASS (v2.7.0)
+
+Link real gcc ET_REL with .rodata (R_X86_64_32) and UND strlen/cwrite
+into io.elf; WMSG:HG from host object. Evidence ONBOX_HUND_PASS.

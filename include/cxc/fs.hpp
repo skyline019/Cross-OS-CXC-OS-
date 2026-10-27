@@ -26,16 +26,17 @@ constexpr uint8_t dt_unknown = 0;
 constexpr uint8_t dt_dir = 4;
 constexpr uint8_t dt_reg = 8;
 
-constexpr size_t max_path = 48;
+// M257–M259: path/fd/pipe raised for toolchain argv and deep trees.
+constexpr size_t max_path = 255;
 constexpr size_t max_file_bytes = 4096;
 // M87: more inodes for nested toolchain trees (was 16).
 constexpr size_t max_files = 32;
 constexpr size_t max_getdents = 4096;
 constexpr uint32_t fd_stdout = 1;
 constexpr uint32_t fd_table_begin = 3;
-constexpr uint32_t fd_table_end = 16;
+constexpr uint32_t fd_table_end = 64;
 constexpr uint32_t max_pipes = 4;
-constexpr size_t pipe_capacity = 256;
+constexpr size_t pipe_capacity = 4096;
 
 // Linux x86-64 kernel `struct stat` (syscall ABI).
 struct StatBuf {

@@ -1,0 +1,4 @@
+feat: M117 mini-cc dual host-gcc #lib ONBOX_H2O_PASS (v2.8.0)
+
+Plant math.o (add) + host.o (bump→add, cwrite); cross-#lib UND.
+Evidence WMSG:H2 + ONBOX_H2O_PASS.

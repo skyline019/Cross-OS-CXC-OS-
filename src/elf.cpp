@@ -22,8 +22,8 @@ constexpr uint32_t pf_x = 1;
 constexpr uint32_t pf_w = 2;
 constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
 constexpr size_t max_phnum = 8;
-// M89: match CXCFS 128 KiB ceiling so disk/ toolchain ELFs can execve.
-constexpr size_t max_image = 128 * 1024;
+// M260: match CXCFS 4 MiB ceiling for fat toolchain ELFs.
+constexpr size_t max_image = 4u * 1024u * 1024u;
 
 struct Ehdr {
     uint8_t ident[16];
@@ -87,13 +87,25 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
             return false;
         }
     }
-    if (header.ident[4] != 2 || header.ident[5] != 1 || header.ident[6] != 1 ||
-        header.type != et_exec || header.machine != em_x86_64 ||
-        header.version != 1 || header.ehsize != sizeof(Ehdr) ||
-        header.phentsize != sizeof(Phdr) || header.phnum == 0 ||
-        header.phnum > max_phnum || header.entry == 0 ||
-        header.entry >= user_canonical_limit) {
-        result.failure = 4;
+    if (header.ident[4] != 2 || header.ident[5] != 1 || header.ident[6] != 1) {
+        result.failure = 40;
+        return false;
+    }
+    if (header.type != et_exec || header.machine != em_x86_64 ||
+        header.version != 1) {
+        result.failure = 41;
+        return false;
+    }
+    if (header.ehsize != sizeof(Ehdr) || header.phentsize != sizeof(Phdr)) {
+        result.failure = 42;  // packed sizeof mismatch vs file
+        return false;
+    }
+    if (header.phnum == 0 || header.phnum > max_phnum) {
+        result.failure = 43;
+        return false;
+    }
+    if (header.entry == 0 || header.entry >= user_canonical_limit) {
+        result.failure = 44;
         return false;
     }
 
@@ -128,17 +140,37 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
         }
         if (ph.filesz > ph.memsz || ph.vaddr == 0 ||
             ph.vaddr >= user_canonical_limit ||
+            ph.vaddr + ph.memsz < ph.vaddr ||
             ph.vaddr + ph.memsz > user_canonical_limit ||
-            (ph.vaddr & (pmm::page_size - 1)) != 0 ||
             ph.offset > image_size ||
             image_size - ph.offset < ph.filesz) {
             result.failure = 8;
             return false;
         }
 
-        uint64_t mapped = 0;
-        while (mapped < ph.memsz) {
-            const uint64_t page_va = ph.vaddr + mapped;
+        // M260: real musl-static ELFs use unaligned PT_LOAD (e.g. 0x403fd0).
+        const uint64_t seg_lo = ph.vaddr;
+        const uint64_t seg_hi = ph.vaddr + ph.memsz;
+        const uint64_t page_lo = seg_lo & ~(pmm::page_size - 1);
+        const uint64_t page_hi =
+            (seg_hi + pmm::page_size - 1) & ~(pmm::page_size - 1);
+        const uint64_t file_hi = seg_lo + ph.filesz;
+
+        uint64_t map_flags = 0;
+        if ((ph.flags & pf_w) != 0) {
+            map_flags |= vmm::user_map_writable;
+        }
+        if ((ph.flags & pf_x) != 0) {
+            map_flags |= vmm::user_map_executable;
+        }
+        if ((map_flags & vmm::user_map_writable) != 0 &&
+            (map_flags & vmm::user_map_executable) != 0) {
+            result.failure = 10;
+            return false;
+        }
+
+        for (uint64_t page_va = page_lo; page_va < page_hi;
+             page_va += pmm::page_size) {
             const uint64_t physical = pmm::allocate_pages(1);
             if (physical == 0) {
                 result.failure = 9;
@@ -148,27 +180,16 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
                 pmm::physical_to_virtual(physical));
             memset(page, 0, pmm::page_size);
 
-            if (mapped < ph.filesz) {
-                const uint64_t file_left = ph.filesz - mapped;
-                const size_t copy = static_cast<size_t>(
-                    file_left < pmm::page_size ? file_left : pmm::page_size);
-                memcpy(page, image + ph.offset + mapped, copy);
+            const uint64_t copy_lo = page_va > seg_lo ? page_va : seg_lo;
+            const uint64_t copy_hi = (page_va + pmm::page_size) < file_hi
+                                        ? (page_va + pmm::page_size)
+                                        : file_hi;
+            if (copy_lo < copy_hi) {
+                memcpy(page + (copy_lo - page_va),
+                       image + ph.offset + (copy_lo - seg_lo),
+                       static_cast<size_t>(copy_hi - copy_lo));
             }
 
-            uint64_t map_flags = 0;
-            if ((ph.flags & pf_w) != 0) {
-                map_flags |= vmm::user_map_writable;
-            }
-            if ((ph.flags & pf_x) != 0) {
-                map_flags |= vmm::user_map_executable;
-            }
-            // Readable is implied; reject W+X for the thin slice.
-            if ((map_flags & vmm::user_map_writable) != 0 &&
-                (map_flags & vmm::user_map_executable) != 0) {
-                pmm::free_pages(physical, 1);
-                result.failure = 10;
-                return false;
-            }
             if (!vmm::map_user_page(user_root_physical, page_va, physical,
                                     map_flags)) {
                 pmm::free_pages(physical, 1);
@@ -176,7 +197,6 @@ bool load_static_et_exec(uint64_t user_root_physical, const uint8_t* image,
                 return false;
             }
             ++result.pages;
-            mapped += pmm::page_size;
         }
         ++load_count;
     }

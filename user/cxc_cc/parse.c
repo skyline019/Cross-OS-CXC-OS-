@@ -39,15 +39,21 @@ static int accept_type_ex(CcParser* p, int* is_char, int* is_const) {
             *is_const = 1;
         }
     }
-    (void)accept(p, TOK_KW_UNSIGNED); /* width ignored; word slots */
-    if (accept(p, TOK_KW_CHAR)) {
-        if (is_char) {
-            *is_char = 1;
+    {
+        int saw_unsigned = accept(p, TOK_KW_UNSIGNED);
+        if (accept(p, TOK_KW_CHAR)) {
+            if (is_char) {
+                *is_char = 1;
+            }
+            return 1;
         }
-        return 1;
-    }
-    if (accept(p, TOK_KW_INT)) {
-        return 1;
+        if (accept(p, TOK_KW_INT) || accept(p, TOK_KW_LONG)) {
+            return 1;
+        }
+        /* M159: bare `unsigned` ≡ unsigned int (word slot). */
+        if (saw_unsigned) {
+            return 1;
+        }
     }
     if (p->lx->tok == TOK_IDENT &&
         cc_typedef_find(p->em, p->lx->text) >= 0) {
@@ -62,12 +68,21 @@ static int accept_type(CcParser* p) {
 }
 
 static int is_type_tok(CcParser* p) {
-    if (p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_CHAR ||
-        p->lx->tok == TOK_KW_CONST || p->lx->tok == TOK_KW_UNSIGNED) {
+    if (p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_LONG ||
+        p->lx->tok == TOK_KW_CHAR || p->lx->tok == TOK_KW_CONST ||
+        p->lx->tok == TOK_KW_UNSIGNED || p->lx->tok == TOK_KW_VOID) {
         return 1;
     }
     return p->lx->tok == TOK_IDENT &&
            cc_typedef_find(p->em, p->lx->text) >= 0;
+}
+
+static void emit_add_rax_imm(CcEmit* em, int bytes) {
+    if (bytes == 0) {
+        return;
+    }
+    cc_emit_bytes(em, "\x48\x05", 2); /* add rax, imm32 */
+    cc_emit_u32(em, (unsigned)bytes);
 }
 
 static void emit_trunc_char(CcEmit* em) {
@@ -279,7 +294,36 @@ static void parse_primary(CcParser* p) {
         }
         if (accept(p, TOK_DOT)) {
             int off;
-            if (p->lx->tok != TOK_IDENT || p->em->locals[idx].stype < 0) {
+            if (p->lx->tok != TOK_IDENT || p->em->locals[idx].stype < 0 ||
+                p->em->locals[idx].is_ptr) {
+                fail(p);
+                return;
+            }
+            {
+                int width;
+                char fname[CC_IDENT_MAX + 1];
+                off = cc_struct_field(p->em, p->em->locals[idx].stype,
+                                     p->lx->text);
+                if (off < 0) {
+                    fail(p);
+                    return;
+                }
+                memcpy(fname, p->lx->text, CC_IDENT_MAX + 1);
+                width = cc_struct_field_size(p->em, p->em->locals[idx].stype,
+                                             fname);
+                cc_lex_next(p->lx);
+                /* M248: compact byte offset from struct base slot. */
+                cc_emit_load_local_bytes(p->em, p->em->locals[idx].slot, off,
+                                         width > 0 ? width : 8);
+                return;
+            }
+        }
+        if (accept(p, TOK_ARROW)) {
+            int off;
+            int width;
+            char fname[CC_IDENT_MAX + 1];
+            if (p->lx->tok != TOK_IDENT || p->em->locals[idx].stype < 0 ||
+                !p->em->locals[idx].is_ptr) {
                 fail(p);
                 return;
             }
@@ -288,8 +332,17 @@ static void parse_primary(CcParser* p) {
                 fail(p);
                 return;
             }
+            memcpy(fname, p->lx->text, CC_IDENT_MAX + 1);
+            width = cc_struct_field_size(p->em, p->em->locals[idx].stype, fname);
             cc_lex_next(p->lx);
-            cc_emit_load_local(p->em, p->em->locals[idx].slot + off);
+            cc_emit_load_local(p->em, p->em->locals[idx].slot);
+            /* Stack locals: higher field → lower address; off is bytes. */
+            emit_add_rax_imm(p->em, -off);
+            cc_emit_load_indirect_width(p->em, width > 0 ? width : 8);
+            return;
+        }
+        if (p->em->locals[idx].stype >= 0 && !p->em->locals[idx].is_ptr) {
+            fail(p);
             return;
         }
         if (p->em->locals[idx].count != 1) {
@@ -339,7 +392,7 @@ static void parse_addr_of(CcParser* p) {
             return;
         }
         cc_lex_next(p->lx);
-        cc_emit_lea_local(p->em, p->em->locals[idx].slot + off);
+        cc_emit_lea_local_bytes(p->em, p->em->locals[idx].slot, off);
         return;
     }
     if (accept(p, TOK_LBRACK)) {
@@ -350,6 +403,11 @@ static void parse_addr_of(CcParser* p) {
         parse_expr(p);
         expect(p, TOK_RBRACK);
         cc_emit_index_lea(p->em, p->em->locals[idx].slot);
+        return;
+    }
+    /* M140: &struct_value → address of first field / object. */
+    if (p->em->locals[idx].stype >= 0 && !p->em->locals[idx].is_ptr) {
+        cc_emit_lea_local(p->em, p->em->locals[idx].slot);
         return;
     }
     if (p->em->locals[idx].count != 1) {
@@ -382,22 +440,52 @@ static void parse_unary(CcParser* p) {
         return;
     }
     if (accept(p, TOK_KW_SIZEOF)) {
+        /* M150/M159: sizeof(char)==1, sizeof(T*|void*)==8, int/long==8. */
         unsigned sz = 8;
+        int is_char = 0;
         expect(p, TOK_LPAREN);
-        if (accept_type(p)) {
+        if (accept(p, TOK_KW_VOID)) {
+            if (!accept(p, TOK_STAR)) {
+                fail(p); /* sizeof(void) illegal */
+                return;
+            }
+            while (accept(p, TOK_STAR)) {
+            }
             sz = 8;
-        } else if (p->lx->tok == TOK_IDENT) {
-            int st = cc_struct_find(p->em, p->lx->text);
-            if (st >= 0) {
-                sz = (unsigned)(p->em->structs[st].nfields * 8);
-                cc_lex_next(p->lx);
+        } else if (accept_type_ex(p, &is_char, 0)) {
+            if (accept(p, TOK_STAR)) {
+                sz = 8;
+                while (accept(p, TOK_STAR)) {
+                    /* multi-level pointer still word-sized */
+                }
+            } else if (is_char) {
+                sz = 1;
             } else {
-                parse_expr(p);
                 sz = 8;
             }
+        } else if (p->lx->tok == TOK_IDENT) {
+            int st = cc_struct_find(p->em, p->lx->text);
+            int li;
+            if (st >= 0) {
+                sz = (unsigned)p->em->structs[st].ssize;
+                cc_lex_next(p->lx);
+            } else if ((li = cc_local_find(p->em, p->lx->text)) >= 0) {
+                /* sizeof(local): char→1 else word; arrays = count*8. */
+                if (p->em->locals[li].is_char && !p->em->locals[li].is_ptr) {
+                    sz = 1;
+                } else if (p->em->locals[li].count > 1) {
+                    sz = (unsigned)(p->em->locals[li].count * 8);
+                } else {
+                    sz = 8;
+                }
+                cc_lex_next(p->lx);
+            } else {
+                fail(p); /* unknown ident in sizeof */
+                return;
+            }
         } else {
-            parse_expr(p);
-            sz = 8;
+            fail(p); /* illegal sizeof operand */
+            return;
         }
         expect(p, TOK_RPAREN);
         cc_emit_mov_eax_imm(p->em, sz);
@@ -601,6 +689,7 @@ static void parse_stmt(CcParser* p) {
     }
     if (accept(p, TOK_STAR)) {
         char name[CC_IDENT_MAX + 1];
+        int idx;
         int slot;
         if (p->lx->tok != TOK_IDENT) {
             fail(p);
@@ -609,8 +698,18 @@ static void parse_stmt(CcParser* p) {
         memcpy(name, p->lx->text, CC_IDENT_MAX + 1);
         cc_lex_next(p->lx);
         expect(p, TOK_ASSIGN);
-        slot = cc_local_slot(p->em, name, 0);
-        if (slot < 0) {
+        idx = cc_local_find(p->em, name);
+        if (idx < 0) {
+            fail(p);
+            return;
+        }
+        /* M140: reject deref-assign of struct values (non-pointers). */
+        if (p->em->locals[idx].stype >= 0 && !p->em->locals[idx].is_ptr) {
+            fail(p);
+            return;
+        }
+        slot = p->em->locals[idx].slot;
+        if (p->em->locals[idx].count != 1) {
             fail(p);
             return;
         }
@@ -944,9 +1043,23 @@ static void parse_stmt(CcParser* p) {
         int slot;
         int is_char = 0;
         int is_const = 0;
-        if (!accept_type_ex(p, &is_char, &is_const)) {
+        int is_ptr = 0;
+        /* M159/M171: void-star / T-star / multi-level pointer locals. */
+        if (accept(p, TOK_KW_VOID)) {
+            if (!accept(p, TOK_STAR)) {
+                fail(p);
+                return;
+            }
+            is_ptr = 1;
+            while (accept(p, TOK_STAR)) {
+            }
+        } else if (!accept_type_ex(p, &is_char, &is_const)) {
             fail(p);
             return;
+        } else if (accept(p, TOK_STAR)) {
+            is_ptr = 1;
+            while (accept(p, TOK_STAR)) {
+            }
         }
         if (p->lx->tok != TOK_IDENT) {
             fail(p);
@@ -965,13 +1078,14 @@ static void parse_stmt(CcParser* p) {
             }
             idx = cc_local_find(p->em, name);
             if (idx >= 0) {
-                p->em->locals[idx].is_char = is_char;
+                p->em->locals[idx].is_char = is_ptr ? 0 : is_char;
+                p->em->locals[idx].is_ptr = is_ptr;
             }
             return;
         }
         if (accept(p, TOK_LBRACK)) {
             long dim;
-            if (is_const || is_char) {
+            if (is_const || is_char || is_ptr) {
                 fail(p);
                 return;
             }
@@ -1002,12 +1116,13 @@ static void parse_stmt(CcParser* p) {
                 fail(p);
                 return;
             }
-            p->em->locals[idx].is_char = is_char;
+            p->em->locals[idx].is_char = is_ptr ? 0 : is_char;
             p->em->locals[idx].is_const = is_const;
+            p->em->locals[idx].is_ptr = is_ptr;
             slot = p->em->locals[idx].slot;
             parse_expr(p);
             expect(p, TOK_SEMI);
-            if (is_char) {
+            if (is_char && !is_ptr) {
                 emit_trunc_char(p->em);
             }
             cc_emit_store_local(p->em, slot);
@@ -1033,6 +1148,11 @@ static void parse_stmt(CcParser* p) {
         st = cc_struct_find(p->em, name);
         if (st >= 0) {
             char inst[CC_IDENT_MAX + 1];
+            int is_ptr = 0;
+            int li;
+            if (accept(p, TOK_STAR)) {
+                is_ptr = 1;
+            }
             if (p->lx->tok != TOK_IDENT) {
                 fail(p);
                 return;
@@ -1040,9 +1160,25 @@ static void parse_stmt(CcParser* p) {
             memcpy(inst, p->lx->text, CC_IDENT_MAX + 1);
             cc_lex_next(p->lx);
             expect(p, TOK_SEMI);
-            if (cc_local_define_st(p->em, inst, p->em->structs[st].nfields,
-                                   st) < 0) {
-                fail(p);
+            if (is_ptr) {
+                if (cc_local_define_st(p->em, inst, 1, st) < 0) {
+                    fail(p);
+                    return;
+                }
+                li = cc_local_find(p->em, inst);
+                if (li < 0) {
+                    fail(p);
+                    return;
+                }
+                p->em->locals[li].is_ptr = 1;
+            } else {
+                int words = (p->em->structs[st].ssize + 7) / 8;
+                if (words < 1) {
+                    words = 1;
+                }
+                if (cc_local_define_st(p->em, inst, words, st) < 0) {
+                    fail(p);
+                }
             }
             return;
         }
@@ -1125,7 +1261,38 @@ static void parse_stmt(CcParser* p) {
             int off;
             idx = cc_local_find(p->em, name);
             if (idx < 0 || p->em->locals[idx].stype < 0 ||
-                p->lx->tok != TOK_IDENT) {
+                p->em->locals[idx].is_ptr || p->lx->tok != TOK_IDENT) {
+                fail(p);
+                return;
+            }
+            {
+                int width;
+                char fname[CC_IDENT_MAX + 1];
+                off = cc_struct_field(p->em, p->em->locals[idx].stype,
+                                     p->lx->text);
+                if (off < 0) {
+                    fail(p);
+                    return;
+                }
+                memcpy(fname, p->lx->text, CC_IDENT_MAX + 1);
+                width = cc_struct_field_size(p->em, p->em->locals[idx].stype,
+                                             fname);
+                cc_lex_next(p->lx);
+                expect(p, TOK_ASSIGN);
+                parse_expr(p);
+                expect(p, TOK_SEMI);
+                cc_emit_store_local_bytes(p->em, p->em->locals[idx].slot, off,
+                                          width > 0 ? width : 8);
+                return;
+            }
+        }
+        if (accept(p, TOK_ARROW)) {
+            int off;
+            int width;
+            char fname[CC_IDENT_MAX + 1];
+            idx = cc_local_find(p->em, name);
+            if (idx < 0 || p->em->locals[idx].stype < 0 ||
+                !p->em->locals[idx].is_ptr || p->lx->tok != TOK_IDENT) {
                 fail(p);
                 return;
             }
@@ -1134,11 +1301,18 @@ static void parse_stmt(CcParser* p) {
                 fail(p);
                 return;
             }
+            memcpy(fname, p->lx->text, CC_IDENT_MAX + 1);
+            width = cc_struct_field_size(p->em, p->em->locals[idx].stype, fname);
             cc_lex_next(p->lx);
             expect(p, TOK_ASSIGN);
+            cc_emit_load_local(p->em, p->em->locals[idx].slot);
+            /* Stack locals: higher field → lower address; off is bytes. */
+            emit_add_rax_imm(p->em, -off);
+            cc_emit_push_rax(p->em);
             parse_expr(p);
             expect(p, TOK_SEMI);
-            cc_emit_store_local(p->em, p->em->locals[idx].slot + off);
+            cc_emit_pop_rcx(p->em);
+            cc_emit_store_indirect_width(p->em, width > 0 ? width : 8);
             return;
         }
         if (accept(p, TOK_LBRACK)) {
@@ -1256,9 +1430,15 @@ static void clear_locals(CcEmit* em) {
 }
 
 static void parse_typedef_def(CcParser* p) {
+    /* M150: typedef [unsigned] (int|long|char) name; — size_t alias etc. */
     char name[CC_IDENT_MAX + 1];
     expect(p, TOK_KW_TYPEDEF);
-    expect(p, TOK_KW_INT);
+    (void)accept(p, TOK_KW_UNSIGNED);
+    if (!accept(p, TOK_KW_INT) && !accept(p, TOK_KW_LONG) &&
+        !accept(p, TOK_KW_CHAR)) {
+        fail(p);
+        return;
+    }
     if (p->lx->tok != TOK_IDENT) {
         fail(p);
         return;
@@ -1460,10 +1640,24 @@ static void parse_struct_def(CcParser* p) {
     }
     st->name[n] = 0;
     st->nfields = 0;
+    st->ssize = 0;
     cc_lex_next(p->lx);
     expect(p, TOK_LBRACE);
     while (!p->em->failed && p->lx->tok != TOK_RBRACE && p->lx->tok != TOK_EOF) {
         size_t fn;
+        int width = 8;
+        int is_char = 0;
+        int off;
+        int align;
+        /* M248: compact foffs from fsizes + natural align (char1 / word8). */
+        (void)accept(p, TOK_KW_UNSIGNED);
+        if (accept(p, TOK_KW_CHAR)) {
+            is_char = 1;
+            width = 1;
+        } else {
+            (void)accept(p, TOK_KW_INT);
+            (void)accept(p, TOK_KW_LONG);
+        }
         if (p->lx->tok != TOK_IDENT || st->nfields >= CC_STRUCT_FIELDS) {
             fail(p);
             return;
@@ -1474,6 +1668,18 @@ static void parse_struct_def(CcParser* p) {
             fn++;
         }
         st->fields[st->nfields][fn] = 0;
+        align = width >= 8 ? 8 : width;
+        if (align < 1) {
+            align = 1;
+        }
+        off = st->ssize;
+        if (align > 1) {
+            off = (off + align - 1) & ~(align - 1);
+        }
+        st->fsizes[st->nfields] = width;
+        st->foffs[st->nfields] = off;
+        st->ssize = off + width;
+        (void)is_char;
         st->nfields++;
         cc_lex_next(p->lx);
         expect(p, TOK_SEMI);
@@ -1483,6 +1689,23 @@ static void parse_struct_def(CcParser* p) {
     if (st->nfields < 1) {
         fail(p);
         return;
+    }
+    /* Final size: align up to max field align (≤8). */
+    {
+        int max_align = 1;
+        int fi;
+        for (fi = 0; fi < st->nfields; fi++) {
+            int a = st->fsizes[fi] >= 8 ? 8 : st->fsizes[fi];
+            if (a > max_align) {
+                max_align = a;
+            }
+        }
+        if (max_align > 1) {
+            st->ssize = (st->ssize + max_align - 1) & ~(max_align - 1);
+        }
+        if (st->ssize < 1) {
+            st->ssize = 1;
+        }
     }
     p->em->nstructs++;
 }
@@ -1599,11 +1822,11 @@ static void parse_defs(CcParser* p) {
     int guard = 0;
     while (!p->em->failed &&
            (p->lx->tok == TOK_KW_FN || p->lx->tok == TOK_KW_STRUCT ||
-            p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_CHAR ||
-            p->lx->tok == TOK_KW_CONST || p->lx->tok == TOK_KW_UNSIGNED ||
-            p->lx->tok == TOK_KW_ENUM || p->lx->tok == TOK_KW_EXTERN ||
-            p->lx->tok == TOK_KW_IMPORT || p->lx->tok == TOK_KW_TYPEDEF ||
-            p->lx->tok == TOK_KW_VOID ||
+            p->lx->tok == TOK_KW_INT || p->lx->tok == TOK_KW_LONG ||
+            p->lx->tok == TOK_KW_CHAR || p->lx->tok == TOK_KW_CONST ||
+            p->lx->tok == TOK_KW_UNSIGNED || p->lx->tok == TOK_KW_ENUM ||
+            p->lx->tok == TOK_KW_EXTERN || p->lx->tok == TOK_KW_IMPORT ||
+            p->lx->tok == TOK_KW_TYPEDEF || p->lx->tok == TOK_KW_VOID ||
             (p->lx->tok == TOK_IDENT &&
              cc_typedef_find(p->em, p->lx->text) >= 0))) {
         if (++guard > 64) {
@@ -1679,14 +1902,17 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
     static CcEmit em;
     static unsigned char code_buf[CC_CODE_MAX];
     static unsigned char data_buf[CC_DATA_MAX];
+    static unsigned char ro_buf[CC_DATA_MAX];
     static char expanded[CC_SRC_MAX];
 
     g_last_fail_code = 0;
     memset(&em, 0, sizeof(em));
     em.code_cap = CC_CODE_MAX;
     em.data_cap = CC_DATA_MAX;
+    em.ro_cap = CC_DATA_MAX;
     em.code = code_buf;
     em.data = data_buf;
+    em.ro = ro_buf;
     em.code_len = 0;
     em.data_len = 0;
     em.nlocals = 0;
@@ -1842,10 +2068,10 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
                     em.failed = 1;
                     break;
                 }
+                /* Allow int/long/char locals in script body (M140 long). */
                 if (lx.tok == TOK_KW_FN || lx.tok == TOK_KW_STRUCT ||
-                    lx.tok == TOK_KW_INT || lx.tok == TOK_KW_ENUM ||
-                    lx.tok == TOK_KW_EXTERN || lx.tok == TOK_KW_IMPORT ||
-                    lx.tok == TOK_KW_TYPEDEF) {
+                    lx.tok == TOK_KW_ENUM || lx.tok == TOK_KW_EXTERN ||
+                    lx.tok == TOK_KW_IMPORT || lx.tok == TOK_KW_TYPEDEF) {
                     em.failed = 1;
                     break;
                 }

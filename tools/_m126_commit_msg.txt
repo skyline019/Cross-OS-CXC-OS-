@@ -1,0 +1,4 @@
+feat: M126 musl strcat+strchr string-kit ONBOX_SKIT_PASS (v2.17.0)
+
+Link strcat→strlen/strcpy/__stpcpy and strchr→__strchrnul; multi-hop UND.
+Evidence WMSG:SK + ONBOX_SKIT_PASS + edge:1 + peer_ok=1.

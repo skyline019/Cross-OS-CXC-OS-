@@ -1,0 +1,4 @@
+feat: M130 ld+musl string kit ONBOX_LDLIB_PASS (v2.21.0)
+
+Raise CC_* caps; link.rsp chains as+musl string+io; strlen via as UND.
+Evidence WMSG:LL + ONBOX_LDLIB_PASS + edge:1 + peer_ok=1.

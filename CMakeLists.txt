@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.26.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.80.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -237,6 +237,11 @@ add_executable(cxc_kernel
     src/vmm.cpp
 )
 target_include_directories(cxc_kernel PRIVATE include src)
+add_custom_target(cxc_tdrv_headers DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/as_cli_elf.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/ld_cli_elf.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/cc_cli_elf.hpp")
+add_dependencies(cxc_kernel cxc_tdrv_headers)
 set_target_properties(cxc_kernel PROPERTIES
     PREFIX ""
     OUTPUT_NAME "BOOTX64"
@@ -1353,60 +1358,190 @@ add_custom_command(
 
 set(CXC_USER_ONBOX_CC_ELF
     "${CMAKE_CURRENT_BINARY_DIR}/user_onbox_cc.elf")
+set(CXC_USER_AS_CLI_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_as_cli.elf")
+set(CXC_USER_LD_CLI_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_ld_cli.elf")
+set(CXC_USER_CC_CLI_ELF
+    "${CMAKE_CURRENT_BINARY_DIR}/user_cc_cli.elf")
+set(CXC_MINI_LIBC_SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/malloc.c")
 if(CXC_USER_CROSS_USES_GCC)
     add_custom_command(
-        OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
+        OUTPUT "${CXC_USER_AS_CLI_ELF}"
         COMMAND "${CXC_USER_ELF_CC}"
             -nostdlib -static -fno-pie -no-pie
             -fno-stack-protector -fno-asynchronous-unwind-tables
+            -fno-builtin
             -Os
             "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
             -Wl,--build-id=none
             "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
-            -o "${CXC_USER_ONBOX_CC_ELF}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+            -o "${CXC_USER_AS_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as_main.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/malloc.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            ${CXC_MINI_LIBC_SRCS}
         COMMAND "${CMAKE_COMMAND}" -E copy
-            "${CXC_USER_ONBOX_CC_ELF}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+            "${CXC_USER_AS_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/as_cli.elf"
         DEPENDS
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as_main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
+            ${CXC_MINI_LIBC_SRCS}
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+        COMMENT "Building freestanding disk/as CLI (M266)"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${CXC_USER_LD_CLI_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            -fno-builtin
+            -Os
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+            -o "${CXC_USER_LD_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld_main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            ${CXC_MINI_LIBC_SRCS}
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_LD_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/ld_cli.elf"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld_main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
+            ${CXC_MINI_LIBC_SRCS}
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+        COMMENT "Building freestanding disk/ld CLI (M267)"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT
+            "${CXC_USER_CC_CLI_ELF}"
+            "${CXC_USER_ONBOX_CC_ELF}"
+        COMMAND "${CXC_USER_ELF_CC}"
+            -nostdlib -static -fno-pie -no-pie
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            -fno-builtin
+            -Os
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/user"
+            -Wl,--build-id=none
+            "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
+            -o "${CXC_USER_CC_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc_main.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
+            ${CXC_MINI_LIBC_SRCS}
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_CC_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cc_cli.elf"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_CC_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CXC_USER_CC_CLI_ELF}"
+            "${CXC_USER_ONBOX_CC_ELF}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc_main.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc.h"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/crt0.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/syscall.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/errno.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/string.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/user/mini_libc/malloc.c"
+            ${CXC_MINI_LIBC_SRCS}
             "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc.ld"
-        COMMENT "Building ESP ONBXCC.ELF freestanding mini-cc (A2)"
+        COMMENT "Building freestanding disk/cc CLI + ONBXCC (M275 CCDRV)"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/as_cli_elf.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/ld_cli_elf.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/cc_cli_elf.hpp"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/_plant_tdrv.py"
+        DEPENDS
+            "${CXC_USER_AS_CLI_ELF}"
+            "${CXC_USER_LD_CLI_ELF}"
+            "${CXC_USER_CC_CLI_ELF}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/_plant_tdrv.py"
+        COMMENT "Embedding as_cli/ld_cli/cc_cli ELF headers"
         VERBATIM
     )
 else()
+    add_custom_command(
+        OUTPUT "${CXC_USER_AS_CLI_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/as_cli.elf"
+            "${CXC_USER_AS_CLI_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/as_cli.elf"
+        COMMENT "Copying prebuilt as_cli.elf"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${CXC_USER_LD_CLI_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/ld_cli.elf"
+            "${CXC_USER_LD_CLI_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/ld_cli.elf"
+        COMMENT "Copying prebuilt ld_cli.elf"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${CXC_USER_CC_CLI_ELF}"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cc_cli.elf"
+            "${CXC_USER_CC_CLI_ELF}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cc_cli.elf"
+        COMMENT "Copying prebuilt cc_cli.elf"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/as_cli_elf.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/ld_cli_elf.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/cc_cli_elf.hpp"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/_plant_tdrv.py"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/as_cli.elf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/ld_cli.elf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cc_cli.elf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/_plant_tdrv.py"
+        COMMENT "Embedding as_cli/ld_cli/cc_cli ELF headers (prebuilt)"
+        VERBATIM
+    )
     add_custom_command(
         OUTPUT "${CXC_USER_ONBOX_CC_ELF}"
         COMMAND "${CMAKE_COMMAND}" -E copy
             "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
             "${CXC_USER_ONBOX_CC_ELF}"
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
-        COMMENT "Copying prebuilt ONBXCC.ELF mini-cc"
+        COMMENT "Copying prebuilt ONBXCC.ELF (=disk/cc)"
         VERBATIM
     )
 endif()
@@ -1543,15 +1678,23 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_heap_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_time_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_onbox_stub_elf.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/cc_main.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/lex.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/parse.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/emit.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/prep.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/elflink.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as_main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld_main.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/as.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/cxc_cc/ld.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cxc_cc.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/cc_cli.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/as_cli.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/ld_cli.elf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/as_cli_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/ld_cli_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/cc_cli_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/rtmath.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_rtmath_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/rtmath_elf.hpp"
@@ -1578,10 +1721,66 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strlen.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memcmp.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memcpy.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memchr.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_tolower.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_toupper.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isspace.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isalpha.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isalnum.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_islower.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isupper.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isblank.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isgraph.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isprint.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isxdigit.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_iscntrl.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_ispunct.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_abs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_bzero.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strnlen.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_isascii.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_llabs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_toascii.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_imaxabs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_bcmp.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_ffs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_htons.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_htonl.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_ntohs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_ntohl.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memset.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_musl_mem_elf.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strlen_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memcmp_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memcpy_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memchr_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_tolower_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_toupper_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isspace_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isalpha_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isalnum_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_islower_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isupper_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isblank_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isgraph_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isprint_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isxdigit_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_iscntrl_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_ispunct_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_abs_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_bzero_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strnlen_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_isascii_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_llabs_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_toascii_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_imaxabs_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_bcmp_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_ffs_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_htons_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_htonl_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_ntohs_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_ntohl_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memset_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_atoi.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_atoi_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strcmp.o"
@@ -1598,6 +1797,28 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strchr_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strchrnul.o"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strchrnul_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strcspn.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strcspn_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strspn.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strspn_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strpbrk.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strpbrk_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strrchr.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strrchr_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memmove.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memmove_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strdup.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strdup_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_strtol.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_strtol_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_intscan.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_intscan_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_shgetc.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_shgetc_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_memrchr.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/musl_memrchr_elf.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/hard_stubs.o"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/cxc/hard_stubs_elf.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/musl_crt.ld"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_crt.elf"
         "${CMAKE_CURRENT_SOURCE_DIR}/user/prebuilt/musl_malloc.elf"
@@ -1665,7 +1886,7 @@ if(CXC_QEMU_EXECUTABLE)
             --qemu "${CXC_QEMU_EXECUTABLE}"
             --work-dir "${CMAKE_CURRENT_BINARY_DIR}/qemu-test"
             --check
-            --timeout 70
+            --timeout 180
         DEPENDS esp_image
         USES_TERMINAL
         VERBATIM

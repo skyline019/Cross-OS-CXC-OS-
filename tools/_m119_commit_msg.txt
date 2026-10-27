@@ -1,0 +1,4 @@
+feat: M119 mini-cc musl labs.lo #lib ONBOX_MLAB_PASS (v2.10.0)
+
+Link real musl libc.a labs.lo (.text.labs); elflink skips empty .text.
+Evidence WMSG:ML + ONBOX_MLAB_PASS.

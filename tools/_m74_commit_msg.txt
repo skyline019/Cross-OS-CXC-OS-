@@ -1,0 +1,3 @@
+docs: M74 seventh midfield — large-stride + edge contract (v0.75.0)
+
+Lock post-musl-smoke posture: large strides toward block devices, mandatory debug hooks on big changes, and edge cases in the test contract with equal merge weight. Baseline M74 / v0.75.0; next midfield ~M84.

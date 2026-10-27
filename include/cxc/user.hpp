@@ -745,18 +745,29 @@ struct OnboxCcProbeResult {
     uint32_t exited;
     uint32_t wrote_pass;
     uint32_t edge_ok;
+    uint32_t fat_ok;     // M260: >1 MiB static ELF execve → 42
+    uint32_t as_ok;      // M261/M266: external as wrote ET_REL
+    uint32_t bridge_ok;  // M262: disk/tcap_br.o ET_REL verified on disk
+    uint32_t tcap;       // M264: fat+as+bridge all evidence-backed
+    uint32_t spawn_as;   // HARD-session execve("disk/as") from kernel audit
+    uint32_t spawn_ld;   // HARD-session execve("disk/ld") from kernel audit
+    uint32_t spawn_cc;   // HARD-session execve("disk/cc"|"disk/cxc-cc")
+    uint32_t tdrv;       // M274 kept: as/ld driver evidence subset
+    uint32_t ccdrv;      // M284: disk/cc argv driver + multi-.c evidence
     uint64_t exit_code;
+    uint32_t fat_bytes;
 };
 
-// M136/A2: expanded musl kit (atoi/scmp/labs/dig) → ONBOX_MKIT_PASS.
+// M284/CCDRV: disk/cc argv CLI → nested -c + as/ld → ONBOX_CCDRV_PASS.
 bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);
 const OnboxCcProbeResult& onbox_cc_probe_result();
 
-constexpr uint32_t max_exec_argc = 8;
-constexpr uint32_t max_exec_envc = 8;
-constexpr size_t max_exec_arg_bytes = 128;
+// M259: long argv/env for real toolchain drivers.
+constexpr uint32_t max_exec_argc = 64;
+constexpr uint32_t max_exec_envc = 64;
+constexpr size_t max_exec_arg_bytes = 1025;  // holds ≥1024 payload + NUL
 
 // Replace the current user image (syscall execve). Updates `frame` for iret.
 // `argv` may be null/empty → seed argc=1 argv[0]="musl" (launch default).

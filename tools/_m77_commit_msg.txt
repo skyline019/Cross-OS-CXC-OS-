@@ -1,0 +1,3 @@
+feat: M77 CXCFS durable disk/ root on virtio-blk (v0.78.0)
+
+Add on-disk CXCFS (format/mount/remount), route disk/* through existing open/read/write, and prove persistence across remount plus façade disk/user.txt. Advances A2 writable root without tearing down the block device.

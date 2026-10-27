@@ -1,0 +1,4 @@
+feat: M115 mini-cc #lib host-gcc ET_REL ONBOX_HOBJ_PASS (v2.6.0)
+
+Plant real gcc -c bump object; on-box links and calls it via #lib.
+Evidence WMSG:GH + DMSG/DHINT + ONBOX_HOBJ_PASS.

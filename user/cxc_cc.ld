@@ -1,4 +1,4 @@
-/* cxc-cc: keep .data/.bss above brk window (0x409000, 1 MiB) and mmap base. */
+/* cxc-cc: keep .data/.bss above brk/mmap/stack (M257 16 MiB windows). */
 ENTRY(_start)
 PHDRS {
   text PT_LOAD FLAGS(5);
@@ -15,8 +15,8 @@ SECTIONS {
     *(.rodata*)
     *(.rodata.*)
   } :rodata
-  /* brk @ 0x409000, mmap @ 0x600000, stack @ 0x800000; RW above all. */
-  . = 0x900000;
+  /* brk @ 0x409000 (16MiB), mmap @ 0x2000000, stack @ 0x3800000. */
+  . = 0x4000000;
   .data : {
     *(.data*)
     *(.data.*)

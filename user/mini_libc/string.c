@@ -29,6 +29,10 @@ int memcmp(const void* s1, const void* s2, size_t n) {
     return 0;
 }
 
+/* -Os without -fno-builtin can collapse this to `jmp strlen` (infinite). */
+#if defined(__GNUC__)
+__attribute__((noinline, optimize("O0")))
+#endif
 size_t strlen(const char* s) {
     size_t n = 0;
     while (s[n] != '\0') {

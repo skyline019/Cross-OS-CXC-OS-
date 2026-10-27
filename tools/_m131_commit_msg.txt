@@ -1,0 +1,4 @@
+feat: M131 as deferred-lea/branch ONBOX_ASDP_PASS (v2.22.0)
+
+Deepen cxc-as: deferred lea, .data/.bss/.zero, cmp/je/push/pop; host reject illegal asm.
+Evidence WMSG:AD + ONBOX_ASDP_PASS + edge:1 + peer_ok=1.

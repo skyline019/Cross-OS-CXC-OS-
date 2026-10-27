@@ -1,0 +1,4 @@
+feat: M134 midfield-13 chaos + MERG lock (v2.25.0)
+
+Add fixed-seed host toolchain chaos suite to CI/contract; write
+midpoint-assessment-13; keep ONBOX_MERG_PASS + edge:1 + peer_ok=1.

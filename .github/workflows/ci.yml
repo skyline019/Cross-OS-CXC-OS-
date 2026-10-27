@@ -73,7 +73,7 @@ jobs:
           python3 tools/contract_test.py --host-only
           --work-dir build/contract-host
 
-      - name: Host toolchain chaos (M134)
+      - name: Host toolchain chaos (M142)
         run: python3 tools/run_cc_chaos_test.py
 
       - name: Default qemu-test (PASS + peer_ok)
@@ -251,8 +251,8 @@ jobs:
           grep -F 'CAP_PASS' build/uefi/qemu-test/serial.log
           grep -F 'cap: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'bytes: 98304' build/uefi/qemu-test/serial.log
-          grep -F 'ceiling: 131072' build/uefi/qemu-test/serial.log
-          grep -F 'file_bytes: 131072' build/uefi/qemu-test/serial.log
+          grep -F 'ceiling: 4194304' build/uefi/qemu-test/serial.log
+          grep -F 'file_bytes: 4194304' build/uefi/qemu-test/serial.log
           grep -F 'LOAD128_PASS' build/uefi/qemu-test/serial.log
           grep -F 'load128: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'elf_bytes: 102400' build/uefi/qemu-test/serial.log
@@ -260,34 +260,35 @@ jobs:
           grep -F 'heap: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'brk_kib: 768' build/uefi/qemu-test/serial.log
           grep -F 'mmap_kib: 512' build/uefi/qemu-test/serial.log
-          grep -F 'ceiling_kib: 1024' build/uefi/qemu-test/serial.log
+          grep -F 'ceiling_kib: 16384' build/uefi/qemu-test/serial.log
           grep -F 'TIME_PASS' build/uefi/qemu-test/serial.log
           grep -F 'time: pass: 1' build/uefi/qemu-test/serial.log
           grep -F 'access: 1' build/uefi/qemu-test/serial.log
           grep -F 'clock: 1' build/uefi/qemu-test/serial.log
           grep -F 'gettimeofday: 1' build/uefi/qemu-test/serial.log
-          grep -F 'ONBOX_MKIT_PASS' build/uefi/qemu-test/serial.log
+          grep -F 'ONBOX_CCDRV_PASS' build/uefi/qemu-test/serial.log
           grep -F 'onbox-cc: pass: 1' build/uefi/qemu-test/serial.log
-          grep -F 'WMSG:MK' build/uefi/qemu-test/serial.log
+          grep -F 'WMSG:CD' build/uefi/qemu-test/serial.log
           grep -F 'NMSG:42' build/uefi/qemu-test/serial.log
           grep -F 'DMSG:21' build/uefi/qemu-test/serial.log
           grep -F 'DHINT:UND' build/uefi/qemu-test/serial.log
           grep -F 'exit: 42' build/uefi/qemu-test/serial.log
           grep -F 'write: 1' build/uefi/qemu-test/serial.log
-          grep -F 'mkit: 1' build/uefi/qemu-test/serial.log
-          grep -F 'edge: 1' build/uefi/qemu-test/serial.log
+          grep -F 'hard: 1' build/uefi/qemu-test/serial.log
+          grep -F 'fat: 1' build/uefi/qemu-test/serial.log
+          grep -F 'as: 1' build/uefi/qemu-test/serial.log
+          grep -F 'bridge: 1 tcap: 1 spawn_as: 4 spawn_ld: 1 spawn_cc: 3 tdrv: 1 ccdrv: 1 edge: 1' build/uefi/qemu-test/serial.log
           grep -F 'src: 1' build/uefi/qemu-test/serial.log
           grep -F 'cc: 1' build/uefi/qemu-test/serial.log
           grep -F 'run: 1' build/uefi/qemu-test/serial.log
+          grep -F 'fat_bytes: 1049088' build/uefi/qemu-test/serial.log
           grep -F 'peer_ok=1' build/uefi/qemu-test/network-peer.log
           grep -F 'udp_stress_replies_validated=256' \
             build/uefi/qemu-test/network-peer.log
 
       - name: Memory layout matrix
         run: |
-          # M88+: CXCFS 64×128 KiB cache grows BOOTX64; 64M no longer boots.
-          python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --memory 128M --work-dir build/qemu-128m
+          # M255+: 4 MiB exec image + 128 MiB virtio; floor 256M guest RAM.
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
             --check --memory 256M --work-dir build/qemu-256m
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
@@ -448,7 +449,7 @@ jobs:
           python3 tools/contract_test.py --host-only
           --work-dir build/contract-host
 
-      - name: Host toolchain chaos (M134)
+      - name: Host toolchain chaos (M142)
         shell: msys2 {0}
         run: python3 tools/run_cc_chaos_test.py
 

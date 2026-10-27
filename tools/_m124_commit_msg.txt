@@ -1,0 +1,4 @@
+feat: M124 strcpy→__stpcpy + midfield-12 ONBOX_SCPY_PASS (v2.15.0)
+
+Cross-#lib musl strcpy/__stpcpy UND + strncmp; twelfth midfield assessment.
+Evidence WMSG:CP + ONBOX_SCPY_PASS + edge:1 + peer_ok=1.

@@ -1,0 +1,4 @@
+feat: M108 mini-cc #lib R_X86_64_PC32 ONBOX_PC32_PASS (v1.9.0)
+
+Place whole ET_REL .text and apply PC32 so twice calls add in-lib;
+probe mac(twice(10),2,2)->42. Evidence WMSG:PC + ONBOX_PC32_PASS.

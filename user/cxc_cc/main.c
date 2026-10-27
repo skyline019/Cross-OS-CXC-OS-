@@ -1,9 +1,7 @@
-/* On-box CXC: as lib/msg/main.s; optional link.rsp→ld; else in.c→cc. */
+/* On-box CXC driver: spawn disk/as + disk/ld; optional in.c→cc edge path. */
 #include "cxc_cc/cc.h"
 #include "mini_libc/fcntl.h"
 #include "mini_libc/unistd.h"
-
-extern int execve(const char* path, char* const argv[], char* const envp[]);
 
 static int read_all(int fd, char* buf, size_t cap, size_t* out_n) {
     enum { CHUNK = 4096 };
@@ -146,118 +144,64 @@ static int compile_write(const char* in_path, const char* out_path, int obj) {
     return 0;
 }
 
+/* M266: no in-process as_compile — spawn disk/as. */
 static int assemble_write(const char* in_path, const char* out_path) {
-    static char src_buf[CC_SRC_MAX];
-    size_t src_len = 0;
-    unsigned char* elf = 0;
-    size_t elf_len = 0;
-    int fd = open(in_path, O_RDONLY, 0);
-    if (fd < 0) {
-        return -2;
+    char* argv[4];
+    int st;
+    /* Prove disk/as exists before spawn (maps to DMSG:41 if missing). */
+    {
+        int pfd = open("disk/as", O_RDONLY, 0);
+        if (pfd < 0) {
+            write_dmsg(41);
+            return -4;
+        }
+        close(pfd);
     }
-    if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
-        close(fd);
-        return -3;
-    }
-    close(fd);
-    src_buf[src_len] = 0;
-    if (as_compile(src_buf, src_len, &elf, &elf_len) != 0 || !elf ||
-        elf_len == 0) {
-        write_dmsg(as_last_fail_code());
+    argv[0] = (char*)"disk/as";
+    argv[1] = (char*)in_path;
+    argv[2] = (char*)out_path;
+    argv[3] = 0;
+    st = run_tool("disk/as", argv);
+    if (st != 0) {
+        /* Prefer concrete tool status when in 1..99; else ASM. */
+        if (st > 0 && st < 100) {
+            write_dmsg(st);
+        } else if (st < 0 && (-st) < 100) {
+            write_dmsg(-st);
+        } else {
+            write_dmsg(40);
+        }
         return -4;
-    }
-    fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        return -5;
-    }
-    if (write_all(fd, elf, elf_len) != 0) {
-        close(fd);
-        return -6;
-    }
-    if (close(fd) != 0) {
-        return -7;
     }
     return 0;
 }
 
-/* M129: parse disk/link.rsp (one path per line) → ld_link → out.elf. */
+/* M267: no in-process ld_link — spawn disk/ld. */
 static int link_rsp_write(const char* rsp_path, const char* out_path) {
-    static char rsp_buf[CC_SRC_MAX];
-    static char path_store[CC_LINK_MAX][CC_PATH_MAX];
-    static const char* paths[CC_LINK_MAX];
-    size_t rsp_len = 0;
-    unsigned char* elf = 0;
-    size_t elf_len = 0;
-    int npaths = 0;
-    size_t i = 0;
-    int fd = open(rsp_path, O_RDONLY, 0);
-    if (fd < 0) {
-        return -2;
-    }
-    if (read_all(fd, rsp_buf, CC_SRC_MAX - 1, &rsp_len) != 0) {
-        close(fd);
-        return -3;
-    }
-    close(fd);
-    rsp_buf[rsp_len] = 0;
-    while (i < rsp_len && npaths < CC_LINK_MAX) {
-        size_t start;
-        size_t len;
-        while (i < rsp_len &&
-               (rsp_buf[i] == ' ' || rsp_buf[i] == '\t' || rsp_buf[i] == '\r' ||
-                rsp_buf[i] == '\n')) {
-            i++;
-        }
-        if (i >= rsp_len) {
-            break;
-        }
-        if (rsp_buf[i] == '#' || rsp_buf[i] == ';') {
-            while (i < rsp_len && rsp_buf[i] != '\n') {
-                i++;
-            }
-            continue;
-        }
-        start = i;
-        while (i < rsp_len && rsp_buf[i] != '\n' && rsp_buf[i] != '\r') {
-            i++;
-        }
-        len = i - start;
-        while (len > 0 && (rsp_buf[start + len - 1] == ' ' ||
-                           rsp_buf[start + len - 1] == '\t')) {
-            len--;
-        }
-        if (len == 0 || len >= sizeof(path_store[0])) {
-            write_dmsg(50);
+    char* argv[4];
+    int st;
+    {
+        int pfd = open("disk/ld", O_RDONLY, 0);
+        if (pfd < 0) {
+            write_dmsg(42);
             return -4;
         }
-        {
-            size_t k;
-            for (k = 0; k < len; k++) {
-                path_store[npaths][k] = rsp_buf[start + k];
-            }
-            path_store[npaths][len] = 0;
+        close(pfd);
+    }
+    argv[0] = (char*)"disk/ld";
+    argv[1] = (char*)rsp_path;
+    argv[2] = (char*)out_path;
+    argv[3] = 0;
+    st = run_tool("disk/ld", argv);
+    if (st != 0) {
+        if (st > 0 && st < 100) {
+            write_dmsg(st);
+        } else if (st < 0 && (-st) < 100) {
+            write_dmsg(-st);
+        } else {
+            write_dmsg(50);
         }
-        paths[npaths] = path_store[npaths];
-        npaths++;
-    }
-    if (npaths < 1) {
-        write_dmsg(50);
         return -4;
-    }
-    if (ld_link(paths, npaths, &elf, &elf_len) != 0 || !elf || elf_len == 0) {
-        write_dmsg(ld_last_fail_code());
-        return -4;
-    }
-    fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
-    if (fd < 0) {
-        return -5;
-    }
-    if (write_all(fd, elf, elf_len) != 0) {
-        close(fd);
-        return -6;
-    }
-    if (close(fd) != 0) {
-        return -7;
     }
     return 0;
 }
@@ -293,7 +237,7 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    /* Assemble optional .s sources before link/cc. */
+    /* Assemble optional .s sources via external as before link/cc. */
     {
         int sfd = open("disk/lib.s", O_RDONLY, 0);
         if (sfd >= 0) {
@@ -325,8 +269,33 @@ int main(int argc, char** argv) {
             fail_rc(rc);
         }
     }
+    /* M269–M270: TCAP + multi-spawn soak .s → external as. */
+    {
+        int xfd = open("disk/x1.s", O_RDONLY, 0);
+        if (xfd >= 0) {
+            close(xfd);
+            rc = assemble_write("disk/x1.s", "disk/x1.o");
+            fail_rc(rc);
+        }
+    }
+    {
+        int xfd = open("disk/x2.s", O_RDONLY, 0);
+        if (xfd >= 0) {
+            close(xfd);
+            rc = assemble_write("disk/x2.s", "disk/x2.o");
+            fail_rc(rc);
+        }
+    }
+    {
+        int tfd = open("disk/t.s", O_RDONLY, 0);
+        if (tfd >= 0) {
+            close(tfd);
+            rc = assemble_write("disk/t.s", "disk/t.o");
+            fail_rc(rc);
+        }
+    }
 
-    /* M129: prefer disk/link.rsp → mini-ld; else in.c → cc. */
+    /* Prefer disk/link.rsp → external ld; else in.c → cc (edge path). */
     {
         int rfd = open("disk/link.rsp", O_RDONLY, 0);
         if (rfd >= 0) {

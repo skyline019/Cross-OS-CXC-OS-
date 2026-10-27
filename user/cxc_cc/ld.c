@@ -43,6 +43,7 @@ int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
     static CcEmit em;
     static unsigned char code_buf[CC_CODE_MAX];
     static unsigned char data_buf[CC_DATA_MAX];
+    static unsigned char ro_buf[CC_DATA_MAX];
     size_t jmp_entry;
     size_t entry_at;
     size_t main_at;
@@ -58,8 +59,10 @@ int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
     memset(&em, 0, sizeof(em));
     em.code = code_buf;
     em.data = data_buf;
+    em.ro = ro_buf;
     em.code_cap = CC_CODE_MAX;
     em.data_cap = CC_DATA_MAX;
+    em.ro_cap = CC_DATA_MAX;
     em.obj_mode = 0;
     cc_reloc_reset();
     cc_und_reset();
@@ -90,11 +93,17 @@ int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
     entry_at = em.code_len;
     patch_rel32(&em, jmp_entry, entry_at);
     cc_emit_prologue(&em);
+    /* M252: FS TCB so planted musl stack-protector (%fs:0x28) works. */
+    cc_emit_setup_fs_tcb(&em);
 
     if (find_export(&em, "main", &main_at) != 0) {
         g_ld_fail = LD_FAIL;
         return -1;
     }
+    /* SysV: at function entry rsp≡8 (mod 16). CRT push+even frame leaves
+     * rsp≡8 before call → main would see rsp≡0 and musl SSE (movaps) #GPs.
+     * Align so call pushes to rsp≡8 at main. */
+    cc_emit_bytes(&em, "\x48\x83\xE4\xF0", 4); /* and rsp, -16 */
     call_at = cc_emit_call_rel32(&em);
     patch_rel32(&em, call_at, main_at);
     cc_emit_bytes(&em, "\x89\xC3", 2); /* mov ebx, eax (status) */
@@ -102,7 +111,7 @@ int ld_link(const char* const* paths, int npaths, unsigned char** out_elf,
     cc_emit_bytes(&em, "\x89\xD8", 2); /* mov eax, ebx for NMSG */
     cc_emit_print_rax(&em);
     cc_emit_byte(&em, 0x5B); /* pop rbx */
-    cc_emit_write_lit2(&em, "MK");
+    cc_emit_write_lit2(&em, "CD");
     cc_emit_write_pass(&em);
     cc_emit_exit_rax(&em);
 

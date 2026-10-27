@@ -11,6 +11,18 @@ enum {
 /* Shared by ET_EXEC / ET_REL emitters (not re-entrant). */
 static unsigned char g_elf_buf[CC_CODE_MAX + CC_DATA_MAX + 256];
 
+/* Reloc: lea/PC32 or abs32 sites → data VA (declared early for seal). */
+typedef struct CcReloc {
+    size_t code_off;
+    size_t data_off;
+    int kind; /* 0=PC32, 1=ABS32 (R_X86_64_32/32S) */
+} CcReloc;
+
+enum { CC_RELOC_MAX = 512 }; /* M252: deep musl leaf reloc headroom */
+
+static CcReloc g_relocs[CC_RELOC_MAX];
+static int g_nrelocs;
+
 static void patch_rel32_local(CcEmit* em, size_t at, size_t target) {
     int rel = (int)(target - (at + 4));
     em->code[at] = (unsigned char)(rel);
@@ -50,6 +62,7 @@ int cc_local_define_st(CcEmit* em, const char* name, int count, int stype) {
     loc->stype = stype;
     loc->is_char = 0;
     loc->is_const = 0;
+    loc->is_ptr = 0;
     em->next_slot += count;
     em->nlocals++;
     return loc->slot;
@@ -100,7 +113,21 @@ int cc_struct_field(CcEmit* em, int stype, const char* field) {
     }
     for (i = 0; i < em->structs[stype].nfields; i++) {
         if (strcmp(em->structs[stype].fields[i], field) == 0) {
-            return i;
+            /* M248: compact layout offset shared with sizeof. */
+            return em->structs[stype].foffs[i];
+        }
+    }
+    return -1;
+}
+
+int cc_struct_field_size(CcEmit* em, int stype, const char* field) {
+    int i;
+    if (stype < 0 || stype >= em->nstructs) {
+        return -1;
+    }
+    for (i = 0; i < em->structs[stype].nfields; i++) {
+        if (strcmp(em->structs[stype].fields[i], field) == 0) {
+            return em->structs[stype].fsizes[i];
         }
     }
     return -1;
@@ -224,16 +251,125 @@ void cc_emit_i32(CcEmit* em, int v) {
     cc_emit_u32(em, (unsigned)v);
 }
 
-size_t cc_data_push(CcEmit* em, const void* p, size_t n) {
+void cc_data_set_sec(CcEmit* em, int sec) {
+    if (!em || em->failed) {
+        return;
+    }
+    if (sec < 1 || sec > 3) {
+        em->failed = 1;
+        return;
+    }
+    em->data_sec = sec;
+}
+
+size_t cc_ro_push(CcEmit* em, const void* p, size_t n) {
     size_t at;
-    if (em->failed || em->data_len + n > em->data_cap) {
+    if (em->failed || !em->ro || em->ro_len + n > em->ro_cap) {
         em->failed = 1;
         return 0;
     }
-    at = em->data_len;
-    memcpy(em->data + em->data_len, p, n);
-    em->data_len += n;
+    em->data_sec = 1;
+    at = em->ro_len; /* reloc/local offs = RO-local until seal */
+    memcpy(em->ro + em->ro_len, p, n);
+    em->ro_len += n;
     return at;
+}
+
+size_t cc_data_push(CcEmit* em, const void* p, size_t n) {
+    size_t at;
+    if (em->failed || !em->data || em->rw_len + n > em->data_cap) {
+        em->failed = 1;
+        return 0;
+    }
+    /* M252: allow more RW after .bss was seen (TCB/lit); BSS stays after seal. */
+    em->data_sec = 2;
+    /* RW staging uses high bit marker in returned offset until seal:
+       store as 0x80000000 | rw_off so seal can distinguish RO vs RW. */
+    at = (size_t)0x80000000u | em->rw_len;
+    memcpy(em->data + em->rw_len, p, n);
+    em->rw_len += n;
+    em->data_len = em->rw_len; /* legacy readers */
+    return at;
+}
+
+size_t cc_bss_bump(CcEmit* em, size_t n) {
+    size_t at;
+    if (em->failed || n == 0) {
+        return 0;
+    }
+    em->data_sec = 3;
+    /* BSS offs after sealed RO|RW */
+    at = (size_t)0xC0000000u | em->bss_len;
+    em->bss_len += n;
+    return at;
+}
+
+size_t cc_data_cur_off(CcEmit* em) {
+    if (!em) {
+        return 0;
+    }
+    if (em->data_sec == 3) {
+        return (size_t)0xC0000000u | em->bss_len;
+    }
+    if (em->data_sec == 1) {
+        return em->ro_len;
+    }
+    if (em->data_sec == 2) {
+        return (size_t)0x80000000u | em->rw_len;
+    }
+    return em->ro_len;
+}
+
+size_t cc_data_resolve_off(const CcEmit* em, size_t tagged) {
+    size_t ro;
+    size_t rw;
+    if (!em) {
+        return tagged;
+    }
+    ro = em->ro_len;
+    rw = em->sealed ? (em->data_len > ro ? em->data_len - ro : 0) : em->rw_len;
+    if (tagged & (size_t)0x80000000u) {
+        if (tagged & (size_t)0x40000000u) {
+            return ro + rw + (tagged & (size_t)0x3FFFFFFFu);
+        }
+        return ro + (tagged & (size_t)0x7FFFFFFFu);
+    }
+    return tagged;
+}
+
+int cc_data_seal(CcEmit* em) {
+    size_t i;
+    size_t need;
+    static unsigned char merge[CC_DATA_MAX];
+    if (!em || em->failed) {
+        return -1;
+    }
+    if (em->sealed) {
+        return 0;
+    }
+    need = em->ro_len + em->rw_len;
+    if (need > em->data_cap || need > sizeof(merge)) {
+        em->failed = 1;
+        return -1;
+    }
+    if (em->ro_len > 0) {
+        memcpy(merge, em->ro, em->ro_len);
+    }
+    if (em->rw_len > 0) {
+        memcpy(merge + em->ro_len, em->data, em->rw_len);
+    }
+    memcpy(em->data, merge, need);
+    em->data_len = need;
+    for (i = 0; (int)i < g_nrelocs; i++) {
+        g_relocs[i].data_off =
+            cc_data_resolve_off(em, g_relocs[i].data_off);
+    }
+    for (i = 0; i < (size_t)em->nglobals; i++) {
+        em->globals[i].data_off =
+            cc_data_resolve_off(em, em->globals[i].data_off);
+    }
+    em->sealed = 1;
+    return 0;
 }
 
 void cc_emit_mov_eax_imm(CcEmit* em, unsigned imm) {
@@ -284,6 +420,88 @@ void cc_emit_lea_local(CcEmit* em, int slot) {
     /* lea rax, [rbp - (slot+1)*8] */
     cc_emit_bytes(em, "\x48\x8D\x85", 3);
     cc_emit_i32(em, -((slot + 1) * 8));
+}
+
+void cc_emit_lea_local_bytes(CcEmit* em, int slot, int byte_off) {
+    /* lea rax, [rbp - (slot+1)*8 - byte_off] — compact field addr */
+    cc_emit_bytes(em, "\x48\x8D\x85", 3);
+    cc_emit_i32(em, -((slot + 1) * 8 + byte_off));
+}
+
+void cc_emit_load_local_bytes(CcEmit* em, int slot, int byte_off, int width) {
+    int disp = -((slot + 1) * 8 + byte_off);
+    if (width == 1) {
+        cc_emit_bytes(em, "\x0F\xB6\x85", 3); /* movzbl rax, byte [rbp+disp] */
+        cc_emit_i32(em, disp);
+        return;
+    }
+    cc_emit_bytes(em, "\x48\x8B\x85", 3); /* mov rax, [rbp+disp] */
+    cc_emit_i32(em, disp);
+}
+
+void cc_emit_store_local_bytes(CcEmit* em, int slot, int byte_off, int width) {
+    int disp = -((slot + 1) * 8 + byte_off);
+    if (width == 1) {
+        cc_emit_bytes(em, "\x88\x85", 2); /* mov [rbp+disp], al */
+        cc_emit_i32(em, disp);
+        return;
+    }
+    cc_emit_bytes(em, "\x48\x89\x85", 3); /* mov [rbp+disp], rax */
+    cc_emit_i32(em, disp);
+}
+
+void cc_emit_load_indirect_width(CcEmit* em, int width) {
+    if (width == 1) {
+        cc_emit_bytes(em, "\x0F\xB6\x00", 3); /* movzbl eax, byte [rax] */
+        return;
+    }
+    cc_emit_bytes(em, "\x48\x8B\x00", 3); /* mov rax, [rax] */
+}
+
+void cc_emit_store_indirect_width(CcEmit* em, int width) {
+    /* value in rax, address in rcx */
+    if (width == 1) {
+        cc_emit_bytes(em, "\x88\x01", 2); /* mov [rcx], al */
+        return;
+    }
+    cc_emit_bytes(em, "\x48\x89\x01", 3); /* mov [rcx], rax */
+}
+
+void cc_emit_setup_fs_tcb(CcEmit* em) {
+    /* M252: 64-byte RW TCB with canary at +0x28; arch_prctl(ARCH_SET_FS). */
+    static const unsigned char z64[64];
+    size_t tcb;
+    size_t lea_at;
+    unsigned char can[8];
+    int i;
+    enum { SYS_ARCH_PRCTL = 158, ARCH_SET_FS = 0x1002 };
+    tcb = cc_data_push(em, z64, 64);
+    if (em->failed) {
+        return;
+    }
+    can[0] = 0xc1;
+    can[1] = 0xf4;
+    can[2] = 0x42;
+    can[3] = 0x42;
+    can[4] = 0xde;
+    can[5] = 0xad;
+    can[6] = 0xbe;
+    can[7] = 0xef;
+    (void)i;
+    /* Store canary by emitting runtime stores before arch_prctl. */
+    cc_emit_bytes(em, "\x48\x8D\x3D", 3); /* lea rdi, tcb(%rip) */
+    lea_at = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_reloc_add(lea_at, tcb);
+    /* movabs rax, canary; mov [rdi+0x28], rax */
+    cc_emit_bytes(em, "\x48\xB8", 2);
+    cc_emit_bytes(em, can, 8);
+    cc_emit_bytes(em, "\x48\x89\x47\x28", 4);
+    /* arch_prctl(ARCH_SET_FS, tcb): eax=158, edi=0x1002, rsi=tcb */
+    cc_emit_bytes(em, "\x48\x89\xFE", 3); /* mov rsi, rdi */
+    cc_emit_mov_edi_imm(em, ARCH_SET_FS);
+    cc_emit_mov_eax_imm(em, SYS_ARCH_PRCTL);
+    cc_emit_int80(em);
 }
 
 void cc_emit_index_load(CcEmit* em, int base_slot) {
@@ -385,17 +603,6 @@ size_t cc_emit_call_rel32(CcEmit* em) {
     return at;
 }
 
-/* Reloc: lea rsi sites → data VA */
-typedef struct CcReloc {
-    size_t code_off; /* offset of disp32 after 48 8D 35 */
-    size_t data_off;
-} CcReloc;
-
-enum { CC_RELOC_MAX = 64 };
-
-static CcReloc g_relocs[CC_RELOC_MAX];
-static int g_nrelocs;
-
 void cc_reloc_reset(void) {
     g_nrelocs = 0;
 }
@@ -418,6 +625,17 @@ void cc_reloc_add(size_t code_off, size_t data_off) {
     }
     g_relocs[g_nrelocs].code_off = code_off;
     g_relocs[g_nrelocs].data_off = data_off;
+    g_relocs[g_nrelocs].kind = 0;
+    g_nrelocs++;
+}
+
+void cc_reloc_add_abs(size_t code_off, size_t data_off) {
+    if (g_nrelocs >= CC_RELOC_MAX) {
+        return;
+    }
+    g_relocs[g_nrelocs].code_off = code_off;
+    g_relocs[g_nrelocs].data_off = data_off;
+    g_relocs[g_nrelocs].kind = 1;
     g_nrelocs++;
 }
 
@@ -427,6 +645,15 @@ void cc_emit_lea_data(CcEmit* em, size_t data_off) {
     lea_disp_at = em->code_len;
     cc_emit_i32(em, 0);
     cc_reloc_add(lea_disp_at, data_off);
+}
+
+/* M148: mov name(%rip), %rax — load qword via rip-relative reloc. */
+void cc_emit_mov_data(CcEmit* em, size_t data_off) {
+    size_t disp_at;
+    cc_emit_bytes(em, "\x48\x8B\x05", 3); /* mov rax, [rip+disp] */
+    disp_at = em->code_len;
+    cc_emit_i32(em, 0);
+    cc_reloc_add(disp_at, data_off);
 }
 
 void cc_emit_load_global(CcEmit* em, size_t data_off) {
@@ -476,7 +703,7 @@ void cc_emit_write_lit2(CcEmit* em, const char* lit) {
 }
 
 void cc_emit_write_pass(CcEmit* em) {
-    static const char pass[] = "ONBOX_MKIT_PASS\n";
+    static const char pass[] = "ONBOX_CCDRV_PASS\n";
     size_t data_at = cc_data_push(em, pass, sizeof(pass) - 1);
     size_t lea_disp_at;
     cc_emit_mov_eax_imm(em, SYS_WRITE);
@@ -628,34 +855,63 @@ void cc_emit_exit_rax(CcEmit* em) {
 
 int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     const size_t ehdr = 64;
-    const size_t phdr = 56;
-    const size_t file_off = ehdr + phdr;
-    size_t body_len;
-    size_t data_file_off;
+    const size_t phdr_ent = 56;
+    const size_t page = 4096;
+    size_t ro_len;
+    size_t rw_len;
+    int have_ro;
+    int have_rw;
+    int phnum;
+    size_t phdrs;
+    size_t file_off;
+    size_t ro_file_off;
+    size_t rw_file_off;
     size_t total;
-    size_t memsz;
+    size_t code_va_span;
+    size_t ro_va_span;
+    size_t ro_va;
+    size_t rw_va;
     unsigned char* elf;
     size_t i;
     int rel;
+    int ph = 0;
 
     if (em->failed) {
         return -1;
     }
-    body_len = em->code_len + em->data_len;
-    data_file_off = file_off + em->code_len;
-    total = file_off + body_len;
-    memsz = (total + 4095u) & ~4095u;
-    if (memsz < 4096) {
-        memsz = 4096;
+    if (cc_data_seal(em) != 0 || em->failed) {
+        return -1;
     }
-    /* Cap emitted ELF so a static buffer can hold it (ehdr+phdr+code+data). */
+    ro_len = em->ro_len;
+    if (ro_len > em->data_len) {
+        ro_len = em->data_len;
+    }
+    rw_len = em->data_len - ro_len;
+    have_ro = ro_len > 0 ? 1 : 0;
+    have_rw = (rw_len > 0 || em->bss_len > 0) ? 1 : 0;
+    /* M245: RX + optional R rodata + optional RW data/bss */
+    phnum = 1 + have_ro + have_rw;
+    phdrs = (size_t)phnum * phdr_ent;
+    file_off = ehdr + phdrs;
+    ro_file_off = file_off + em->code_len;
+    rw_file_off = ro_file_off + ro_len;
+    total = file_off + em->code_len + em->data_len;
+    code_va_span = (em->code_len + page - 1) & ~(page - 1);
+    if (code_va_span == 0) {
+        code_va_span = page;
+    }
+    ro_va = (size_t)CC_LOAD_VA + code_va_span;
+    ro_va_span = have_ro ? ((ro_len + page - 1) & ~(page - 1)) : 0;
+    if (have_ro && ro_va_span == 0) {
+        ro_va_span = page;
+    }
+    rw_va = ro_va + ro_va_span;
     if (total > sizeof(g_elf_buf)) {
         return -1;
     }
     elf = g_elf_buf;
     memset(elf, 0, total);
 
-    /* ELF64 header */
     elf[0] = 0x7f;
     elf[1] = 'E';
     elf[2] = 'L';
@@ -663,11 +919,9 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     elf[4] = 2;
     elf[5] = 1;
     elf[6] = 1;
-    /* e_type=2 ET_EXEC, e_machine=62 */
     elf[16] = 2;
     elf[18] = 62;
-    elf[20] = 1; /* version */
-    /* e_entry — use ull so host Win32 builds don't trip -Wshift-count-overflow */
+    elf[20] = 1;
     {
         unsigned long long entry = (unsigned long long)CC_LOAD_VA;
         size_t o = 24;
@@ -680,30 +934,21 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         elf[o + 6] = (unsigned char)(entry >> 48);
         elf[o + 7] = (unsigned char)(entry >> 56);
     }
-    /* e_phoff = 64 */
     elf[32] = 64;
-    /* e_ehsize=64, e_phentsize=56, e_phnum=1 */
     elf[52] = 64;
     elf[54] = 56;
-    elf[56] = 1;
+    elf[56] = (unsigned char)phnum;
 
-    /* Phdr: PT_LOAD PF_R|PF_X|PF_W (7) — need W for locals? Locals on stack.
-       Text+rodata R+X=5; but we put data in same segment — use 5 and put
-       strings in RX (OK read). */
+    /* Phdr0: PT_LOAD R|X — .text */
     {
         unsigned char* p = elf + ehdr;
         unsigned long long va = (unsigned long long)CC_LOAD_VA;
-        unsigned long long fsz = (unsigned long long)body_len;
-        unsigned long long msz = (unsigned long long)(memsz - file_off);
-        if (msz < fsz) {
-            msz = fsz;
-        }
-        p[0] = 1; /* PT_LOAD */
-        p[4] = 5; /* PF_R|PF_X */
-        /* p_offset */
+        unsigned long long fsz = (unsigned long long)em->code_len;
+        unsigned long long msz = (unsigned long long)code_va_span;
+        p[0] = 1;
+        p[4] = 5;
         p[8] = (unsigned char)(file_off);
         p[9] = (unsigned char)(file_off >> 8);
-        /* p_vaddr / p_paddr */
         for (i = 0; i < 8; i++) {
             p[16 + i] = (unsigned char)(va >> (8 * i));
             p[24 + i] = (unsigned char)(va >> (8 * i));
@@ -713,34 +958,104 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             p[40 + i] = (unsigned char)(msz >> (8 * i));
         }
         p[48] = 0x00;
-        p[49] = 0x10; /* align 0x1000 */
+        p[49] = 0x10;
+        ph = 1;
+    }
+    /* Phdr1: PT_LOAD R — .rodata (M245 third-segment contract) */
+    if (have_ro) {
+        unsigned char* p = elf + ehdr + (size_t)ph * phdr_ent;
+        unsigned long long va = (unsigned long long)ro_va;
+        unsigned long long fsz = (unsigned long long)ro_len;
+        unsigned long long msz = (unsigned long long)ro_va_span;
+        size_t doff = ro_file_off;
+        p[0] = 1;
+        p[4] = 4; /* PF_R only */
+        p[8] = (unsigned char)(doff);
+        p[9] = (unsigned char)(doff >> 8);
+        p[10] = (unsigned char)(doff >> 16);
+        p[11] = (unsigned char)(doff >> 24);
+        for (i = 0; i < 8; i++) {
+            p[16 + i] = (unsigned char)(va >> (8 * i));
+            p[24 + i] = (unsigned char)(va >> (8 * i));
+        }
+        for (i = 0; i < 8; i++) {
+            p[32 + i] = (unsigned char)(fsz >> (8 * i));
+            p[40 + i] = (unsigned char)(msz >> (8 * i));
+        }
+        p[48] = 0x00;
+        p[49] = 0x10;
+        ph++;
+    }
+    /* Phdr2: PT_LOAD R|W — .data + .bss (filesz=rw, memsz=rw+bss) */
+    if (have_rw) {
+        unsigned char* p = elf + ehdr + (size_t)ph * phdr_ent;
+        unsigned long long va = (unsigned long long)rw_va;
+        unsigned long long fsz = (unsigned long long)rw_len;
+        unsigned long long msz =
+            (unsigned long long)rw_len + (unsigned long long)em->bss_len;
+        size_t doff = rw_file_off;
+        if (msz < page) {
+            msz = page;
+        } else {
+            msz = (msz + page - 1) & ~(page - 1);
+        }
+        p[0] = 1;
+        p[4] = 6; /* PF_R|PF_W */
+        p[8] = (unsigned char)(doff);
+        p[9] = (unsigned char)(doff >> 8);
+        p[10] = (unsigned char)(doff >> 16);
+        p[11] = (unsigned char)(doff >> 24);
+        for (i = 0; i < 8; i++) {
+            p[16 + i] = (unsigned char)(va >> (8 * i));
+            p[24 + i] = (unsigned char)(va >> (8 * i));
+        }
+        for (i = 0; i < 8; i++) {
+            p[32 + i] = (unsigned char)(fsz >> (8 * i));
+            p[40 + i] = (unsigned char)(msz >> (8 * i));
+        }
+        p[48] = 0x00;
+        p[49] = 0x10;
     }
 
-    /* Patch RIP-relative lea: disp = (data_file_off + data_off) - (file_off + code_off + 4) */
+    /* RIP-relative or abs32: RO vs RW VA by data_off. */
     for (i = 0; (int)i < g_nrelocs; i++) {
         size_t code_off = g_relocs[i].code_off;
         size_t data_off = g_relocs[i].data_off;
-        size_t next_ip = file_off + code_off + 4;
-        size_t target = data_file_off + data_off;
-        rel = (int)(target - next_ip);
-        /* But lea is relative to RIP at runtime = LOAD_VA + (code_off+4) */
-        next_ip = CC_LOAD_VA + code_off + 4;
-        target = CC_LOAD_VA + em->code_len + data_off;
-        rel = (int)(target - next_ip);
-        em->code[code_off] = (unsigned char)(rel);
-        em->code[code_off + 1] = (unsigned char)(rel >> 8);
-        em->code[code_off + 2] = (unsigned char)(rel >> 16);
-        em->code[code_off + 3] = (unsigned char)(rel >> 24);
+        size_t target;
+        if (data_off < ro_len) {
+            target = ro_va + data_off;
+        } else {
+            target = rw_va + (data_off - ro_len);
+        }
+        if (g_relocs[i].kind == 1) {
+            unsigned abs = (unsigned)target;
+            em->code[code_off] = (unsigned char)(abs);
+            em->code[code_off + 1] = (unsigned char)(abs >> 8);
+            em->code[code_off + 2] = (unsigned char)(abs >> 16);
+            em->code[code_off + 3] = (unsigned char)(abs >> 24);
+        } else {
+            size_t next_ip = (size_t)CC_LOAD_VA + code_off + 4;
+            rel = (int)(target - next_ip);
+            em->code[code_off] = (unsigned char)(rel);
+            em->code[code_off + 1] = (unsigned char)(rel >> 8);
+            em->code[code_off + 2] = (unsigned char)(rel >> 16);
+            em->code[code_off + 3] = (unsigned char)(rel >> 24);
+        }
     }
 
     memcpy(elf + file_off, em->code, em->code_len);
-    memcpy(elf + data_file_off, em->data, em->data_len);
+    if (ro_len > 0) {
+        memcpy(elf + ro_file_off, em->data, ro_len);
+    }
+    if (rw_len > 0) {
+        memcpy(elf + rw_file_off, em->data + ro_len, rw_len);
+    }
     *out = elf;
     *out_len = total;
     return 0;
 }
 
-/* ET_REL for #lib: .text + optional .rela.text/.rodata (M122–M123) + exports. */
+/* ET_REL for #lib: .text + .rela + .rodata/.data/.bss (M245) + exports. */
 int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     enum { MAX_SYM = CC_FN_MAX };
     int order[MAX_SYM];
@@ -754,12 +1069,18 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     int nlea;
     int nrela;
     int have_ro;
+    int have_rw;
+    int have_bss;
     int have_rela;
+    int n_dsec;
+    size_t ro_len;
+    size_t rw_len;
     size_t strtab_len;
     size_t shstr_len;
     size_t off_text;
     size_t off_rela;
     size_t off_ro;
+    size_t off_rw;
     size_t off_shstr;
     size_t off_sym;
     size_t off_str;
@@ -773,31 +1094,46 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     int sym_shndx;
     int str_shndx;
     int ro_shndx;
-    int sec_sym; /* 1 if LOCAL STT_SECTION for .rodata */
-    int fn_sym0; /* first defined FUNC sym index */
-    int und_sym0; /* first UND FUNC sym index */
-    /* plain: .text .shstrtab .symtab .strtab */
-    static const char shstr_plain[] = "\0.text\0.shstrtab\0.symtab\0.strtab";
-    /* rela only: .text .rela.text .shstrtab .symtab .strtab */
-    static const char shstr_rela[] =
-        "\0.text\0.rela.text\0.shstrtab\0.symtab\0.strtab";
-    /* rela+ro: .text .rela.text .rodata .shstrtab .symtab .strtab */
-    static const char shstr_ro[] =
-        "\0.text\0.rela.text\0.rodata\0.shstrtab\0.symtab\0.strtab";
-    const char* shstr;
+    int rw_shndx;
+    int bss_shndx;
+    int ro_sec_sym;
+    int rw_sec_sym;
+    int bss_sec_sym;
+    int n_sec_sym;
+    int fn_sym0;
+    int und_sym0;
+    int slot;
+    /* Unified shstr; unused names are harmless. */
+    static const char shstr_all[] =
+        "\0.text\0.rela.text\0.rodata\0.data\0.bss\0.shstrtab\0.symtab\0.strtab";
+    enum {
+        NM_TEXT = 1,
+        NM_RELA = 7,
+        NM_RO = 18,
+        NM_RW = 26,
+        NM_BSS = 32,
+        NM_SHSTR = 37,
+        NM_SYM = 47,
+        NM_STR = 55
+    };
 
     if (!em || em->failed || em->code_len == 0 ||
         em->code_len > CC_CODE_MAX) {
         return -1;
     }
+    if (cc_data_seal(em) != 0 || em->failed) {
+        return -1;
+    }
+    ro_len = em->ro_len;
+    if (ro_len > em->data_len) {
+        ro_len = em->data_len;
+    }
+    rw_len = em->data_len - ro_len;
     if (em->data_len > CC_DATA_MAX || g_nrelocs < 0 ||
         g_nrelocs > CC_RELOC_MAX) {
         return -1;
     }
-    if (em->data_len == 0 && g_nrelocs != 0) {
-        return -1;
-    }
-    if (em->data_len != 0 && g_nrelocs < 1) {
+    if (em->data_len == 0 && em->bss_len == 0 && g_nrelocs != 0) {
         return -1;
     }
     if (em->nfns < 1 || em->nfns > CC_FN_MAX) {
@@ -812,11 +1148,11 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     if (nrela > CC_CALL_MAX + CC_RELOC_MAX) {
         return -1;
     }
-    have_ro = em->data_len > 0 ? 1 : 0;
+    have_ro = ro_len > 0 ? 1 : 0;
+    have_rw = rw_len > 0 ? 1 : 0;
+    have_bss = em->bss_len > 0 ? 1 : 0;
     have_rela = nrela > 0 ? 1 : 0;
-    if (have_ro && !have_rela) {
-        return -1;
-    }
+    n_dsec = have_ro + have_rw + have_bss;
     for (i = 0; i < em->nfns; i++) {
         if (!em->fns[i].defined || em->fns[i].name[0] == 0) {
             continue;
@@ -847,7 +1183,6 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
         sizes[i] = end - start;
     }
-    /* M125: UND symbols for obj_mode imports referenced by calls. */
     for (i = 0; i < em->ncalls; i++) {
         int fi = em->calls[i].fn;
         int seen = 0;
@@ -893,35 +1228,42 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
         strtab_len += nl + 1;
     }
-    sec_sym = have_ro ? 1 : 0;
-    if (have_ro) {
-        shstr = shstr_ro;
-        shstr_len = sizeof(shstr_ro);
-        shnum = 7;
-        shstrndx = 4;
-        sym_shndx = 5;
-        str_shndx = 6;
-        ro_shndx = 3;
-    } else if (have_rela) {
-        shstr = shstr_rela;
-        shstr_len = sizeof(shstr_rela);
-        shnum = 6;
-        shstrndx = 3;
-        sym_shndx = 4;
-        str_shndx = 5;
-        ro_shndx = 0;
-    } else {
-        shstr = shstr_plain;
-        shstr_len = sizeof(shstr_plain);
-        shnum = 5;
-        shstrndx = 2;
-        sym_shndx = 3;
-        str_shndx = 4;
-        ro_shndx = 0;
+
+    shstr_len = sizeof(shstr_all);
+    shnum = 1 + 1 + have_rela + n_dsec + 3; /* null+text+...+shstr+sym+str */
+    /* Assign section indices. */
+    slot = 1; /* .text = 1 */
+    slot = 2;
+    if (have_rela) {
+        slot++;
     }
-    nsym = (size_t)nfn + (size_t)nund + 1 + (size_t)sec_sym;
-    fn_sym0 = 1 + sec_sym;
+    ro_shndx = 0;
+    rw_shndx = 0;
+    bss_shndx = 0;
+    if (have_ro) {
+        ro_shndx = slot++;
+    }
+    if (have_rw) {
+        rw_shndx = slot++;
+    }
+    if (have_bss) {
+        bss_shndx = slot++;
+    }
+    shstrndx = slot++;
+    sym_shndx = slot++;
+    str_shndx = slot;
+    if (slot + 1 != shnum) {
+        return -1;
+    }
+
+    n_sec_sym = n_dsec;
+    nsym = (size_t)nfn + (size_t)nund + 1 + (size_t)n_sec_sym;
+    ro_sec_sym = have_ro ? 1 : 0;
+    rw_sec_sym = have_rw ? (1 + have_ro) : 0;
+    bss_sec_sym = have_bss ? (1 + have_ro + have_rw) : 0;
+    fn_sym0 = 1 + n_sec_sym;
     und_sym0 = fn_sym0 + nfn;
+
     off_text = 64;
     if (em->code_len > sizeof(g_elf_buf) - 64) {
         return -1;
@@ -932,11 +1274,9 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     } else {
         off_ro = off_rela;
     }
-    if (have_ro) {
-        off_shstr = off_ro + em->data_len;
-    } else {
-        off_shstr = off_ro;
-    }
+    off_rw = off_ro + (have_ro ? ro_len : 0);
+    off_shstr = off_rw + (have_rw ? rw_len : 0);
+    /* .bss is NOBITS — not in file */
     off_sym = (off_shstr + shstr_len + 7u) & ~(size_t)7;
     off_str = off_sym + nsym * 24;
     off_sh = (off_str + strtab_len + 7u) & ~(size_t)7;
@@ -954,7 +1294,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     elf[4] = 2;
     elf[5] = 1;
     elf[6] = 1;
-    elf[16] = 1; /* ET_REL */
+    elf[16] = 1;
     elf[18] = 62;
     elf[20] = 1;
     {
@@ -998,7 +1338,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
                 return -1;
             }
             r_off = (unsigned long long)em->calls[i].at;
-            r_info = ((unsigned long long)r_sym << 32) | 4ull; /* PLT32 */
+            r_info = ((unsigned long long)r_sym << 32) | 4ull;
             for (k = 0; k < 8; k++) {
                 re[k] = (unsigned char)(r_off >> (8 * k));
                 re[8 + k] = (unsigned char)(r_info >> (8 * k));
@@ -1009,17 +1349,33 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
         for (i = 0; i < nlea; i++) {
             unsigned char* re = elf + off_rela + (size_t)ri * 24;
-            unsigned r_sym = 1; /* LOCAL STT_SECTION .rodata */
+            unsigned r_sym = 0;
             unsigned long long r_off;
             unsigned long long r_info;
             long long r_add;
+            size_t doff = g_relocs[i].data_off;
             int k;
-            if (!sec_sym) {
-                return -1;
+            if (doff < ro_len) {
+                if (!ro_sec_sym) {
+                    return -1;
+                }
+                r_sym = (unsigned)ro_sec_sym;
+                r_add = (long long)doff - 4;
+            } else if (doff < ro_len + rw_len) {
+                if (!rw_sec_sym) {
+                    return -1;
+                }
+                r_sym = (unsigned)rw_sec_sym;
+                r_add = (long long)(doff - ro_len) - 4;
+            } else {
+                if (!bss_sec_sym) {
+                    return -1;
+                }
+                r_sym = (unsigned)bss_sec_sym;
+                r_add = (long long)(doff - ro_len - rw_len) - 4;
             }
             r_off = (unsigned long long)g_relocs[i].code_off;
-            r_add = (long long)g_relocs[i].data_off - 4;
-            r_info = ((unsigned long long)r_sym << 32) | 2ull; /* PC32 */
+            r_info = ((unsigned long long)r_sym << 32) | 2ull;
             for (k = 0; k < 8; k++) {
                 re[k] = (unsigned char)(r_off >> (8 * k));
                 re[8 + k] = (unsigned char)(r_info >> (8 * k));
@@ -1030,17 +1386,37 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         }
     }
     if (have_ro) {
-        memcpy(elf + off_ro, em->data, em->data_len);
+        memcpy(elf + off_ro, em->data, ro_len);
     }
-    memcpy(elf + off_shstr, shstr, shstr_len);
+    if (have_rw) {
+        memcpy(elf + off_rw, em->data + ro_len, rw_len);
+    }
+    memcpy(elf + off_shstr, shstr_all, shstr_len);
 
     memset(elf + off_sym, 0, 24);
     name_off = 1;
     elf[off_str] = 0;
-    if (sec_sym) {
-        unsigned char* sy = elf + off_sym + 24;
-        sy[4] = 3; /* LOCAL STT_SECTION */
-        sy[6] = (unsigned char)ro_shndx;
+    {
+        int ssi = 0;
+        if (have_ro) {
+            unsigned char* sy = elf + off_sym + (size_t)(1 + ssi) * 24;
+            sy[4] = 3;
+            sy[6] = (unsigned char)ro_shndx;
+            ssi++;
+        }
+        if (have_rw) {
+            unsigned char* sy = elf + off_sym + (size_t)(1 + ssi) * 24;
+            sy[4] = 3;
+            sy[6] = (unsigned char)rw_shndx;
+            ssi++;
+        }
+        if (have_bss) {
+            unsigned char* sy = elf + off_sym + (size_t)(1 + ssi) * 24;
+            sy[4] = 3;
+            sy[6] = (unsigned char)bss_shndx;
+            ssi++;
+        }
+        (void)ssi;
     }
     {
         size_t so = 1;
@@ -1058,7 +1434,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             sy[2] = (unsigned char)(name_off >> 16);
             sy[3] = (unsigned char)(name_off >> 24);
             sy[4] = (unsigned char)((1u << 4) | 2u);
-            sy[6] = 1; /* .text */
+            sy[6] = 1;
             {
                 unsigned long long v =
                     (unsigned long long)em->fns[order[i]].entry;
@@ -1085,8 +1461,8 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             sy[1] = (unsigned char)(name_off >> 8);
             sy[2] = (unsigned char)(name_off >> 16);
             sy[3] = (unsigned char)(name_off >> 24);
-            sy[4] = (unsigned char)((1u << 4) | 2u); /* GLOBAL FUNC */
-            sy[6] = 0; /* UND */
+            sy[4] = (unsigned char)((1u << 4) | 2u);
+            sy[6] = 0;
             name_off += nl + 1;
             so += nl + 1;
         }
@@ -1094,7 +1470,6 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
 
     {
         unsigned char* sh = elf + off_sh;
-        int slot = 0;
         memset(sh, 0, (size_t)shnum * 64);
         /* 1 .text */
         {
@@ -1102,7 +1477,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             unsigned long long off = (unsigned long long)off_text;
             unsigned long long sz = (unsigned long long)em->code_len;
             int k;
-            s[0] = 1;
+            s[0] = NM_TEXT;
             s[4] = 1;
             s[8] = 6;
             for (k = 0; k < 8; k++) {
@@ -1117,7 +1492,7 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             unsigned long long off = (unsigned long long)off_rela;
             unsigned long long sz = (unsigned long long)nrela * 24;
             int k;
-            s[0] = 7; /* .rela.text */
+            s[0] = NM_RELA;
             s[4] = 4;
             s[8] = 0x40;
             for (k = 0; k < 8; k++) {
@@ -1133,9 +1508,9 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         if (have_ro) {
             unsigned char* s = sh + (size_t)slot * 64;
             unsigned long long off = (unsigned long long)off_ro;
-            unsigned long long sz = (unsigned long long)em->data_len;
+            unsigned long long sz = (unsigned long long)ro_len;
             int k;
-            s[0] = 18; /* .rodata */
+            s[0] = NM_RO;
             s[4] = 1;
             s[8] = 2; /* SHF_ALLOC */
             for (k = 0; k < 8; k++) {
@@ -1145,13 +1520,40 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             s[48] = 1;
             slot++;
         }
-        /* .shstrtab */
+        if (have_rw) {
+            unsigned char* s = sh + (size_t)slot * 64;
+            unsigned long long off = (unsigned long long)off_rw;
+            unsigned long long sz = (unsigned long long)rw_len;
+            int k;
+            s[0] = NM_RW;
+            s[4] = 1;
+            s[8] = 3; /* SHF_WRITE|SHF_ALLOC */
+            for (k = 0; k < 8; k++) {
+                s[24 + k] = (unsigned char)(off >> (8 * k));
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1;
+            slot++;
+        }
+        if (have_bss) {
+            unsigned char* s = sh + (size_t)slot * 64;
+            unsigned long long sz = (unsigned long long)em->bss_len;
+            int k;
+            s[0] = NM_BSS;
+            s[4] = 8; /* SHT_NOBITS */
+            s[8] = 3; /* SHF_WRITE|SHF_ALLOC */
+            for (k = 0; k < 8; k++) {
+                s[32 + k] = (unsigned char)(sz >> (8 * k));
+            }
+            s[48] = 1;
+            slot++;
+        }
         {
             unsigned char* s = sh + (size_t)slot * 64;
             unsigned long long off = (unsigned long long)off_shstr;
             unsigned long long sz = (unsigned long long)shstr_len;
             int k;
-            s[0] = (unsigned char)(have_ro ? 26 : (have_rela ? 18 : 7));
+            s[0] = NM_SHSTR;
             s[4] = 3;
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
@@ -1160,13 +1562,12 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             s[48] = 1;
             slot++;
         }
-        /* .symtab */
         {
             unsigned char* s = sh + (size_t)slot * 64;
             unsigned long long off = (unsigned long long)off_sym;
             unsigned long long sz = (unsigned long long)(nsym * 24);
             int k;
-            s[0] = (unsigned char)(have_ro ? 36 : (have_rela ? 28 : 17));
+            s[0] = NM_SYM;
             s[4] = 2;
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
@@ -1178,13 +1579,12 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             s[56] = 24;
             slot++;
         }
-        /* .strtab */
         {
             unsigned char* s = sh + (size_t)slot * 64;
             unsigned long long off = (unsigned long long)off_str;
             unsigned long long sz = (unsigned long long)strtab_len;
             int k;
-            s[0] = (unsigned char)(have_ro ? 44 : (have_rela ? 36 : 25));
+            s[0] = NM_STR;
             s[4] = 3;
             for (k = 0; k < 8; k++) {
                 s[24 + k] = (unsigned char)(off >> (8 * k));
@@ -1192,7 +1592,6 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             }
             s[48] = 1;
         }
-        (void)ro_shndx;
     }
 
     *out = elf;

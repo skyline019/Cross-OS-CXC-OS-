@@ -13,6 +13,7 @@
 
 extern "C" uint64_t ring3_saved_kernel_rsp;
 extern "C" void* memcpy(void*, const void*, size_t);
+extern "C" void* memset(void*, int, size_t);
 
 namespace cxc::syscall {
 namespace {
@@ -21,7 +22,7 @@ Session current{};
 constexpr uint64_t user_canonical_limit = uint64_t{1} << 47;
 constexpr uint64_t page_size = 4096;
 // M88: raise single read/write ceiling toward toolchain BUFSIZ-sized I/O.
-constexpr size_t max_io = 4096;
+constexpr size_t max_io = 65536;  // M257: ≥64 KiB read/write
 // musl BUFSIZ is 1024; __stdio_read readv iov entries may be that large.
 constexpr size_t max_iov_bytes = 4096;
 constexpr char expected_program_pass[] = "USER_PROGRAM_PASS\n";
@@ -69,7 +70,7 @@ constexpr char expected_cap_pass[] = "CAP_PASS\n";
 constexpr char expected_load128_pass[] = "LOAD128_PASS\n";
 constexpr char expected_heap_pass[] = "HEAP_PASS\n";
 constexpr char expected_time_pass[] = "TIME_PASS\n";
-constexpr char expected_onbox_cc_pass[] = "ONBOX_MKIT_PASS\n";
+constexpr char expected_onbox_cc_pass[] = "ONBOX_CCDRV_PASS\n";
 constexpr char expected_onbox_dmsg_prefix[] = "DMSG:";
 constexpr int64_t errno_notty = -25;  // -ENOTTY
 constexpr int64_t errno_inval = -22;  // -EINVAL
@@ -127,10 +128,11 @@ uint64_t read_cr3() {
 }
 
 bool user_pages_ok(uint64_t address, size_t length, bool need_write) {
-    // Cap at getdents max (largest user buffer we copy); callers still apply
-    // their own tighter limits (e.g. max_io for read/write).
+    // Cap at max_io (M257: ≥64 KiB). Callers may apply tighter limits
+    // (e.g. max_getdents for getdents64); do not couple to that smaller cap —
+    // musl-static mini as reads up to 64 KiB into BSS in one sys_read.
     if (length == 0 || address == 0 || address >= user_canonical_limit ||
-        length > fs::max_getdents || address + length > user_canonical_limit) {
+        length > max_io || address + length > user_canonical_limit) {
         return false;
     }
     const uint64_t root = read_cr3();
@@ -959,7 +961,7 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "2.26.0");
+    fill_uts_field(local.release, "2.80.0");
     fill_uts_field(local.version, "M126");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
@@ -1370,6 +1372,26 @@ cpu::InterruptFrame* handle_unlink(cpu::InterruptFrame* frame) {
     return frame;
 }
 
+bool copy_user_arg_string(uint64_t user_str, char* out, size_t capacity) {
+    // M259: argv/env may be up to max_exec_arg_bytes (not fs::max_path).
+    // capacity includes the trailing NUL — allow reading the final byte.
+    if (capacity == 0 || !user_pages_ok(user_str, 1, false)) {
+        return false;
+    }
+    for (size_t index = 0; index < capacity; ++index) {
+        if (!user_pages_ok(user_str + index, 1, false)) {
+            return false;
+        }
+        const char value =
+            *reinterpret_cast<const char*>(user_str + index);
+        out[index] = value;
+        if (value == '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool copy_user_string_vector(uint64_t user_vec, char storage[][user::max_exec_arg_bytes],
                              const char** ptrs, uint32_t max_count,
                              uint32_t& out_count) {
@@ -1387,7 +1409,8 @@ bool copy_user_string_vector(uint64_t user_vec, char storage[][user::max_exec_ar
         if (ptr == 0) {
             break;
         }
-        if (!copy_user_path(ptr, storage[out_count], user::max_exec_arg_bytes)) {
+        if (!copy_user_arg_string(ptr, storage[out_count],
+                                  user::max_exec_arg_bytes)) {
             return false;
         }
         ptrs[out_count] = storage[out_count];
@@ -1491,9 +1514,11 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
         frame->rax = static_cast<uint64_t>(-1);
         return frame;
     }
-
-    // M81/M82: copy argv/envp from the old address space before teardown.
-    char arg_storage[user::max_exec_argc][user::max_exec_arg_bytes]{};
+    // M259: argv/env storage is BSS — 64×1024 would blow the kernel stack.
+    static char arg_storage[user::max_exec_argc][user::max_exec_arg_bytes];
+    static char env_storage[user::max_exec_envc][user::max_exec_arg_bytes];
+    memset(arg_storage, 0, sizeof(arg_storage));
+    memset(env_storage, 0, sizeof(env_storage));
     const char* arg_ptrs[user::max_exec_argc]{};
     uint32_t argc = 0;
     if (!copy_user_string_vector(frame->rsi, arg_storage, arg_ptrs,
@@ -1502,7 +1527,6 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
         return frame;
     }
 
-    char env_storage[user::max_exec_envc][user::max_exec_arg_bytes]{};
     const char* env_ptrs[user::max_exec_envc]{};
     uint32_t envc = 0;
     if (!copy_user_string_vector(frame->rdx, env_storage, env_ptrs,
@@ -1516,6 +1540,28 @@ cpu::InterruptFrame* handle_execve(cpu::InterruptFrame* frame) {
                             envc)) {
         frame->rax = static_cast<uint64_t>(-failure);
         return frame;
+    }
+    // Audit successful tool execs (no probe write-in).
+    {
+        const char* p = path;
+        auto path_is = [&](const char* lit) -> bool {
+            size_t i = 0;
+            for (; lit[i] != 0; ++i) {
+                if (p[i] != lit[i]) {
+                    return false;
+                }
+            }
+            return p[i] == 0;
+        };
+        if (path_is("disk/as")) {
+            ++current.exec_disk_as;
+        }
+        if (path_is("disk/ld")) {
+            ++current.exec_disk_ld;
+        }
+        if (path_is("disk/cc") || path_is("disk/cxc-cc")) {
+            ++current.exec_disk_cc;
+        }
     }
     // Child execve replaces the forked root; keep fork_slot.child_root live.
     if (fork_slot.child_alive != 0 && current.pid == fork_slot.child_pid) {

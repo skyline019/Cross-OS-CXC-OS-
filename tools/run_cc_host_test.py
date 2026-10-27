@@ -137,6 +137,107 @@ def main() -> int:
         (disk / "snul.o").write_bytes(
             (ROOT / "user" / "prebuilt" / "musl_strchrnul.o").read_bytes()
         )
+        (disk / "mchr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_memchr.o").read_bytes()
+        )
+        (disk / "tlwr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_tolower.o").read_bytes()
+        )
+        (disk / "tupr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_toupper.o").read_bytes()
+        )
+        (disk / "ispc.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isspace.o").read_bytes()
+        )
+        (disk / "ialp.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isalpha.o").read_bytes()
+        )
+        (disk / "mset.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_memset.o").read_bytes()
+        )
+        (disk / "ialn.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isalnum.o").read_bytes()
+        )
+        (disk / "ilwr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_islower.o").read_bytes()
+        )
+        (disk / "iupr.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isupper.o").read_bytes()
+        )
+        (disk / "iblk.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isblank.o").read_bytes()
+        )
+        (disk / "igrp.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isgraph.o").read_bytes()
+        )
+        (disk / "iprt.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isprint.o").read_bytes()
+        )
+        (disk / "ixdg.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isxdigit.o").read_bytes()
+        )
+        (disk / "ictl.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_iscntrl.o").read_bytes()
+        )
+        (disk / "ipct.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_ispunct.o").read_bytes()
+        )
+        (disk / "iabs.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_abs.o").read_bytes()
+        )
+        (disk / "bzro.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_bzero.o").read_bytes()
+        )
+        (disk / "snln.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_strnlen.o").read_bytes()
+        )
+        (disk / "iasc.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_isascii.o").read_bytes()
+        )
+        (disk / "llab.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_llabs.o").read_bytes()
+        )
+        (disk / "tasc.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_toascii.o").read_bytes()
+        )
+        (disk / "imax.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_imaxabs.o").read_bytes()
+        )
+        (disk / "bcmp.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_bcmp.o").read_bytes()
+        )
+        (disk / "iffs.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_ffs.o").read_bytes()
+        )
+        (disk / "htns.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_htons.o").read_bytes()
+        )
+        (disk / "htnl.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_htonl.o").read_bytes()
+        )
+        (disk / "ntns.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_ntohs.o").read_bytes()
+        )
+        (disk / "ntnl.o").write_bytes(
+            (ROOT / "user" / "prebuilt" / "musl_ntohl.o").read_bytes()
+        )
+        # M252 HARD deep closure plants for host ld_link coverage.
+        for disk_name, pre_name in (
+            ("stol.o", "musl_strtol.o"),
+            ("iscn.o", "musl_intscan.o"),
+            ("shgt.o", "musl_shgetc.o"),
+            ("hstb.o", "hard_stubs.o"),
+            ("mmov.o", "musl_memmove.o"),
+            ("mrch.o", "musl_memrchr.o"),
+            ("sdup.o", "musl_strdup.o"),
+            ("scsp.o", "musl_strcspn.o"),
+            ("sspn.o", "musl_strspn.o"),
+            ("spbk.o", "musl_strpbrk.o"),
+            ("srch.o", "musl_strrchr.o"),
+        ):
+            (disk / disk_name).write_bytes(
+                (ROOT / "user" / "prebuilt" / pre_name).read_bytes()
+            )
         if use_wsl:
             work_u = to_build_path(work, True)
             out_u = to_build_path(out, True)

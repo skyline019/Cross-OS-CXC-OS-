@@ -160,7 +160,19 @@ CXC_OS_SELF_TEST_PASS
 | on-box char/const (M132) | `char` 截断 + `const`；曾用 `ONBOX_CHAR_PASS` |
 | on-box merge (M133) | as+cc+ld+musl；`ONBOX_MERG_PASS` + `edge: 1` |
 | midfield-13 (M134) | 混沌套件 + 评估；[`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
-| on-box musl-kit (M136) | atoi/scmp/labs/dig 进 MERG；`ONBOX_MKIT_PASS` + `edge: 1` |
+| on-box musl-kit (M136) | atoi/scmp/labs/dig 进 MERG；曾用 `ONBOX_MKIT_PASS` |
+| on-box as-gas (M138) | jmp/test/quad/mem；曾用 `ONBOX_AGAS_PASS` |
+| on-box whole-chain (M144) | as+cc(`long`/`->`)+ld+musl；曾用 `ONBOX_WHOL_PASS` |
+| on-box deep toolchain (M154) | as 帧/sizeof/str*+ld；曾用 `ONBOX_DEEP_PASS` + `edge: 1` |
+| on-box musl closure (M164) | memchr/tolower+lea/idiv+void*；曾用 `ONBOX_MCLS_PASS` + `edge: 1` |
+| on-box musl wide (M194) | isalnum/islower+layout sizeof+leave/neg；曾用 `ONBOX_WIDE_PASS` |
+| on-box musl ctyp (M204) | isupper/isblank/isgraph/isprint+endbr/sete/jbe；曾用 `ONBOX_CTYP_PASS` |
+| on-box musl leaf (M214) | isxdigit/iscntrl/ispunct/abs+sub edi/setne/jb；曾用 `ONBOX_LEAF_PASS` |
+| on-box musl walk (M224) | bzero/strnlen/isascii/llabs+mem-walk；曾用 `ONBOX_WALK_PASS` |
+| on-box musl wrap (M234) | toascii/imaxabs/bcmp/ffs+inc/seta；曾用 `ONBOX_WRAP_PASS` |
+| on-box TCAP (M264) | OS 容量还债 + 胖 ELF + mini-as；`ONBOX_TCAP_PASS` + `tcap: 1` + `edge: 1` |
+| on-box TDRV (M274) | cxc-cc 外部 as→ld；曾用 `ONBOX_TDRV_PASS` + `tdrv: 1` |
+| on-box CCDRV (M284) | `disk/cc` argv；`ONBOX_CCDRV_PASS` + `ccdrv: 1` + `spawn_cc: 3` + `spawn_as: 4` + `spawn_ld: 1` |
 | 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
 | 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
 

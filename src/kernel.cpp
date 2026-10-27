@@ -2021,7 +2021,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     }
     log::write("[ok] heap: pass: ");
     log::decimal(heap_probe.wrote_pass);
-    log::write(" brk_kib: 768 mmap_kib: 512 ceiling_kib: 1024\n");
+    log::write(" brk_kib: 768 mmap_kib: 512 ceiling_kib: 16384\n");
     log::line("HEAP_PASS");
 
     // M91: access + clock_gettime + gettimeofday (toolchain early path).
@@ -2047,7 +2047,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::write(" access: 1 clock: 1 gettimeofday: 1\n");
     log::line("TIME_PASS");
 
-    // M136/A2: expanded musl kit → NMSG + WMSG + MKIT.
+    // M146/A2: musl str* call surface → NMSG + WMSG + SCALL.
     user::OnboxCcProbeResult onbox{};
     const auto* onbox_stub = reinterpret_cast<const uint8_t*>(
         vmm::direct_map_base + onbox_stub_elf_physical);
@@ -2058,33 +2058,58 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         !user::run_onbox_cc_probe(
             onbox_stub, static_cast<size_t>(onbox_stub_elf_size), onbox_cc,
             static_cast<size_t>(onbox_cc_elf_size), onbox)) {
+        const user::OnboxCcProbeResult& onbox_fail =
+            user::onbox_cc_probe_result();
         log::write("[debug] onbox-cc stage: ");
-        log::decimal(onbox.stage);
+        log::decimal(static_cast<uint64_t>(onbox_fail.stage));
         log::write(", failure: ");
-        log::decimal(onbox.failure);
+        log::decimal(static_cast<uint64_t>(onbox_fail.failure));
         log::write(", src: ");
-        log::decimal(onbox.wrote_src);
+        log::decimal(static_cast<uint64_t>(onbox_fail.wrote_src));
         log::write(", cc: ");
-        log::decimal(onbox.wrote_cc);
+        log::decimal(static_cast<uint64_t>(onbox_fail.wrote_cc));
         log::write(", remount: ");
-        log::decimal(onbox.remount_ok);
+        log::decimal(static_cast<uint64_t>(onbox_fail.remount_ok));
         log::write(", pass: ");
-        log::decimal(onbox.wrote_pass);
+        log::decimal(static_cast<uint64_t>(onbox_fail.wrote_pass));
         log::write(", edge: ");
-        log::decimal(onbox.edge_ok);
+        log::decimal(static_cast<uint64_t>(onbox_fail.edge_ok));
         log::write(", exit: ");
-        log::decimal(onbox.exit_code);
+        log::decimal(onbox_fail.exit_code);
         log::write('\n');
-        log::panic("M136 on-box mini-cc musl-kit expand failed");
+        log::panic("M284 on-box CCDRV disk/cc argv driver failed");
     }
+    // Prefer the global copy: deep probe frames can clobber a stack-local
+    // OnboxCcProbeResult under UEFI stack pressure (fat + as/ld plant).
+    const user::OnboxCcProbeResult& onbox_ok = user::onbox_cc_probe_result();
     log::write("[ok] onbox-cc: pass: ");
-    log::decimal(onbox.wrote_pass);
+    log::decimal(static_cast<uint64_t>(onbox_ok.wrote_pass));
     log::write(" src: 1 cc: 1 run: 1 exit: ");
-    log::decimal(onbox.exit_code);
-    log::write(" write: 1 mkit: 1 edge: ");
-    log::decimal(onbox.edge_ok);
+    log::decimal(onbox_ok.exit_code);
+    log::write(" write: 1 hard: 1 fat: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.fat_ok));
+    log::write(" as: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.as_ok));
+    log::write(" bridge: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.bridge_ok));
+    log::write(" tcap: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.tcap));
+    log::write(" spawn_as: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.spawn_as));
+    log::write(" spawn_ld: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.spawn_ld));
+    log::write(" spawn_cc: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.spawn_cc));
+    log::write(" tdrv: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.tdrv));
+    log::write(" ccdrv: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.ccdrv));
+    log::write(" edge: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.edge_ok));
+    log::write(" fat_bytes: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.fat_bytes));
     log::write('\n');
-    log::line("ONBOX_MKIT_PASS");
+    log::line("ONBOX_CCDRV_PASS");
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2357,7 +2382,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.26.0 - on-box mini-cc musl-kit (A2/M136)");
+    cxc::log::line("CXC/OS 2.80.0 - disk/cc CCDRV argv driver (M284)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,

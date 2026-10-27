@@ -19,6 +19,34 @@ MEMBERS = {
     "strlen": "strlen.lo",
     "memcmp": "memcmp.lo",
     "memcpy": "memcpy.lo",
+    "memchr": "memchr.lo",
+    "tolower": "tolower.lo",
+    "toupper": "toupper.lo",
+    "isspace": "isspace.lo",
+    "isalpha": "isalpha.lo",
+    "isalnum": "isalnum.lo",
+    "islower": "islower.lo",
+    "isupper": "isupper.lo",
+    "isblank": "isblank.lo",
+    "isgraph": "isgraph.lo",
+    "isprint": "isprint.lo",
+    "isxdigit": "isxdigit.lo",
+    "iscntrl": "iscntrl.lo",
+    "ispunct": "ispunct.lo",
+    "abs": "abs.lo",
+    "bzero": "bzero.lo",
+    "strnlen": "strnlen.lo",
+    "isascii": "isascii.lo",
+    "llabs": "llabs.lo",
+    "toascii": "toascii.lo",
+    "imaxabs": "imaxabs.lo",
+    "bcmp": "bcmp.lo",
+    "ffs": "ffs.lo",
+    "htons": "htons.lo",
+    "htonl": "htonl.lo",
+    "ntohs": "ntohs.lo",
+    "ntohl": "ntohl.lo",
+    "memset": "memset.lo",
     "atoi": "atoi.lo",
     "strcmp": "strcmp.lo",
     "strncmp": "strncmp.lo",
@@ -27,6 +55,35 @@ MEMBERS = {
     "strcat": "strcat.lo",
     "strchr": "strchr.lo",
     "strchrnul": "strchrnul.lo",
+    # M250–M252 deep closure
+    "strcspn": "strcspn.lo",
+    "strspn": "strspn.lo",
+    "strpbrk": "strpbrk.lo",
+    "strrchr": "strrchr.lo",
+    "memmove": "memmove.lo",
+    "strdup": "strdup.lo",
+    "strtol": "strtol.lo",
+    "intscan": "intscan.lo",
+    "shgetc": "shgetc.lo",
+    "memrchr": "memrchr.lo",
+}
+
+# Shallow plants may keep a fixed UND set (must already be on success rsp).
+# Deep members: UND must be provided by other planted objs / hard_stubs.o.
+ALLOWED_UND = {
+    "ispunct": frozenset({"isalnum"}),
+    "bzero": frozenset({"memset"}),
+    "strnlen": frozenset({"memchr"}),
+    "bcmp": frozenset({"memcmp"}),
+    "strcspn": frozenset({"__stack_chk_fail", "__strchrnul", "memset"}),
+    "strspn": frozenset({"__stack_chk_fail"}),
+    "strpbrk": frozenset({"strcspn"}),
+    "strrchr": frozenset({"__memrchr", "strlen"}),
+    "memmove": frozenset({"__memcpy_fwd"}),
+    "strdup": frozenset({"malloc", "memcpy", "strlen"}),
+    "strtol": frozenset({"__intscan", "__shlim", "__stack_chk_fail"}),
+    "intscan": frozenset({"___errno_location", "__shgetc", "__shlim"}),
+    "shgetc": frozenset({"__uflow"}),
 }
 
 
@@ -93,6 +150,24 @@ def main() -> int:
     blob = args.output.read_bytes()
     if blob[:4] != b"\x7fELF" or blob[16] != 1:
         raise SystemExit("output is not ELF64 ET_REL")
+    nm = shutil.which("nm")
+    if nm:
+        und = subprocess.check_output(
+            [nm, "-u", str(args.output)], text=True, stderr=subprocess.DEVNULL
+        )
+        allowed = ALLOWED_UND.get(args.member, frozenset())
+        found = set()
+        for line in und.splitlines():
+            sym = line.strip().split()[-1] if line.strip() else ""
+            if sym:
+                found.add(sym)
+        extra = found - allowed
+        if extra:
+            raise SystemExit(
+                f"{args.member}: nm -u unexpected: {sorted(extra)}\n{und}"
+            )
+        if found and not allowed:
+            raise SystemExit(f"{args.member}: nm -u not empty:\n{und}")
     if args.header:
         args.header.parent.mkdir(parents=True, exist_ok=True)
         args.header.write_text(header_bytes(args.member, blob), encoding="ascii")

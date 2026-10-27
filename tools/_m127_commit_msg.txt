@@ -1,0 +1,4 @@
+feat: M127 on-box as subset lib.s→ET_REL ONBOX_ASM_PASS (v2.18.0)
+
+cxc-as GAS subset assembles disk/lib.s to SysV ET_REL; bump+string-kit
+still exit 42. Evidence WMSG:AS + ONBOX_ASM_PASS + edge:1 + peer_ok=1.

@@ -1,0 +1,4 @@
+feat: M125 deferred #lib UND + self ET_REL UND ONBOX_LUND_PASS (v2.16.0)
+
+Defer cross-object UND until all exports land; emit UND in self .o;
+scpy-before-stpc + lib import strncmp. Evidence WMSG:LU + ONBOX_LUND_PASS.

@@ -1,0 +1,4 @@
+feat: M118 mini-cc host-gcc GOTPCREL ONBOX_GOT_PASS (v2.9.0)
+
+Synthesize GOT for -fPIC -fno-plt ET_REL; link dual host-gcc #lib.
+Evidence WMSG:GT + ONBOX_GOT_PASS.

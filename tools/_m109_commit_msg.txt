@@ -1,0 +1,4 @@
+feat: M109 mini-cc cross-#lib UND + CRT DMSG ONBOX_XLIB_PASS (v2.0.0)
+
+Always place #lib .text; resolve UND/PLT32 across libs (ans->twice);
+compile fail emits DMSG:NN. Evidence WMSG:XL + DMSG:21 + ONBOX_XLIB_PASS.

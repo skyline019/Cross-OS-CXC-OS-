@@ -25,3 +25,7 @@ pid_t getpid(void);
 pid_t getppid(void);
 void _exit(int status) __attribute__((noreturn));
 int execve(const char* path, char* const argv[], char* const envp[]);
+pid_t fork(void);
+pid_t waitpid(pid_t pid, int* status, int options);
+/* M265: fork+execve+waitpid; returns child exit status (0..255) or -errno. */
+int run_tool(const char* path, char* const argv[]);

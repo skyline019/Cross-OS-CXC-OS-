@@ -1,0 +1,4 @@
+feat: M107 mini-cc multi-symbol #lib SysV math ONBOX_MATH_PASS (v1.8.0)
+
+Planted ET_REL exports add/mul/mac; import SysV up to 4 args; probe
+composes mac(mul(add(...)))→42. Evidence WMSG:MH + ONBOX_MATH_PASS.

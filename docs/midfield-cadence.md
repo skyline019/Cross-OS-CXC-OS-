@@ -19,8 +19,23 @@
 | 第十一次 | 约 M105–M114 | [`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
 | 第十二次 | 约 M115–M124 | [`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
 | 第十三次 | 约 M125–M134 | [`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
+| 第十四次 | 约 M135–M144 | [`midpoint-assessment-14.md`](midpoint-assessment-14.md) |
+| 第十五次 | 约 M145–M154 | [`midpoint-assessment-15.md`](midpoint-assessment-15.md) |
+| 第十六次 | 约 M155–M164 | [`midpoint-assessment-16.md`](midpoint-assessment-16.md) |
+| 第十七次 | 约 M165–M174 | [`midpoint-assessment-17.md`](midpoint-assessment-17.md) |
+| 第十八次 | 约 M175–M184 | [`midpoint-assessment-18.md`](midpoint-assessment-18.md) |
+| 第十九次 | 约 M185–M194 | [`midpoint-assessment-19.md`](midpoint-assessment-19.md) |
+| 第二十次 | 约 M195–M204 | [`midpoint-assessment-20.md`](midpoint-assessment-20.md) |
+| 第二十一次 | 约 M205–M214 | [`midpoint-assessment-21.md`](midpoint-assessment-21.md) |
+| 第二十二次 | 约 M215–M224 | [`midpoint-assessment-22.md`](midpoint-assessment-22.md) |
+| 第二十三次 | 约 M225–M234 | [`midpoint-assessment-23.md`](midpoint-assessment-23.md) |
+| 第二十四次 | 约 M235–M244 | [`midpoint-assessment-24.md`](midpoint-assessment-24.md) |
+| 第二十五次 | 约 M245–M254 | [`midpoint-assessment-25.md`](midpoint-assessment-25.md) |
+| 第二十六次 | 约 M255–M264 | [`midpoint-assessment-26.md`](midpoint-assessment-26.md) |
+| 第二十七次 | 约 M265–M274 | [`midpoint-assessment-27.md`](midpoint-assessment-27.md) |
+| 第二十八次 | 约 M275–M284 | [`midpoint-assessment-28.md`](midpoint-assessment-28.md) |
 
-当前基线：**M136 / v2.26.0**（机上 mini-cc：扩大 musl kit；QEMU 验收底线 **128 MiB**）。下一正式中场目标：**约 M144**。
+当前基线：**M284 / v2.80.0**（机上 CCDRV：`disk/cc` argv 真驱动；QEMU 验收底线 **256 MiB**）。下一正式中场目标：**约 M294**。
 
 ## 中场窗口必做
 

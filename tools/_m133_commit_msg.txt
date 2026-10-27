@@ -1,0 +1,5 @@
+feat: M133 as+cc+ld+musl merge ONBOX_MERG_PASS (v2.24.0)
+
+Single probe: lib.c via cc, main.s via as, link.rsp+mcmp via ld.
+Host edges: DUP, bad e_type, trunc ELF, unresolved UND.
+Evidence WMSG:MX + ONBOX_MERG_PASS + edge:1 + peer_ok=1.

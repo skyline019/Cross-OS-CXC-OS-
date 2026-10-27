@@ -157,9 +157,11 @@ HEAP_PASS = "HEAP_PASS"
 HEAP_PROBE_SUCCESS = "heap: pass: 1"
 TIME_PASS = "TIME_PASS"
 TIME_PROBE_SUCCESS = "time: pass: 1"
-ONBOX_MKIT_PASS = "ONBOX_MKIT_PASS"
+ONBOX_CCDRV_PASS = "ONBOX_CCDRV_PASS"
+ONBOX_TDRV_PASS = ONBOX_CCDRV_PASS  # alias during cutover
+ONBOX_TCAP_PASS = ONBOX_CCDRV_PASS  # alias during cutover
 ONBOX_CC_PROBE_SUCCESS = "onbox-cc: pass: 1"
-ONBOX_WMSG = "WMSG:MK"
+ONBOX_WMSG = "WMSG:CD"
 ONBOX_NMSG = "NMSG:42"
 ONBOX_DMSG = "DMSG:21"
 ONBOX_DHINT = "DHINT:UND"
@@ -674,8 +676,8 @@ class ContractRunner:
         assert CAP_PASS.encode() in serial
         assert CAP_PROBE_SUCCESS.encode() in serial
         assert b"bytes: 98304" in serial
-        assert b"ceiling: 131072" in serial
-        assert b"file_bytes: 131072" in serial
+        assert b"ceiling: 4194304" in serial
+        assert b"file_bytes: 4194304" in serial
         assert LOAD128_PASS.encode() in serial
         assert LOAD128_PROBE_SUCCESS.encode() in serial
         assert b"elf_bytes: 102400" in serial
@@ -683,13 +685,13 @@ class ContractRunner:
         assert HEAP_PROBE_SUCCESS.encode() in serial
         assert b"brk_kib: 768" in serial
         assert b"mmap_kib: 512" in serial
-        assert b"ceiling_kib: 1024" in serial
+        assert b"ceiling_kib: 16384" in serial
         assert TIME_PASS.encode() in serial
         assert TIME_PROBE_SUCCESS.encode() in serial
         assert b"access: 1" in serial
         assert b"clock: 1" in serial
         assert b"gettimeofday: 1" in serial
-        assert ONBOX_MKIT_PASS.encode() in serial
+        assert ONBOX_TCAP_PASS.encode() in serial
         assert ONBOX_CC_PROBE_SUCCESS.encode() in serial
         assert ONBOX_WMSG.encode() in serial
         assert ONBOX_NMSG.encode() in serial
@@ -700,8 +702,16 @@ class ContractRunner:
         assert b"run: 1" in serial
         assert b"exit: 42" in serial
         assert b"write: 1" in serial
-        assert b"mkit: 1" in serial
-        assert b"edge: 1" in serial
+        assert b"hard: 1" in serial
+        assert b"fat: 1" in serial
+        assert b"as: 1" in serial
+        assert (
+            b"bridge: 1 tcap: 1 spawn_as: 4 spawn_ld: 1 spawn_cc: 3 "
+            b"tdrv: 1 ccdrv: 1 edge: 1" in serial
+        )
+        assert b"fat_bytes: 1049088" in serial
+        assert ONBOX_CCDRV_PASS.encode() in serial
+        assert ONBOX_WMSG.encode() in serial
         assert "requests_sent=269\n" in peer
         assert "udp_replies_validated=10\n" in peer
         assert "udp_stress_replies_validated=256\n" in peer
@@ -710,7 +720,7 @@ class ContractRunner:
         )
         assert "peer_ok=1\n" in peer
         return (
-            "kernel PASS + net + M75–M136 on-box mini-cc musl-kit+edge"
+            "kernel PASS + net + M75–M234 on-box mini-cc wrap+edge"
         )
 
     def negative_evidence(self, work: Path) -> str:

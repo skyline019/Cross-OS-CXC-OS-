@@ -1,0 +1,3 @@
+feat: M69 musl-gcc malloc/free probe (v0.70.0)
+
+Run a real musl-gcc static CRT program that mallocs, writes USER_MUSL_MAL_PASS, and frees; ship as ESP LIBMMA.ELF with prebuilt fallback.
