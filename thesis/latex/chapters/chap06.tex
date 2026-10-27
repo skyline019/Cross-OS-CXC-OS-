@@ -3,26 +3,26 @@
 
 \section{工作总结}
 
-本文在 xv6-riscv 上设计并实现了并行于根文件系统的字节寻址键值引擎 PMFS-KV，覆盖 EMUL / MAP / PMEM2 三种后端，落地双槽提交、不可变 run、可观测 B3 与量化索引，并构建了以 \texttt{ONBOX\_PMFS\_*} 为核心的可机器判定崩溃与掉电契约套件。
+本文在 xv6-riscv 上设计并实现了并行于根文件系统的字节寻址 \textbf{PMFS 文件子系统}：目录与 extent 元数据、CDC/stream 切分写入、融合至 KV run/索引核，并覆盖 EMUL / MAP / PMEM2 三种后端。系统以双槽提交、行级 flush+fence、inode 页 magic+校验，以及 \texttt{ONBOX\_PMFS\_*} 契约套件（含 remount 字节等价与故障注入）验收崩溃与掉电语义。
 
 主要结论如下：
 
 \begin{enumerate}[leftmargin=2em]
-  \item \textbf{方法学：}在教学操作系统上，可机器判定的契约套件比「再实现一套双槽结构」更具不可替代性；正确性可用一行串口与 CI 复现。
-  \item \textbf{系统：}双槽 SB + seal 边界能够表达未提交不可见与半写可检测；写放大可由 $\mathrm{wa\_x100}$ 观测，且小 value 页对齐放大属预期。
-  \item \textbf{实验：}在故意不对等的 API 下，PMFS-KV 相对 xv6 小文件+\texttt{sync} 呈量级延迟优势；EMUL 与 MAP 同量级表明瓶颈主要在软件提交路径。
+  \item \textbf{方法学：}相对「再实现一套双槽 PMEM-FS」，教学 OS 上可机器判定的契约套件（含 \texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2}）才是不可替代点；正确性可用一行串口与 CI 复现。
+  \item \textbf{系统：}明确崩溃可见点——仅 \texttt{fsync}/提交后写可见；未 sync 写在 remount 后不可见；半页元数据损坏被校验拒绝。
+  \item \textbf{实验：}架构面报告相对 xv6 \texttt{fs+log} 的量级延迟/吞吐差；公平面以 A0--A4 同载荷消融给出 \texttt{cycles}/\texttt{wa\_x100} 效应量，二者不可混读。
 \end{enumerate}
 
 \section{不足}
 
-真物理 NVDIMM、完整 POSIX 文件层、多核并发与更丰富的压缩/合并策略均未纳入主线。性能数字依赖相对时间单位与 QEMU，外推需谨慎。
+真物理 NVDIMM、完整 POSIX（seek/mmap/rename/多写者）、多核并发均未纳入主线。性能数字依赖相对时间单位与 QEMU，外推需谨慎。文件容量受 extent 槽与 chunk 上限约束（见语义清单）。
 
 \section{展望}
 
 \begin{itemize}[leftmargin=2em]
-  \item 将契约阶段码扩展到更多故障注入点（中途 kill、部分页损坏）；
-  \item 在附录路线指引下对接真实 PMEM/NVDIMM 平台做延迟校准；
-  \item 在不破坏尖刺的前提下，可选增强索引与多 run 合并策略的可观测性。
+  \item 扩展故障注入（seal 中途杀进程、更多页损坏模式）并保持契约码表稳定；
+  \item 在附录路线指引下对接真实 PMEM/NVDIMM 做延迟校准；
+  \item 在不破坏尖刺的前提下增强大文件与只读共享语义的可测边界。
 \end{itemize}
 
-答辩一句话总结：\textbf{量级优势来自 seal 对小文件+\texttt{sync} 的架构差；不可替代点是教学 OS 上可机器判定的崩溃/掉电契约套件。}
+答辩一句话总结：\textbf{不可替代点是教学 OS 上可机器判定的崩溃/掉电契约套件（含 remount 内容等价）；量级优势来自去块设备路径的架构差，公平面消融另表陈述。}

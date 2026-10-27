@@ -9,6 +9,7 @@
 enum {
   PMSTREAM_WIN = 8192, // ingest window bound (背压)
   PMSTREAM_MAX_CHUNKS_PENDING = 16,
+  PMSTREAM_SLOTS = 8,
 };
 
 struct pmstream_chunk {

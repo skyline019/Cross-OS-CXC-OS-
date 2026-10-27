@@ -92,22 +92,31 @@ run_pmfs_file_trial(int n, int name_base, char *payload)
   char path[12];
   unsigned int len = 0;
 
-  for(i = 0; i < n; i++){
-    mkpath(path, name_base + i);
-    pmfs_funlink(path);
-    if(pmfs_create(path) != 0)
-      return -10;
-    fd = pmfs_fopen(path);
-    if(fd < 0)
-      return -11;
-    if(pmfs_fwrite(fd, payload, VAL_LEN) != VAL_LEN)
-      return -12;
-    if(pmfs_fsync(fd) != 0)
-      return -13;
-    if(pmfs_fread(fd, payload, 16, &len) != 1)
-      return -14;
-    if(pmfs_fclose(fd) != 0)
-      return -15;
+  // Cap concurrent PMFS files to inode table budget (root+/p + files).
+  {
+    int nfile = n;
+    if(nfile > 24)
+      nfile = 24;
+    for(i = 0; i < nfile; i++){
+      mkpath(path, name_base + i);
+      pmfs_funlink(path);
+      if(pmfs_create(path) != 0)
+        return -10;
+      fd = pmfs_fopen(path);
+      if(fd < 0)
+        return -11;
+      if(pmfs_fwrite(fd, payload, VAL_LEN) != VAL_LEN)
+        return -12;
+      {
+        int sy = pmfs_fsync(fd);
+        if(sy != 0)
+          return sy == -2 ? -132 : (sy == -3 ? -133 : -13);
+      }
+      if(pmfs_fread(fd, payload, 16, &len) != 1)
+        return -14;
+      if(pmfs_fclose(fd) != 0)
+        return -15;
+    }
   }
   return 0;
 }

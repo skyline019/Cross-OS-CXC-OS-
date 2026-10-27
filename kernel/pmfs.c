@@ -14,7 +14,7 @@
 #include "pmstream.h"
 #include "pmcontract.h"
 
-#define PMFS_EMUL_BYTES (2u * 1024u * 1024u)
+#define PMFS_EMUL_BYTES (8u * 1024u * 1024u) // headroom for contract + N-sweep seals
 static uint8 pmfs_emul_buf[PMFS_EMUL_BYTES];
 static struct pmfs g_fs;
 
@@ -447,6 +447,14 @@ pmfs_init(void)
     ;
 
   rc = pmfile_ablation_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmfile_remount_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmfile_fault_selftest();
   if(rc != 0)
     ;
 

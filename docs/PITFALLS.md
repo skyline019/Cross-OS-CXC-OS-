@@ -59,13 +59,13 @@
 | **修复** | 提高 `PM_SMAX`/`PM_MAX_SEGS`、B3 budget；扫参采用**每 N 独立开机** |
 | **证据位置** | `kernel/pmalgo.h`、`tools/run_bench_sweep.py` |
 
-## P6. 题面「文件系统」vs 实现「KV」不一致（过程债）
+## P6. 题面「文件系统」vs 实现「KV」不一致（过程债→已合题）
 
 | 项 | 内容 |
 |----|------|
-| **现象** | 早期文档写 inode/POSIX，实现为并行 KV |
-| **修复** | 改题 PMFS-KV；摘要与 `ARCHITECTURE` 显式非 inode；薄 POSIX 仅用户 shim |
-| **教训** | 顶批最怕题实不符；主线写透优于附录变胖 |
+| **现象** | 早期文档写 inode/POSIX，实现一度偏并行 KV |
+| **修复** | 升格文件层（dir/extent/CDC）+ 深化 `pmfs_posix` 走真实文件 API；KV 为融合核 |
+| **教训** | 顶批最怕题实不符；语义清单（`SEMANTICS.md`）写死差集 |
 
 ---
 

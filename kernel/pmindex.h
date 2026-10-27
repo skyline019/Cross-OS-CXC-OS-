@@ -66,6 +66,7 @@ int      pmindex_lower_bound(struct pm_index *ix, uint64 key); // index in keys[
 int      pmindex_hint_runs(struct pm_index *ix, uint64 key, uint32 *out_rids, uint32 maxn);
 int      pmindex_cache_get(struct pm_index *ix, uint64 key, void *dst, uint32 dstcap, uint32 *len, int *found);
 void     pmindex_cache_put(struct pm_index *ix, uint64 key, const void *val, uint32 len, int found);
+void     pmindex_cache_invalidate(struct pm_index *ix, uint64 key);
 
 int      pmindex_selftest(void);
 

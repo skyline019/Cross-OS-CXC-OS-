@@ -20,7 +20,9 @@
   \end{tabular}
 \end{table}
 
-数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-strict}、\texttt{contract-pmem}、\texttt{contract-pmem2}。公平消融见 \texttt{docs/ABLATION.md}（A0--A4：CDC/Fixed $\times$ batch/per-chunk seal）。
+数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-strict}、\texttt{contract-pmem}、\texttt{contract-pmem2}。公平消融见 \texttt{docs/ABLATION.md}（A0--A4 输出 \texttt{cycles}/\texttt{wa\_x100}）。语义与故障矩阵见 \texttt{docs/SEMANTICS.md}（\texttt{REMOUNT}/\texttt{FAULT\_SEALMID}/\texttt{FAULT\_HALFPAGE}）。
+
+\textbf{两套结论：}架构面——相对 xv6 日志路径的量级差；公平面——同载荷消融效应量。禁止把 \texttt{fratio} 读成同等 POSIX API 加速比。
 
 \section{功能、崩溃与掉电（尖刺证据）}
 
@@ -72,9 +74,9 @@
     \toprule
     $N$ & med\_kv & med\_file & med\_xv6 & fratio$\times$100 & thr\_file & wa\_x100 \\
     \midrule
-    8  & 12600 & 55501  & 3793942  & 6835  & 144 & 8432 \\
-    16 & 17031 & 115392 & 9580051  & 8302  & 138 & 4344 \\
-    32 & 24801 & 227879 & 22976650 & 10082 & 140 & 2205 \\
+    8  & 33507 & 304451 & 5684939  & 1867 & 26 & 15384 \\
+    16 & 38448 & 486211 & 11208338 & 2305 & 32 & 17889 \\
+    32 & 53065 & 659056 & 25648605 & 3891 & 48 & 17721 \\
     \bottomrule
   \end{tabular}
 \end{table}

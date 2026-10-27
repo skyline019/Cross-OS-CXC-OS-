@@ -32,12 +32,12 @@ PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数
 对照相关工作与作者前序原生项目（FCS / Aurora），本文贡献收敛为一条尖刺与两条支撑柱~\cite{fcsown,auroraown,cxcos}：
 
 \begin{description}[leftmargin=2em,style=nextline]
-  \item[尖刺（C1）] 教学 OS 上可机器判定的崩溃与掉电契约套件：阶段码表 + 宿主脚本 + CI。
-  \item[系统柱（C2）] 去块设备文件布局 + 行级 persist + 双槽/B3/WA。
-  \item[实验柱（C3）] PMEM2 文件后端杀启掉电一行过，作为尖刺在掉电场景上的实例化。
+  \item[尖刺（C1）] 教学 OS 上可机器判定的崩溃与掉电契约套件（含 remount 字节等价与故障注入）：相对同类，不可替代的是方法学验收，而非又一个双槽。
+  \item[系统柱（C2）] 去块设备文件布局 + CDC/stream 融合 KV 核 + 行级 persist + 双槽/B3/WA。
+  \item[实验柱（C3）] PMEM2 掉电一行过 + A0--A4 公平消融效应量。
 \end{description}
 
-主动不宣称的内容包括：完整内核 VFS、真 NVDIMM 主线化、将 FCS/Aurora 源码并入库。
+主动不宣称的内容包括：完整内核 VFS、真 NVDIMM 主线化、将 FCS/Aurora 源码并入库、多写者并发。
 
 \section{论文结构}
 

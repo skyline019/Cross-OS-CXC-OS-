@@ -6,8 +6,6 @@
 #include "pmalgo.h"
 #include "pmcontract.h"
 
-enum { PMSTREAM_SLOTS = 4 };
-
 static struct pmstream g_streams[PMSTREAM_SLOTS];
 
 // Chunk key: namespace | ino | seq

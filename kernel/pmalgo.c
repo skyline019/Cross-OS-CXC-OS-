@@ -100,6 +100,7 @@ pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len)
       if(len)
         memmove(a->mem_val[i], (void*)val, len);
       a->fuse_puts++;
+      pmindex_cache_invalidate(&a->ix, key);
       return 0;
     }
   }
@@ -117,6 +118,8 @@ pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len)
     memmove(a->mem_val[i], (void*)val, len);
   a->mem_n++;
   a->fuse_puts++;
+  // Invalidate qcache (esp. negative) so a prior miss cannot hide this put.
+  pmindex_cache_invalidate(&a->ix, key);
   return 0;
 }
 
@@ -220,8 +223,20 @@ attach_run(struct pm_algo *a, uint32 rid)
 
   if(c->nseg >= PM_MAX_SEGS){
     cell_compact_b3(a, c);
-    if(c->nseg >= PM_MAX_SEGS)
-      return -1;
+    // Pressure valve: if still full, drop oldest seg *views* (runs stay on
+    // device but are no longer searched). Needed so long benches cannot wedge
+    // seal after boot contracts fill the single-cell seg list.
+    while(c->nseg >= PM_MAX_SEGS && c->nseg > 0){
+      struct pm_seg *old = &c->segs[c->nseg - 1];
+      if(old->rid < PM_MAX_RUNS && a->runs[old->rid].used){
+        if(c->nbytes >= a->runs[old->rid].nbytes)
+          c->nbytes -= a->runs[old->rid].nbytes;
+        else
+          c->nbytes = 0;
+      }
+      memset(old, 0, sizeof(*old));
+      c->nseg--;
+    }
   }
 
   seg.rid = rid;
@@ -475,7 +490,8 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
     return found ? 1 : 0;
   }
 
-  // Quantized binary posting → candidate runs (skip unrelated).
+  // Quantized posting hints: prefer candidate runs, but never exclusively
+  // filter — bucket collisions must not hide a live rid (correctness > skip).
   nh = pmindex_hint_runs(&a->ix, key, hints, PM_BUCKET_HIT);
 
   for(ci = 0; ci < a->ncells; ci++){
@@ -485,16 +501,15 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
     for(si = 0; si < c->nseg; si++){
       struct pm_seg *s = &c->segs[si];
       struct pm_run *r = &a->runs[s->rid];
+      int hinted = 0;
       if(key < s->klo || key >= s->khi)
         continue;
-      // If index has hints, require rid ∈ hints (二值倒排过滤).
       if(nh > 0){
-        int ok = 0;
         for(hi = 0; hi < nh; hi++){
-          if(hints[hi] == s->rid){ ok = 1; break; }
+          if(hints[hi] == s->rid){ hinted = 1; break; }
         }
-        if(!ok)
-          continue;
+        // Soft preference only: still search non-hinted segs (fall through).
+        (void)hinted;
       }
       if(!bloom_maybe(&r->bloom, key)){
         a->wa.bloom_skips++;

@@ -1,4 +1,4 @@
-# ONBOX_PMFS 严格测试契约（完整 FS + CDC + Stream）
+# ONBOX_PMFS 严格测试契约（完整 FS + CDC + Stream + Remount/Fault）
 
 所有契约行必须可被 `grep` / `tools/contract_pmfs.py` 匹配。
 
@@ -12,9 +12,10 @@
 
 `PMEM0` `MOUNT` `STORE` `INDEX` `ALGO` `CRASH` `PERSIST`
 `FILE` `CDC` `STREAM` `POS_FILE` `NEG_FILE` `CHAOS_FILE` `ABLATION`
+`REMOUNT` `FAULT`
 → `ONBOX_PMFS_PASS`
 
-`make contract-strict` 另要求：`POS/NEG_CDC`、`POS/NEG_STREAM`、`EDGE_FILE`、`ABLATION_A0/A4`。
+`make contract-strict` 另要求：`POS/NEG_CDC`、`POS/NEG_STREAM`、`EDGE_FILE`、`ABLATION_A0/A4`、`FAULT_SEALMID`、`FAULT_HALFPAGE`、消融行含 `wa_x100=`。
 
 ## MAP / PMEM2
 
@@ -24,10 +25,14 @@
 ## 用户态
 
 - `_pmfs_probe` → `SYSCALL_PASS`
-- `_pmfs_file` → `FILEUSER_PASS`（目录 `/u` + 文件）
-- `_pmfs_bench [N]` → `BENCH_PASS`（含 `median_file` / `thr_file` / `wa_x100`）
-- `_pmfs_posix` → `POSIX_PASS`（薄 shim）
+- `_pmfs_file` → `FILEUSER_PASS`
+- `_pmfs_bench [N]` → `BENCH_PASS`（`median_file` / `thr_file` / `wa_x100`）
+- `_pmfs_posix` → `POSIX_PASS`（**真实文件 API 深化**：mkdir/readdir/fsync/reopen）
 
-## 融合证明
+## 语义证明
 
-`FILE` / `STREAM` / `ABLATION` 行含 `fuse_puts` / `fuse_seals` 或 `fused=1`，证明 chunk→`pm_put`/`pm_seal`→index 路径未旁路。
+- `REMOUNT_PASS bytes=N equal=1`：sync 后元数据重载，文件内容字节等价
+- `FAULT_SEALMID_PASS invisible=1`：未 fsync 写不可见
+- `FAULT_HALFPAGE_PASS chk_reject=1`：inode 半页损坏被 magic+chk 拒绝
+
+详见 `docs/SEMANTICS.md`。

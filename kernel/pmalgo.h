@@ -11,9 +11,9 @@ enum {
   PM_BMAX       = 32 * 1024,   // B1: cell physical bytes
   PM_SMAX       = 16,          // B2: compact when segs reach this
   PM_GC_RATIO   = 2,           // compact if dead >= ratio * live
-  PM_MAX_RUNS   = 48,
-  PM_MAX_CELLS  = 24,
-  PM_MAX_SEGS   = 24,          // headroom for multi-N bench sweeps
+  PM_MAX_RUNS   = 256,         // headroom: boot contracts + bench N-sweep seals
+  PM_MAX_CELLS  = 64,
+  PM_MAX_SEGS   = 48,          // headroom for multi-N bench sweeps
   PM_MAX_FENCES = 64,
   PM_BLOOM_WORDS = 4,          // 256-bit bloom
   PM_REC_HDR    = 16,          // on-page record: key:u64 len:u32 pad:u32

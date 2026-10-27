@@ -30,7 +30,7 @@ sys_pmfs_fread(void)
 {
   int fd, cap;
   uint64 udst, ulen;
-  char buf[PMFILE_MAX_SIZE];
+  static char buf[PMFILE_MAX_SIZE];
   uint32 len = 0;
   int hit;
   struct proc *p = myproc();
@@ -60,7 +60,7 @@ sys_pmfs_fwrite(void)
 {
   int fd, len;
   uint64 usrc;
-  char buf[PMFILE_MAX_SIZE];
+  static char buf[PMFILE_MAX_SIZE];
 
   argint(0, &fd);
   argaddr(1, &usrc);

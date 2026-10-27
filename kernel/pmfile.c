@@ -99,16 +99,52 @@ resolve_parent(const char *path, int *parent_ino)
   return -1;
 }
 
+enum { PMFILE_MAGIC = 0x504d4649u }; // 'PMFI'
+enum { PMFILE_HDR = 8 };             // magic:u32 chk:u32
+
+static uint32
+meta_chk(const void *p, uint32 n)
+{
+  const uint8 *b = (const uint8 *)p;
+  uint32 h = 2166136261u;
+  uint32 i;
+  for(i = 0; i < n; i++){
+    h ^= b[i];
+    h *= 16777619u;
+  }
+  return h;
+}
+
 static int
 pmfile_load(void)
 {
   struct pmfs *fs = pmfs_store();
+  static uint8 page[PMDEV_PAGE];
+  uint32 magic, chk, body;
+
   if(fs == 0 || !fs->mounted)
     return -1;
-  if(pmdev_read(&fs->dev, PMFILE_INODE_PG, 0, inodes, sizeof(inodes)) != 0)
+  if(pmdev_read(&fs->dev, PMFILE_INODE_PG, 0, page, PMDEV_PAGE) != 0)
     return -1;
-  if(pmdev_read(&fs->dev, PMFILE_DENT_PG, 0, dents, sizeof(dents)) != 0)
+  magic = *(uint32 *)page;
+  chk = *(uint32 *)(page + 4);
+  body = sizeof(inodes);
+  if(body + PMFILE_HDR > PMDEV_PAGE)
+    body = PMDEV_PAGE - PMFILE_HDR;
+  if(magic != PMFILE_MAGIC || chk != meta_chk(page + PMFILE_HDR, body))
+    return -2; // corrupt / unformatted
+  memmove(inodes, page + PMFILE_HDR, body);
+
+  if(pmdev_read(&fs->dev, PMFILE_DENT_PG, 0, page, PMDEV_PAGE) != 0)
     return -1;
+  magic = *(uint32 *)page;
+  chk = *(uint32 *)(page + 4);
+  body = sizeof(dents);
+  if(body + PMFILE_HDR > PMDEV_PAGE)
+    body = PMDEV_PAGE - PMFILE_HDR;
+  if(magic != PMFILE_MAGIC || chk != meta_chk(page + PMFILE_HDR, body))
+    return -2;
+  memmove(dents, page + PMFILE_HDR, body);
   return 0;
 }
 
@@ -117,16 +153,31 @@ pmfile_store_meta(void)
 {
   struct pmfs *fs = pmfs_store();
   static uint8 page[PMDEV_PAGE];
+  uint32 body;
+
   if(fs == 0 || !fs->mounted)
     return -1;
+
   memset(page, 0, sizeof(page));
-  memmove(page, inodes, sizeof(inodes) <= PMDEV_PAGE ? sizeof(inodes) : PMDEV_PAGE);
+  body = sizeof(inodes);
+  if(body + PMFILE_HDR > PMDEV_PAGE)
+    body = PMDEV_PAGE - PMFILE_HDR;
+  memmove(page + PMFILE_HDR, inodes, body);
+  *(uint32 *)page = PMFILE_MAGIC;
+  *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
   if(pmdev_write_page(&fs->dev, PMFILE_INODE_PG, page) != 0)
     return -1;
+
   memset(page, 0, sizeof(page));
-  memmove(page, dents, sizeof(dents) <= PMDEV_PAGE ? sizeof(dents) : PMDEV_PAGE);
+  body = sizeof(dents);
+  if(body + PMFILE_HDR > PMDEV_PAGE)
+    body = PMDEV_PAGE - PMFILE_HDR;
+  memmove(page + PMFILE_HDR, dents, body);
+  *(uint32 *)page = PMFILE_MAGIC;
+  *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
   if(pmdev_write_page(&fs->dev, PMFILE_DENT_PG, page) != 0)
     return -1;
+
   if(pmfs_commit(fs) != 0)
     return -1;
   return 0;
@@ -163,11 +214,14 @@ pmfile_init(void)
     return;
   if(fs->npages <= PMFILE_DENT_PG)
     return;
-  if(pmfile_load() != 0 || !inodes[0].used){
-    memset(inodes, 0, sizeof(inodes));
-    memset(dents, 0, sizeof(dents));
-    ensure_root();
-    pmfile_store_meta();
+  {
+    int lr = pmfile_load();
+    if(lr != 0 || !inodes[0].used){
+      memset(inodes, 0, sizeof(inodes));
+      memset(dents, 0, sizeof(dents));
+      ensure_root();
+      pmfile_store_meta();
+    }
   }
 }
 
@@ -249,9 +303,11 @@ pmfile_open(const char *path)
     return -1;
   for(fd = 0; fd < PMFILE_MAX_FD; fd++){
     if(ofile[fd].ino == 0){
+      ofile[fd].st = pmstream_alloc(ino, g_chunk_mode_cdc, g_batch_seal);
+      if(ofile[fd].st == 0)
+        return -1;
       ofile[fd].ino = ino;
       ofile[fd].dirty = 0;
-      ofile[fd].st = pmstream_alloc(ino, g_chunk_mode_cdc, g_batch_seal);
       return fd;
     }
   }
@@ -329,10 +385,12 @@ pmfile_fsync(int fd)
   ino = &inodes[ofile[fd].ino - 1];
   st = ofile[fd].st;
   if(st && pmstream_flush(st) != 0)
-    return -1;
+    return -2; // stream flush / seal failed (runs/pages?)
   sync_extents_from_stream(ino, st);
   ofile[fd].dirty = 0;
-  return pmfile_store_meta();
+  if(pmfile_store_meta() != 0)
+    return -3; // meta page / SB commit failed
+  return 0;
 }
 
 int
@@ -536,14 +594,15 @@ pmfile_edge_selftest(void)
   return 0;
 }
 
-// Fair ablation A0–A4 (same payload; vary CDC / seal / fixed).
+// Fair ablation A0–A4 (same payload; vary CDC / seal / fixed) + effect sizes.
 int
 pmfile_ablation_selftest(void)
 {
   struct pm_algo *a = pm_algo_global();
+  struct pm_wa wa0, wa1;
   char payload[256];
   int i, fd;
-  uint64 puts0, seals0;
+  uint64 puts0, seals0, t0, t1, dt;
   // A0 CDC+batch, A1 fixed+batch, A2 CDC+per-chunk seal, A3 fixed+per-chunk, A4 CDC+batch again
   struct { int cdc; int batch; char *tag; } cfg[5] = {
     {1, 1, "A0"}, {0, 1, "A1"}, {1, 0, "A2"}, {0, 0, "A3"}, {1, 1, "A4"}
@@ -556,6 +615,7 @@ pmfile_ablation_selftest(void)
   ensure_root();
   for(i = 0; i < 5; i++){
     char path[12];
+    int wa_x100 = 0;
     path[0] = '/'; path[1] = 'a'; path[2] = '0' + i; path[3] = 0;
     pmfile_set_ablation(cfg[i].cdc, cfg[i].batch);
     pmfile_unlink(path);
@@ -564,6 +624,8 @@ pmfile_ablation_selftest(void)
     }
     puts0 = a->fuse_puts;
     seals0 = a->fuse_seals;
+    wa0 = pm_wa_snapshot(a);
+    t0 = r_time();
     fd = pmfile_open(path);
     if(fd < 0){ pmcontract_fail("ABLATION", 20 + i); return -20 - i; }
     if(pmfile_write(fd, payload, (int)sizeof(payload)) < 0){
@@ -571,12 +633,162 @@ pmfile_ablation_selftest(void)
     }
     if(pmfile_fsync(fd) != 0){ pmcontract_fail("ABLATION", 40 + i); return -40 - i; }
     pmfile_close(fd);
-    printk("ONBOX_PMFS_ABLATION_%s_PASS cdc=%d batch=%d dputs=%d dseals=%d\n",
+    t1 = r_time();
+    dt = (t1 > t0) ? (t1 - t0) : 1;
+    wa1 = pm_wa_snapshot(a);
+    if(wa1.logical_bytes > wa0.logical_bytes){
+      uint64 dlog = wa1.logical_bytes - wa0.logical_bytes;
+      uint64 dphys = wa1.phys_bytes - wa0.phys_bytes;
+      if(dlog)
+        wa_x100 = (int)((dphys * 100) / dlog);
+    }
+    printk("ONBOX_PMFS_ABLATION_%s_PASS cdc=%d batch=%d dputs=%d dseals=%d cycles=%d wa_x100=%d\n",
            cfg[i].tag, cfg[i].cdc, cfg[i].batch,
-           (int)(a->fuse_puts - puts0), (int)(a->fuse_seals - seals0));
+           (int)(a->fuse_puts - puts0), (int)(a->fuse_seals - seals0),
+           (int)dt, wa_x100);
   }
   pmfile_set_ablation(1, 1); // restore default
-  printk("ONBOX_PMFS_ABLATION_PASS variants=5 fair=1\n");
+  printk("ONBOX_PMFS_ABLATION_PASS variants=5 fair=1 effects=1\n");
   pmcontract_mark("ABLATION", 1);
+  return 0;
+}
+
+// Sync后丢弃内存元数据再 load：内容字节等价（评审：是不是同一文件？）
+int
+pmfile_remount_selftest(void)
+{
+  const char *path = "/rmnt";
+  const char *pay = "REMOUNT-BYTE-EQ-PROOF-v1";
+  char buf[64];
+  uint32 n = 0, expect;
+  int fd, i;
+
+  ensure_root();
+  pmfile_unlink(path);
+  if(pmfile_create(path) != 0){ pmcontract_fail("REMOUNT", 1); return -1; }
+  fd = pmfile_open(path);
+  if(fd < 0){ pmcontract_fail("REMOUNT", 2); return -2; }
+  expect = (uint32)strlen(pay);
+  if(pmfile_write(fd, pay, (int)expect) < 0){ pmcontract_fail("REMOUNT", 3); return -3; }
+  if(pmfile_fsync(fd) != 0){ pmcontract_fail("REMOUNT", 4); return -4; }
+  pmfile_close(fd);
+
+  // Drop RAM view (模拟 remount 元数据重载；KV run 仍在同一启动内)
+  memset(inodes, 0, sizeof(inodes));
+  memset(dents, 0, sizeof(dents));
+  if(pmfile_load() != 0){ pmcontract_fail("REMOUNT", 5); return -5; }
+
+  fd = pmfile_open(path);
+  if(fd < 0){ pmcontract_fail("REMOUNT", 6); return -6; }
+  if(pmfile_read(fd, buf, sizeof(buf), &n) != 1 || n != expect){
+    pmcontract_fail("REMOUNT", 7); return -7;
+  }
+  for(i = 0; i < (int)expect; i++){
+    if(buf[i] != pay[i]){ pmcontract_fail("REMOUNT", 8); return -8; }
+  }
+  pmfile_close(fd);
+  printk("ONBOX_PMFS_REMOUNT_PASS bytes=%d equal=1\n", (int)expect);
+  pmcontract_mark("REMOUNT", 1);
+  pmcontract_mark("POS_REMOUNT", 1);
+  return 0;
+}
+
+// 故障注入：未 sync 不可见；inode 半页撕坏 → chk 拒绝
+int
+pmfile_fault_selftest(void)
+{
+  struct pmfs *fs = pmfs_store();
+  const char *path = "/fault";
+  char buf[32];
+  uint32 n = 0;
+  int fd, lr;
+  static uint8 page[PMDEV_PAGE];
+
+  ensure_root();
+
+  // --- SEALMID: write without fsync; reload meta → 新内容不可见 ---
+  pmfile_unlink(path);
+  if(pmfile_create(path) != 0){ pmcontract_fail("FAULT", 1); return -1; }
+  if(pmfile_store_meta() != 0){ pmcontract_fail("FAULT", 2); return -2; }
+  fd = pmfile_open(path);
+  if(fd < 0){ pmcontract_fail("FAULT", 3); return -3; }
+  if(pmfile_write(fd, "ghost", 5) < 0){ pmcontract_fail("FAULT", 4); return -4; }
+  // 故意不 fsync；丢弃脏内存，从盘重载
+  if(ofile[fd].st)
+    pmstream_free(ofile[fd].st);
+  ofile[fd].ino = 0;
+  ofile[fd].st = 0;
+  ofile[fd].dirty = 0;
+  memset(inodes, 0, sizeof(inodes));
+  memset(dents, 0, sizeof(dents));
+  if(pmfile_load() != 0){ pmcontract_fail("FAULT", 5); return -5; }
+  fd = pmfile_open(path);
+  if(fd < 0){ pmcontract_fail("FAULT", 6); return -6; }
+  if(pmfile_read(fd, buf, sizeof(buf), &n) != 1){
+    pmcontract_fail("FAULT", 7); return -7;
+  }
+  if(n != 0){ // 未提交写必须不可见
+    pmcontract_fail("FAULT", 8); return -8;
+  }
+  pmfile_close(fd);
+  printk("ONBOX_PMFS_FAULT_SEALMID_PASS invisible=1\n");
+  pmcontract_mark("FAULT_SEALMID", 1);
+
+  // --- HALFPAGE: 撕坏 inode 页后半 → chk 失败 ---
+  if(fs == 0){ pmcontract_fail("FAULT", 9); return -9; }
+  if(pmfile_store_meta() != 0){ pmcontract_fail("FAULT", 10); return -10; }
+  if(pmdev_read(&fs->dev, PMFILE_INODE_PG, 0, page, PMDEV_PAGE) != 0){
+    pmcontract_fail("FAULT", 11); return -11;
+  }
+  memset(page + (PMDEV_PAGE / 2), 0xA5, PMDEV_PAGE / 2);
+  if(pmdev_write_page(&fs->dev, PMFILE_INODE_PG, page) != 0){
+    pmcontract_fail("FAULT", 12); return -12;
+  }
+  memset(inodes, 0, sizeof(inodes));
+  lr = pmfile_load();
+  if(lr != -2){ // must reject
+    pmcontract_fail("FAULT", 13); return -13;
+  }
+  printk("ONBOX_PMFS_FAULT_HALFPAGE_PASS chk_reject=1\n");
+  pmcontract_mark("FAULT_HALFPAGE", 1);
+
+  // 恢复干净元数据（必须同时清空 dents，避免脏 dent 指向空 inode）
+  memset(inodes, 0, sizeof(inodes));
+  memset(dents, 0, sizeof(dents));
+  ensure_root();
+  if(pmfile_store_meta() != 0){ pmcontract_fail("FAULT", 14); return -14; }
+
+  // Post-fault user-path smoke（与 pmfs_posix 同形：mkdir/create/write/fsync/reopen/read）
+  {
+    const char *pdir = "/posix";
+    const char *pfile = "/posix/a.txt";
+    const char *pay = "hello-posix";
+    char rbuf[32];
+    uint32 rn = 0;
+    int pfd, j;
+    if(pmfile_mkdir(pdir) != 0 && find_dent_full(pdir) < 0){
+      pmcontract_fail("FAULT", 15); return -15;
+    }
+    pmfile_unlink(pfile);
+    if(pmfile_create(pfile) != 0){ pmcontract_fail("FAULT", 16); return -16; }
+    pfd = pmfile_open(pfile);
+    if(pfd < 0){ pmcontract_fail("FAULT", 17); return -17; }
+    if(pmfile_write(pfd, pay, 11) < 0){ pmcontract_fail("FAULT", 18); return -18; }
+    if(pmfile_fsync(pfd) != 0){ pmcontract_fail("FAULT", 19); return -19; }
+    pmfile_close(pfd);
+    pfd = pmfile_open(pfile);
+    if(pfd < 0){ pmcontract_fail("FAULT", 20); return -20; }
+    if(pmfile_read(pfd, rbuf, sizeof(rbuf), &rn) != 1 || rn != 11){
+      pmcontract_fail("FAULT", 21); return -21;
+    }
+    for(j = 0; j < 11; j++){
+      if(rbuf[j] != pay[j]){ pmcontract_fail("FAULT", 22); return -22; }
+    }
+    pmfile_close(pfd);
+    printk("ONBOX_PMFS_FAULT_POSIXSMOKE_PASS bytes=11\n");
+  }
+
+  printk("ONBOX_PMFS_FAULT_PASS injects=2\n");
+  pmcontract_mark("FAULT", 1);
   return 0;
 }

@@ -174,8 +174,24 @@ pmindex_cache_put(struct pm_index *ix, uint64 key, const void *val, uint32 len,
                   int found)
 {
   struct pm_qcent *e;
+  uint32 i;
   if(ix == 0)
     return;
+  // Update in place if key already cached (avoid stale duplicate entries).
+  for(i = 0; i < PM_QCACHE; i++){
+    if(ix->cache[i].used && ix->cache[i].key == key){
+      e = &ix->cache[i];
+      memset(e, 0, sizeof(*e));
+      e->used = 1;
+      e->key = key;
+      e->found = found ? 1 : 0;
+      if(found && val && len <= 64){
+        e->len = len;
+        memmove(e->val, (void*)val, len);
+      }
+      return;
+    }
+  }
   e = &ix->cache[ix->cache_i % PM_QCACHE];
   ix->cache_i++;
   memset(e, 0, sizeof(*e));
@@ -185,6 +201,18 @@ pmindex_cache_put(struct pm_index *ix, uint64 key, const void *val, uint32 len,
   if(found && val && len <= 64){
     e->len = len;
     memmove(e->val, (void*)val, len);
+  }
+}
+
+void
+pmindex_cache_invalidate(struct pm_index *ix, uint64 key)
+{
+  uint32 i;
+  if(ix == 0)
+    return;
+  for(i = 0; i < PM_QCACHE; i++){
+    if(ix->cache[i].used && ix->cache[i].key == key)
+      ix->cache[i].used = 0;
   }
 }
 

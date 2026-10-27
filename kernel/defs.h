@@ -92,6 +92,8 @@ int             pmfile_selftest(void);
 int             pmfile_chaos_selftest(void);
 int             pmfile_edge_selftest(void);
 int             pmfile_ablation_selftest(void);
+int             pmfile_remount_selftest(void);
+int             pmfile_fault_selftest(void);
 int             pmcdc_selftest(void);
 int             pmstream_selftest(void);
 

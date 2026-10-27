@@ -5,10 +5,10 @@
 #include "types.h"
 
 enum {
-  PMFILE_MAX_INO   = 16,   // fits one meta page with extents
+  PMFILE_MAX_INO   = 40,   // fits one meta page with smaller extent slots
   PMFILE_MAX_FD    = 8,
   PMFILE_NAME      = 28,
-  PMFILE_MAX_EXT   = 8,    // chunks per file
+  PMFILE_MAX_EXT   = 4,    // chunks per file (page-budget vs inode count)
   PMFILE_MAX_SIZE  = 1024, // syscall write/read cap
   PMFILE_INODE_PG  = 2,
   PMFILE_DENT_PG   = 3,
@@ -58,5 +58,7 @@ int  pmfile_readdir(const char *path, char *dst, int cap); // newline-sep names
 int  pmfile_stat(const char *path, uint32 *size, uint32 *type);
 void pmfile_set_ablation(int cdc_on, int batch_seal);
 int  pmfile_ablation_selftest(void);
+int  pmfile_remount_selftest(void); // sync后 remount 字节等价
+int  pmfile_fault_selftest(void);   // sealmid + halfpage chk
 
 #endif
