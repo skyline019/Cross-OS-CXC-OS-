@@ -30,6 +30,8 @@ OBJS = \
   $K/plic.o \
   $K/virtio_disk.o \
   $K/pmem.o \
+  $K/pmfile.o \
+  $K/syspmfile.o \
   $K/pmdev.o \
   $K/pmfs.o \
   $K/pmalgo.o \
@@ -161,6 +163,7 @@ UPROGS=\
 	$U/_pmfs_probe\
 	$U/_pmfs_bench\
 	$U/_pmfs_posix\
+	$U/_pmfs_file\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

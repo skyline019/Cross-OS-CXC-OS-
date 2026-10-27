@@ -8,7 +8,7 @@ import sys
 import time
 
 NS = [8, 16, 32]
-TIMEOUT = 120.0
+TIMEOUT = 180.0
 
 
 def kill_tree(proc):
@@ -60,6 +60,7 @@ def run_one(env, make_target: str, n: int, mode: str) -> dict:
                     and "ONBOX_PMFS_BENCH_PASS" in out
                     and f" N={n} " in out
                     and "wa_x100=" in out
+                    and "thr_file=" in out
                 ):
                     time.sleep(0.25)
                     break
@@ -71,103 +72,105 @@ def run_one(env, make_target: str, n: int, mode: str) -> dict:
         kill_tree(proc)
 
     m = re.search(
-        rf"ONBOX_PMFS_BENCH_PASS trials=(\d+) N={n} median_pmfs=(\d+) "
-        rf"median_xv6=(\d+) ratio=(\d+) logical=(\d+) phys=(\d+) wa_x100=(\d+)",
+        rf"ONBOX_PMFS_BENCH_PASS trials=(\d+) N={n} "
+        rf"median_pmfs=(\d+) median_file=(\d+) median_xv6=(\d+) "
+        rf"ratio=(\d+) fratio=(\d+) thr_file=(\d+) thr_xv6=(\d+) "
+        rf"logical=(\d+) phys=(\d+) wa_x100=(\d+)",
         out,
     )
     if not m:
-        raise RuntimeError(f"parse failed for N={n} mode={mode}\n---\n{out[-2000:]}")
+        raise RuntimeError(f"parse failed for N={n} mode={mode}\n---\n{out[-2500:]}")
     return {
         "n": n,
         "trials": int(m.group(1)),
         "median_pmfs": int(m.group(2)),
-        "median_xv6": int(m.group(3)),
-        "ratio": int(m.group(4)),
-        "logical": int(m.group(5)),
-        "phys": int(m.group(6)),
-        "wa_x100": int(m.group(7)),
+        "median_file": int(m.group(3)),
+        "median_xv6": int(m.group(4)),
+        "ratio": int(m.group(5)),
+        "fratio": int(m.group(6)),
+        "thr_file": int(m.group(7)),
+        "thr_xv6": int(m.group(8)),
+        "logical": int(m.group(9)),
+        "phys": int(m.group(10)),
+        "wa_x100": int(m.group(11)),
         "mode": mode,
     }
 
 
 def write_bench_md(emul_rows, map_row):
     lines = [
-        "# PMFS-KV vs xv6 fs 对比评测（深度版）",
+        "# PMFS 文件子系统 vs xv6 fs 对比评测（合题深度版）",
         "",
         "## 1. 方法与为何「不对等」",
         "",
-        "本实验**故意**对比两条异构路径，目的是量级说明而非绝对公平微基准：",
+        "本实验对比三条路径，目的是量级说明而非绝对公平微基准：",
         "",
-        "| 维度 | PMFS-KV | xv6 `fs+log` |",
-        "|------|---------|--------------|",
-        "| API | `put`×N + **1×`seal`** + `get`×N | `open/create`+`write(8B)`×N + **`sync`** |",
-        "| 持久语义 | 双槽 SB 提交点 | 块日志检查点 |",
-        "| I/O 栈 | 字节寻址窗口 / EMUL 缓冲 | virtio-blk + bio + log |",
-        "| 元数据 | 无目录/inode | 目录项 + inode + 位图 |",
+        "| 维度 | PMFS-KV | PMFS-File | xv6 `fs+log` |",
+        "|------|---------|-----------|--------------|",
+        "| API | `put`×N + 1×`seal` + `get`×N | `create/write/fsync`×N | `open/write`×N + `sync` |",
+        "| 持久语义 | 双槽 SB | inode 页 + SB | 块日志检查点 |",
+        "| I/O 栈 | 字节寻址 / EMUL | 同左 | virtio-blk + bio + log |",
         "",
-        "**解读约束：** ratio≫1 主要反映「避免 virtio 日志与目录更新」的架构差，",
-        "不是「同等 POSIX 文件 API 下快 1200 倍」。论文应写作**量级优势 + 边界**。",
+        "**解读约束：** ratio≫1 主要反映「避免 virtio 日志与目录更新」的架构差。",
+        "吞吐 `thr_*` 为相对单位（`N×1e6/median_r_time`），不作墙钟 MB/s。",
         "",
         "计时：`cycles()` → 内核 `r_time()`；每 N 做 5 trial 取**中位数**。",
         "",
         "```bash",
-        "make bench-sweep    # 本表数据",
-        "make bench-fill     # 单点快捷回填",
+        "make bench-sweep",
         "```",
         "",
-        "## 2. EMUL 边界",
+        "## 2. EMUL / NVDIMM 仿真边界",
         "",
-        "- 默认无 `-DPMEM_MAP`：2MiB EMUL，验证算法与契约。",
-        "- MAP：`[PMEMBASE,PMEMEND)`；`contract-pmem2` 验证文件后端掉电。",
+        "- 默认 EMUL：算法与契约快回归。",
+        "- MAP / PMEM2（`memory-backend-file`）= QEMU **NVDIMM 仿真**主路径。",
         "- EMUL **不**代表真 NVDIMM 延迟。",
         "",
         "## 3. 写放大 WA",
         "",
-        "`wa_x100 = phys*100/logical`。",
-        "",
-        "- **logical**：用户 payload；**phys**：整页写入（对齐、run、B3 重写）。",
-        "- 小 value（8B）对 4KiB 页必然放大；与 xv6 日志放大不同源。",
+        "`wa_x100 = phys*100/logical`（KV 路径）。小 value 对 4KiB 页必然放大。",
         "",
         "## 4. 随 N 变化（EMUL，中位数）",
         "",
-        "| N | median_pmfs | median_xv6 | ratio×100 | wa_x100 | logical | phys |",
-        "|---|-------------|------------|-----------|---------|---------|------|",
+        "| N | median_kv | median_file | median_xv6 | fratio×100 | thr_file | thr_xv6 | wa_x100 |",
+        "|---|-----------|-------------|------------|------------|----------|---------|---------|",
     ]
     for r in emul_rows:
         lines.append(
-            f"| {r['n']} | {r['median_pmfs']} | {r['median_xv6']} | {r['ratio']} | "
-            f"{r['wa_x100']} | {r['logical']} | {r['phys']} |"
+            f"| {r['n']} | {r['median_pmfs']} | {r['median_file']} | {r['median_xv6']} | "
+            f"{r['fratio']} | {r['thr_file']} | {r['thr_xv6']} | {r['wa_x100']} |"
         )
     lines += [
         "",
         "### 观察",
         "",
-        "- xv6 随 N 近似线性（每文件元数据+日志）。",
-        "- PMFS 以一次 seal 摊销提交；ratio 通常仍 ≫1。",
-        "- 高 wa_x100 由页对齐主导，属预期。",
+        "- xv6 随 N 近似线性；PMFS-File 每文件 fsync 仍避免块日志栈。",
+        "- `thr_file` / `thr_xv6` 给出吞吐相对量级（合题「延迟与吞吐」）。",
         "",
         "## 5. MAP vs EMUL（N=32）",
         "",
-        "| mode | median_pmfs | median_xv6 | ratio×100 | wa_x100 |",
-        "|------|-------------|------------|-----------|---------|",
+        "| mode | median_kv | median_file | median_xv6 | fratio×100 | thr_file |",
+        "|------|-----------|-------------|------------|------------|----------|",
     ]
     e32 = next((x for x in emul_rows if x["n"] == 32), None)
     if e32:
         lines.append(
-            f"| EMUL | {e32['median_pmfs']} | {e32['median_xv6']} | {e32['ratio']} | {e32['wa_x100']} |"
+            f"| EMUL | {e32['median_pmfs']} | {e32['median_file']} | {e32['median_xv6']} | "
+            f"{e32['fratio']} | {e32['thr_file']} |"
         )
     if map_row:
         lines.append(
-            f"| MAP | {map_row['median_pmfs']} | {map_row['median_xv6']} | {map_row['ratio']} | {map_row['wa_x100']} |"
+            f"| MAP | {map_row['median_pmfs']} | {map_row['median_file']} | {map_row['median_xv6']} | "
+            f"{map_row['fratio']} | {map_row['thr_file']} |"
         )
     lines += [
         "",
-        "若 EMUL/MAP 同量级，瓶颈在算法/提交而非假缓冲。",
+        "若 EMUL/MAP 同量级，瓶颈在软件提交路径。",
         "",
         "## 6. 答辩一句话",
         "",
-        "> 在不对等但动机清晰的对比下，PMFS-KV 用一次 seal 替代多次小文件+sync，",
-        "> 中位数延迟低两个数量级以上；WA 由页对齐解释；EMUL/MAP/PMEM2 划清边界。",
+        "> 合题四要件均有落点：NVDIMM 仿真窗口、去块设备文件布局、行级刷写协议、",
+        "> 延迟+吞吐对比；不可替代点仍是可机器判定的崩溃/掉电契约套件。",
         "",
     ]
     with open("docs/BENCH.md", "w", encoding="utf-8") as f:

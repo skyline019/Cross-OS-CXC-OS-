@@ -3,10 +3,10 @@
 #include "defs.h"
 #include "pmcontract.h"
 
-enum { NREQ = 6 };
+enum { NREQ = 8 };
 
 static char *required[NREQ] = {
-  "PMEM0", "MOUNT", "STORE", "INDEX", "ALGO", "CRASH"
+  "PMEM0", "MOUNT", "STORE", "INDEX", "ALGO", "CRASH", "PERSIST", "FILE"
 };
 static int req_ok[NREQ];
 

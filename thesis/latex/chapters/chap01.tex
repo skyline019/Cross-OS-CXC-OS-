@@ -19,12 +19,12 @@ PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数
 
 \section{研究内容与目标}
 
-本文设计并实现 \textbf{PMFS-KV}：并行于 virtio 根文件系统的 PMEM 键值引擎，提供 \texttt{pmfs\_put}/\texttt{get}/\texttt{seal}/\texttt{stat} 系统调用；物理后端支持 EMUL、MAP 与 PMEM2 三种模式。研究目标可概括为：
+本文设计并实现 \textbf{PMFS}：并行于 virtio 根的 PMEM 文件子系统（\texttt{create}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}）与 KV 引擎（\texttt{put}/\texttt{get}/\texttt{seal}）；后端支持 EMUL、MAP 与 PMEM2。研究目标：
 
 \begin{itemize}[leftmargin=2em]
-  \item 在教学 OS 上落地可观测的存储核（双槽 SB、B1/B2/B3、写放大计量）；
-  \item 建立 \texttt{ONBOX\_PMFS\_*} 契约套件与 \texttt{make contract*} 验收门；
-  \item 在明确「API 不对等」前提下给出延迟与写放大随负载规模 $N$ 的实验叙述，并记录可复核踩坑。
+  \item 映射 QEMU NVDIMM 仿真窗；inode/dentry 去块设备布局；行级刷写协议；
+  \item 建立含 \texttt{PERSIST}/\texttt{FILE} 的 \texttt{ONBOX\_PMFS\_*} 契约验收门；
+  \item 报告文件 API 延迟中位数与相对吞吐，并记录可复核踩坑。
 \end{itemize}
 
 \section{主要贡献}
@@ -33,7 +33,7 @@ PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数
 
 \begin{description}[leftmargin=2em,style=nextline]
   \item[尖刺（C1）] 教学 OS 上可机器判定的崩溃与掉电契约套件：阶段码表 + 宿主脚本 + CI。
-  \item[系统柱（C2）] xv6 内双槽存储核与可观测 B3、索引自 run 重建、\texttt{pmfs\_stat} 写放大。
+  \item[系统柱（C2）] 去块设备文件布局 + 行级 persist + 双槽/B3/WA。
   \item[实验柱（C3）] PMEM2 文件后端杀启掉电一行过，作为尖刺在掉电场景上的实例化。
 \end{description}
 

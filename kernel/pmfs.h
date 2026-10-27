@@ -8,12 +8,12 @@
 
 enum {
   PMFS_MAGIC     = 0x32534650u,  // 'PFS2' — parallel to FCS 'FCS2'
-  PMFS_FMT       = 1,
+  PMFS_FMT       = 2,            // v2: reserved inode/dentry meta pages
   PMFS_COMMIT_WD = 0xA55A5AA5u,  // same commit word as FCS
   PMFS_SB_HDR    = 48,           // on-disk header bytes (FCS SB_HDR)
   PMFS_SLOT_A    = 0,
   PMFS_SLOT_B    = 1,
-  PMFS_DATA0     = 2,            // first allocatable page (FCS tail starts at 2)
+  PMFS_DATA0     = 4,            // pages 2–3 = file meta; data from 4
 };
 
 // On-disk superblock header (48B). Alternate slots = page 0 / page 1.

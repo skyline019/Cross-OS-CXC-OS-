@@ -33,7 +33,7 @@
   citecolor=black,
   urlcolor=blue!50!black,
   bookmarksnumbered=true,
-  pdftitle={面向持久内存的键值存储系统设计与实现——基于xv6的教学操作系统扩展},
+  pdftitle={面向持久内存的文件系统设计与实现——基于xv6的PMFS文件子系统},
   pdfauthor={本科毕业论文}
 }
 
@@ -82,8 +82,8 @@
 \input{figures/plots.tex}
 
 % ---------- 封面信息（可按学校模板替换）----------
-\newcommand{\ThesisTitle}{面向持久内存的键值存储系统设计与实现}
-\newcommand{\ThesisSubtitle}{基于 xv6 教学操作系统的 PMFS-KV 与可机器判定契约}
+\newcommand{\ThesisTitle}{面向持久内存的文件系统设计与实现}
+\newcommand{\ThesisSubtitle}{基于 xv6 的 PMFS 文件子系统与可机器判定契约}
 \newcommand{\ThesisAuthor}{（姓名）}
 \newcommand{\ThesisAdvisor}{（指导教师）}
 \newcommand{\ThesisSchool}{（学院）}
@@ -124,11 +124,11 @@
 
 持久内存（Persistent Memory, PMEM）以字节寻址方式提供近似 DRAM 的访问延迟，同时具备掉电后数据保留能力，为操作系统存储子系统提出了不同于块设备日志文件系统的一致性模型与工程验收问题。教学操作系统 xv6 以 virtio 块设备与日志型文件系统作为根文件系统，适合讲授经典 UNIX 语义，但难以直接承载「可机器判定的崩溃与掉电语义」这一工程化目标。
 
-本文在 xv6-riscv 上设计并实现并行于根文件系统的字节寻址键值存储引擎 \textbf{PMFS-KV}，而非替换完整 POSIX 文件层。系统采用双槽超级块提交、不可变 run 与可观测的 B1/B2/B3 重写路径，并引入量化索引与查询缓存以支撑查找。物理后端支持三种模式：静态仿真缓冲（EMUL）、物理窗口映射（MAP），以及基于 QEMU \texttt{memory-backend-file} 的文件级掉电实验（PMEM2）。
+本文按原题四要件，在 xv6-riscv 上实现并行于根文件系统的字节寻址 \textbf{PMFS 文件子系统}：改造内存管理以映射 QEMU NVDIMM 仿真窗口；以 inode/dentry 页与双槽超级块重构去块设备布局；以缓存行粒度 \texttt{pmem\_flush}+\texttt{fence} 有序协议保障掉电安全；并以契约套件验收。KV/run 引擎并行提供批量 seal 路径。后端含 EMUL、MAP 与 PMEM2（\texttt{memory-backend-file}）。
 
-本文的核心贡献不在于「再实现一套双槽 PMEM-KV」，而在于在教学操作系统上构建\textbf{可机器判定的崩溃与掉电契约套件}：统一串口阶段码 \texttt{ONBOX\_PMFS\_*}，配合宿主脚本实现 \texttt{make contract}、\texttt{contract-pmem}、\texttt{contract-pmem2} 的一行判定与 CI 复现。实验在故意不对等的 API 对比下给出量级延迟与写放大随负载规模 $N$ 的变化，并说明 EMUL/MAP 同量级时瓶颈主要位于软件提交路径。实现过程中的启动栈溢出、\texttt{rdcycle} 权限、NUMA 内存尺寸不匹配等踩坑均予记录，以增强可复核性。
+核心贡献是教学 OS 上\textbf{可机器判定的崩溃与掉电契约套件}（含 \texttt{PERSIST}/\texttt{FILE}/\texttt{PMEM2}）。实验报告文件 API 相对原生 \texttt{fs+log} 的延迟中位数与相对吞吐，并记录可复核踩坑。
 
-\textbf{关键词：}持久内存；键值存储；崩溃一致性；写放大；xv6；契约测试
+\textbf{关键词：}持久内存；NVDIMM；文件系统；崩溃一致性；写放大；xv6；契约测试
 
 % ========== 英文摘要 ==========
 \chapter*{Abstract}
@@ -137,11 +137,11 @@
 
 Persistent memory (PMEM) offers byte-addressable access with near-DRAM latency while retaining data across power loss, which challenges the consistency model and acceptance methodology of OS storage stacks built around block devices. The teaching OS xv6 uses a virtio block device and a log-structured file system as its root file system; it is excellent for classic UNIX semantics but does not by itself provide machine-checkable crash and power-loss contracts.
 
-This thesis designs and implements \textbf{PMFS-KV}, a byte-addressable key--value engine that runs \emph{alongside} the xv6 root file system rather than replacing the POSIX inode layer. The storage core uses dual-slot superblocks, immutable runs, and an observable B1/B2/B3 rewrite path, plus a quantized index with query cache. Three backends are supported: an in-DRAM emulation buffer (EMUL), a mapped physical window (MAP), and a QEMU file-backed power-loss setup (PMEM2).
+This thesis implements \textbf{PMFS}, a byte-addressable persistent-memory \emph{file subsystem} alongside the xv6 root file system: QEMU NVDIMM-window mapping, inode/dentry layout without the block I/O stack, and a cache-line flush + fence persist protocol, plus a parallel KV/run engine. Backends include EMUL, MAP, and file-backed PMEM2.
 
-The distinctive contribution is a \textbf{machine-checkable crash/power-loss contract suite} on a teaching OS: serial stage lines \texttt{ONBOX\_PMFS\_*} and host scripts that decide pass/fail by grepping a single line under \texttt{make contract}, \texttt{contract-pmem}, and \texttt{contract-pmem2}. Benchmarks report order-of-magnitude latency and write amplification versus $N$ under intentionally unequal APIs, and show that EMUL and MAP lie in the same order of magnitude, pointing to software commit paths as the main bottleneck. Implementation pitfalls (boot-stack overflow, \texttt{rdcycle} privilege, NUMA size mismatch, etc.) are documented for reproducibility.
+The distinctive contribution remains a \textbf{machine-checkable crash/power-loss contract suite} (\texttt{PERSIST}/\texttt{FILE}/\texttt{PMEM2}). Benchmarks report file-API latency medians and relative throughput versus xv6 \texttt{fs+log}.
 
-\textbf{Keywords:} persistent memory; key--value store; crash consistency; write amplification; xv6; contract testing
+\textbf{Keywords:} persistent memory; NVDIMM; file system; crash consistency; write amplification; xv6; contract testing
 
 \tableofcontents
 \clearpage

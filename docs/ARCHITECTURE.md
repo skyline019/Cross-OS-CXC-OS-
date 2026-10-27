@@ -1,50 +1,52 @@
-# PMFS-KV 架构（字节寻址键值存储）
+# PMFS 架构（字节寻址文件子系统）
 
 ## 0. 产品形态
 
-- **是**：并行于 virtio 根 FS 的 PMEM **KV 引擎**（`pmfs_put/get/seal/stat`）。
-- **不是**：POSIX inode/目录文件系统（该方向若做，另开里程碑）。
+- **是**：并行于 virtio 根 FS 的 PMEM **文件子系统**（inode/dentry + `create/open/read/write/fsync`）与 KV 引擎（`put/get/seal`）。
+- **不是**：替换 `/` 的完整 POSIX VFS。
 
-## 1. 物理与虚拟地址
+## 1. 物理与虚拟地址（NVDIMM 仿真）
 
 ```
 KERNBASE ─────────── 0x80000000
   │  kernel + user pages（易失 DRAM）
 PHYSTOP  ─────────── KERNBASE + 128MiB
-PMEMBASE ─────────── PHYSTOP
-  │  字节寻址持久区（双槽 SB / 数据 run）
+PMEMBASE ─────────── PHYSTOP          ← QEMU NVDIMM 仿真窗
+  │  双槽 SB / inode / dentry / run
 PMEMEND  ─────────── PMEMBASE + 32MiB
 ```
 
-| 模式 | 构建 | 运行 |
-|------|------|------|
-| EMUL | 默认 | `-m 128M`，2MiB 静态缓冲 |
-| MAP | `-DPMEM_MAP` | `-m 160M` |
-| PMEM2 | `-DPMEM_MAP` | `memory-backend-file,share=on` 杀启 |
+| 模式 | 构建 | 运行 | backend 字段 |
+|------|------|------|--------------|
+| EMUL | 默认 | `-m 128M`，2MiB 缓冲 | `emul` |
+| MAP | `-DPMEM_MAP` | `-m 160M` | `map` |
+| PMEM2 | `-DPMEM_MAP` | `memory-backend-file,share=on` | `map` + 掉电 |
 
 ## 2. 软件分层
 
 ```
-用户 pmfs_put/get/seal/stat
-        │
-   pmalgo（mem→run、B1/B2/B3、WA）
-        │
-   pmindex（量化 + posting + qcache）
+用户 create/fopen/fread/fwrite/fsync/funlink  |  put/get/seal/stat
+        │                                      │
+   pmfile（inode 表 + dentry）                  │
+        │                                      │
+   pmalgo（mem→run、B1/B2/B3、WA）◄─────────────┘
         │
    pmfs（双槽 SB + commit）
         │
-   pmdev → pmem_persist → MAP 或 EMUL
+   pmdev → pmem_flush(行) → pmem_fence → MAP/EMUL
 ```
 
-## 3. 盘上布局（相对设备基址）
+## 3. 盘上布局
 
 | 页 | 内容 |
 |---|---|
 | 0 / 1 | SB 双槽 |
-| ≥2 | 不可变 run 数据页 |
+| 2 | inode 表 |
+| 3 | dentry 表 |
+| ≥4 | 不可变 run 数据页 |
 
-无 inode 表。
+## 4. 崩溃与刷写契约
 
-## 4. 崩溃契约
-
-双槽 + epoch + 校验；`CRASH` 自测；`PMEM2` 验证窗口级掉电存活。
+- 协议：`store → flush(64B lines) → fence → store SB → flush → fence`
+- 文件：`fsync` = 写 inode/dentry 页 + `pmfs_commit`
+- 验收：`PERSIST_PASS` / `FILE_PASS` / `CRASH_PASS` / `PMEM2_PASS`

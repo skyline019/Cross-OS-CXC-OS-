@@ -3,9 +3,9 @@
 
 \section{产品形态与非目标}
 
-PMFS-KV 的产品形态是：\textbf{并行于 virtio 根文件系统的字节寻址键值引擎}。用户态通过系统调用 \texttt{pmfs\_put}、\texttt{pmfs\_get}、\texttt{pmfs\_seal}、\texttt{pmfs\_stat} 访问；可选薄层 \texttt{pmfs\_posix} 仅做路径 hash$\to$KV 的 shim，\textbf{不}升格为内核 VFS。
+PMFS 的产品形态是：\textbf{并行于 virtio 根的字节寻址文件子系统}。用户态通过 \texttt{pmfs\_create}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{funlink} 访问文件对象；并保留 \texttt{put}/\texttt{get}/\texttt{seal} 作批量引擎。\textbf{不}替换根 FS，\textbf{不}做完整 VFS。
 
-明确非目标：完整 inode/目录文件系统；真物理 NVDIMM 作为主线依赖；将 FCS/Aurora 源码树并入库。
+明确非目标：挂载替换 `/`；真物理 NVDIMM 驱动主线；并入 FCS/Aurora 源码树。
 
 \section{地址空间与三种后端}
 

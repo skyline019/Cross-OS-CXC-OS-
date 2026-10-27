@@ -30,6 +30,13 @@ int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
 int pmfs_seal(void);
 int pmfs_stat(void *wa);
 unsigned long cycles(void);
+int pmfs_create(const char *);
+int pmfs_fopen(const char *);
+int pmfs_fread(int fd, void *dst, int cap, unsigned int *len);
+int pmfs_fwrite(int fd, const void *src, int len);
+int pmfs_fsync(int fd);
+int pmfs_funlink(const char *);
+int pmfs_fclose(int fd);
 
 // ulib.c
 int stat(const char *, struct stat *);

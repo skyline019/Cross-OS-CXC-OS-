@@ -1,4 +1,4 @@
-// Fixed-workload PMFS-KV vs xv6 fs: TRIALS medians.
+// PMFS file/KV vs xv6 fs: latency medians + throughput (ops/s).
 // Usage: pmfs_bench [N]     default N=32, max 48
 #include "kernel/types.h"
 #include "kernel/stat.h"
@@ -34,6 +34,16 @@ mkname(char *b, int i)
 }
 
 static void
+mkpath(char *b, int i)
+{
+  strcpy(b, "/p/");
+  b[3] = '0' + (i / 100) % 10;
+  b[4] = '0' + (i / 10) % 10;
+  b[5] = '0' + i % 10;
+  b[6] = 0;
+}
+
+static void
 sort_u64(unsigned long *a, int n)
 {
   int i, j;
@@ -57,7 +67,7 @@ median_u64(unsigned long *a, int n)
 }
 
 static int
-run_pmfs_trial(int n, unsigned long key_base, char *payload)
+run_pmfs_kv_trial(int n, unsigned long key_base, char *payload)
 {
   int i;
   unsigned int len = 0;
@@ -71,6 +81,33 @@ run_pmfs_trial(int n, unsigned long key_base, char *payload)
   for(i = 0; i < n; i++){
     if(pmfs_get(key_base + (unsigned long)i, payload, 16, &len) != 1)
       return -4;
+  }
+  return 0;
+}
+
+static int
+run_pmfs_file_trial(int n, int name_base, char *payload)
+{
+  int i, fd;
+  char path[12];
+  unsigned int len = 0;
+
+  for(i = 0; i < n; i++){
+    mkpath(path, name_base + i);
+    pmfs_funlink(path);
+    if(pmfs_create(path) != 0)
+      return -10;
+    fd = pmfs_fopen(path);
+    if(fd < 0)
+      return -11;
+    if(pmfs_fwrite(fd, payload, VAL_LEN) != VAL_LEN)
+      return -12;
+    if(pmfs_fsync(fd) != 0)
+      return -13;
+    if(pmfs_fread(fd, payload, 16, &len) != 1)
+      return -14;
+    if(pmfs_fclose(fd) != 0)
+      return -15;
   }
   return 0;
 }
@@ -103,10 +140,11 @@ main(int argc, char *argv[])
   int t, rc, n;
   char payload[16];
   struct pmfs_wa wa;
-  unsigned long pmfs_c[TRIALS], xv6_c[TRIALS];
-  unsigned long t0, t1, med_p, med_x, ratio_x100;
+  unsigned long pmfs_c[TRIALS], file_c[TRIALS], xv6_c[TRIALS];
+  unsigned long t0, t1, med_p, med_f, med_x, ratio_x100, fratio_x100;
   unsigned long key_base = 50000;
   unsigned long wa_ratio_x100;
+  unsigned long thr_file, thr_xv6;
 
   n = N_DEFAULT;
   if(argc >= 2){
@@ -122,7 +160,7 @@ main(int argc, char *argv[])
 
   for(t = 0; t < TRIALS; t++){
     t0 = cycles();
-    rc = run_pmfs_trial(n, key_base + (unsigned long)(t * n + n * 100), payload);
+    rc = run_pmfs_kv_trial(n, key_base + (unsigned long)(t * n + n * 100), payload);
     if(rc != 0){
       printf("ONBOX_PMFS_BENCH_FAIL stage=BENCH code=%d\n", -rc);
       exit(1);
@@ -131,6 +169,18 @@ main(int argc, char *argv[])
     pmfs_c[t] = t1 - t0;
     if(pmfs_c[t] == 0)
       pmfs_c[t] = 1;
+
+    t0 = cycles();
+    // Reuse path namespace so inode table stays within PMFILE_MAX_INO.
+    rc = run_pmfs_file_trial(n, 0, payload);
+    if(rc != 0){
+      printf("ONBOX_PMFS_BENCH_FAIL stage=BENCH code=%d\n", -rc);
+      exit(1);
+    }
+    t1 = cycles();
+    file_c[t] = t1 - t0;
+    if(file_c[t] == 0)
+      file_c[t] = 1;
 
     t0 = cycles();
     rc = run_xv6_trial(n, t * n, payload);
@@ -143,20 +193,28 @@ main(int argc, char *argv[])
     if(xv6_c[t] == 0)
       xv6_c[t] = 1;
 
-    printf("BENCH_TRIAL N=%d t=%d pmfs_cyc=%d xv6_cyc=%d\n",
-           n, t, (int)pmfs_c[t], (int)xv6_c[t]);
+    printf("BENCH_TRIAL N=%d t=%d kv=%d file=%d xv6=%d\n",
+           n, t, (int)pmfs_c[t], (int)file_c[t], (int)xv6_c[t]);
   }
 
   pmfs_stat(&wa);
   med_p = median_u64(pmfs_c, TRIALS);
+  med_f = median_u64(file_c, TRIALS);
   med_x = median_u64(xv6_c, TRIALS);
   ratio_x100 = (med_x * 100) / med_p;
+  fratio_x100 = (med_x * 100) / med_f;
   wa_ratio_x100 = 0;
   if(wa.logical_bytes)
     wa_ratio_x100 = (wa.phys_bytes * 100) / wa.logical_bytes;
 
-  printf("ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%d median_xv6=%d ratio=%d logical=%d phys=%d wa_x100=%d\n",
-         TRIALS, n, (int)med_p, (int)med_x, (int)ratio_x100,
+  // Throughput in relative ops/s units: N files / median_time * scale
+  // (r_time units; report as ops_x1000_per_tick for machine parse)
+  thr_file = (med_f > 0) ? ((unsigned long)n * 1000000ULL) / med_f : 0;
+  thr_xv6 = (med_x > 0) ? ((unsigned long)n * 1000000ULL) / med_x : 0;
+
+  printf("ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%d median_file=%d median_xv6=%d ratio=%d fratio=%d thr_file=%d thr_xv6=%d logical=%d phys=%d wa_x100=%d\n",
+         TRIALS, n, (int)med_p, (int)med_f, (int)med_x, (int)ratio_x100, (int)fratio_x100,
+         (int)thr_file, (int)thr_xv6,
          (int)wa.logical_bytes, (int)wa.phys_bytes, (int)wa_ratio_x100);
   exit(0);
 }

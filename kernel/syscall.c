@@ -108,6 +108,13 @@ extern uint64 sys_pmfs_get(void);
 extern uint64 sys_pmfs_seal(void);
 extern uint64 sys_pmfs_stat(void);
 extern uint64 sys_cycles(void);
+extern uint64 sys_pmfs_create(void);
+extern uint64 sys_pmfs_fopen(void);
+extern uint64 sys_pmfs_fread(void);
+extern uint64 sys_pmfs_fwrite(void);
+extern uint64 sys_pmfs_fsync(void);
+extern uint64 sys_pmfs_funlink(void);
+extern uint64 sys_pmfs_fclose(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -135,11 +142,18 @@ static uint64 (*syscalls[])(void) = {
   [SYS_mkdir]   = sys_mkdir,
   [SYS_close]   = sys_close,
   [SYS_sync]    = sys_sync,
-  [SYS_pmfs_put]  = sys_pmfs_put,
-  [SYS_pmfs_get]  = sys_pmfs_get,
-  [SYS_pmfs_seal] = sys_pmfs_seal,
-  [SYS_pmfs_stat] = sys_pmfs_stat,
-  [SYS_cycles]    = sys_cycles,
+  [SYS_pmfs_put]     = sys_pmfs_put,
+  [SYS_pmfs_get]     = sys_pmfs_get,
+  [SYS_pmfs_seal]    = sys_pmfs_seal,
+  [SYS_pmfs_stat]    = sys_pmfs_stat,
+  [SYS_cycles]       = sys_cycles,
+  [SYS_pmfs_create]  = sys_pmfs_create,
+  [SYS_pmfs_fopen]   = sys_pmfs_fopen,
+  [SYS_pmfs_fread]   = sys_pmfs_fread,
+  [SYS_pmfs_fwrite]  = sys_pmfs_fwrite,
+  [SYS_pmfs_fsync]   = sys_pmfs_fsync,
+  [SYS_pmfs_funlink] = sys_pmfs_funlink,
+  [SYS_pmfs_fclose]  = sys_pmfs_fclose,
   // clang-format on
 };
 

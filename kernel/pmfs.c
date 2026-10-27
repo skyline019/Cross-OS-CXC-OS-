@@ -9,6 +9,7 @@
 #include "pmfs.h"
 #include "pmalgo.h"
 #include "pmindex.h"
+#include "pmfile.h"
 #include "pmcontract.h"
 
 #define PMFS_EMUL_BYTES (2u * 1024u * 1024u)
@@ -371,14 +372,14 @@ pmfs_init(void)
     // Skip first 16 bytes used by pmem probe/selftest magic.
     base = (void *)((uint64)base + PGSIZE);
     nbytes -= PGSIZE;
-    printk("ONBOX_PMFS_PMEM0_PASS mode=MAP size=%d\n", (int)nbytes);
+    printk("ONBOX_PMFS_PMEM0_PASS mode=MAP backend=map size=%d\n", (int)nbytes);
     pmcontract_mark("PMEM0", 1);
     pmem_contract_map();
   } else {
     base = pmfs_emul_buf;
     nbytes = PMFS_EMUL_BYTES;
     emul = 1;
-    printk("ONBOX_PMFS_PMEM0_PASS mode=EMUL size=%d\n", (int)nbytes);
+    printk("ONBOX_PMFS_PMEM0_PASS mode=EMUL backend=emul size=%d\n", (int)nbytes);
     pmcontract_mark("PMEM0", 1);
   }
 
@@ -415,6 +416,15 @@ pmfs_init(void)
     pmcontract_fail("INDEX", 20);
 
   rc = pmfs_crash_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmem_persist_selftest();
+  if(rc != 0)
+    ;
+
+  pmfile_init();
+  rc = pmfile_selftest();
   if(rc != 0)
     ;
 

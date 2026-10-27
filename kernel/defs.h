@@ -82,10 +82,13 @@ void            printkinit(void);
 void            pmem_init(void);
 int             pmem_ready(void);
 void            pmem_persist(void*, uint64);
+int             pmem_persist_selftest(void);
 
 // pmfs.c (thesis PMFS)
 void            pmfs_init(void);
 int             pmfs_mounted(void);
+void            pmfile_init(void);
+int             pmfile_selftest(void);
 
 // proc.c
 int             cpuid(void);

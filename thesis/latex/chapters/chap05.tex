@@ -66,22 +66,22 @@
 
 \begin{table}[htbp]
   \centering
-  \caption{EMUL 下随 $N$ 变化的中位数（5 trial）}
+  \caption{EMUL 下随 $N$ 变化的中位数与相对吞吐（5 trial）}
   \label{tab:bench-n}
   \begin{tabular}{rrrrrrr}
     \toprule
-    $N$ & median\_pmfs & median\_xv6 & ratio$\times$100 & wa\_x100 & logical & phys \\
+    $N$ & med\_kv & med\_file & med\_xv6 & fratio$\times$100 & thr\_file & wa\_x100 \\
     \midrule
-    8  & 9206  & 7408714  & 80477  & 8432 & 340  & 28672 \\
-    16 & 12168 & 16440967 & 135116 & 4344 & 660  & 28672 \\
-    32 & 35830 & 33130730 & 92466  & 2205 & 1300 & 28672 \\
+    8  & 12600 & 55501  & 3793942  & 6835  & 144 & 8432 \\
+    16 & 17031 & 115392 & 9580051  & 8302  & 138 & 4344 \\
+    32 & 24801 & 227879 & 22976650 & 10082 & 140 & 2205 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \FigNLatency
 
-观察：（1）xv6 随 $N$ 近似线性；（2）PMFS 以一次 seal 摊销提交，ratio 通常仍 $\gg 1$；（3）论文结论写作\textbf{量级优势 + 边界}。
+观察：（1）xv6 随 $N$ 近似线性；（2）PMFS-File 每文件 fsync 仍避开块日志栈，fratio$\gg 1$；（3）结论写作\textbf{量级优势 + 边界}。
 
 \section{写放大}
 
@@ -97,17 +97,19 @@
   \label{tab:map-emul}
   \begin{tabular}{lrrrr}
     \toprule
-    mode & median\_pmfs & median\_xv6 & ratio$\times$100 & wa\_x100 \\
+    mode & med\_kv & med\_file & med\_xv6 & fratio$\times$100 \\
     \midrule
-    EMUL & 35830 & 33130730 & 92466 & 2205 \\
-    MAP  & 26477 & 23651219 & 89327 & 2205 \\
+    EMUL & 24801 & 227879  & 22976650 & 10082 \\
+    MAP  & 81005 & 3677109 & 22080294 & 600 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \FigMapEmul
 
-若 EMUL/MAP 同量级，可推断评测瓶颈主要在算法/提交路径，而非 EMUL 假缓冲主导结果。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
+\FigThr
+
+文件路径相对吞吐在 EMUL 下稳定高于 xv6 一个数量级以上（表中 \texttt{thr\_file}）。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
 
 \section{实现难点与失败史}
 
