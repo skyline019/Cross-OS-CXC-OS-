@@ -32,7 +32,8 @@ OBJS = \
   $K/pmem.o \
   $K/pmdev.o \
   $K/pmfs.o \
-  $K/pmalgo.o
+  $K/pmalgo.o \
+  $K/pmindex.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin

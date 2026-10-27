@@ -21,7 +21,9 @@
 
 **已移植算法骨架（`kernel/pmalgo.*`）：** mem→单 run 提交、Bloom/fence 读路径、B1 零重写分裂、B2 段数上限、WA 计量。
 
-**刻意延后：** 异步 IO 线程、分层归并 DP 全量、溢出大值链、清单链页。见 `docs/FCS-ALGORITHMS.md`。
+**已移植 Aurora 索引（`kernel/pmindex.*`）：** 有序键二分（RB 前缀类比）、键 MSB 量化、二值 run posting、查询 LRU。见 `docs/AURORA-INDEX.md`。
+
+**刻意延后：** 异步 IO 线程、分层归并 DP 全量、溢出大值链、清单链页、完整跳表节点堆。见 `docs/FCS-ALGORITHMS.md`。
 
 参考路径（只读借鉴，不入库）：
 

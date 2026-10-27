@@ -6,6 +6,7 @@
 #include "pmdev.h"
 #include "pmfs.h"
 #include "pmalgo.h"
+#include "pmindex.h"
 #include "pmem.h"
 
 static struct pm_algo g_algo;
@@ -81,6 +82,7 @@ pm_algo_init(struct pm_algo *a, struct pmfs *fs)
   a->fs = fs;
   a->next_seq = 1;
   a->wa.budget = 8; // B3: pages allowed to rewrite per maintain (stub)
+  pmindex_init(&a->ix);
 }
 
 int
@@ -175,6 +177,8 @@ seal_run(struct pm_algo *a, uint32 *out_rid)
     }
     rec_encode(page + off, a->mem_key[i], a->mem_val[i], a->mem_len[i]);
     bloom_add(&r->bloom, a->mem_key[i]);
+    // Aurora index: quantized binary posting + sorted key (page within run).
+    pmindex_upsert(&a->ix, a->mem_key[i], rid, r->nfences - 1);
     logical += a->mem_len[i];
     r->nbytes += rec;
     r->live_bytes += rec;
@@ -360,6 +364,8 @@ int
 pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
 {
   uint32 ci, si, p;
+  uint32 hints[PM_BUCKET_HIT];
+  int nh, hi, found = 0;
   if(a == 0)
     return -1;
 
@@ -377,6 +383,14 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
     }
   }
 
+  // Aurora query LRU (positive / negative).
+  if(pmindex_cache_get(&a->ix, key, dst, dstcap, out_len, &found)){
+    return found ? 1 : 0;
+  }
+
+  // Quantized binary posting → candidate runs (skip unrelated).
+  nh = pmindex_hint_runs(&a->ix, key, hints, PM_BUCKET_HIT);
+
   for(ci = 0; ci < a->ncells; ci++){
     struct pm_cell *c = &a->cells[ci];
     if(!c->used)
@@ -386,6 +400,15 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
       struct pm_run *r = &a->runs[s->rid];
       if(key < s->klo || key >= s->khi)
         continue;
+      // If index has hints, require rid ∈ hints (二值倒排过滤).
+      if(nh > 0){
+        int ok = 0;
+        for(hi = 0; hi < nh; hi++){
+          if(hints[hi] == s->rid){ ok = 1; break; }
+        }
+        if(!ok)
+          continue;
+      }
       if(!bloom_maybe(&r->bloom, key)){
         a->wa.bloom_skips++;
         continue;
@@ -400,8 +423,11 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
           break;
         {
           int hit = page_find(a, r->page0 + p, key, dst, dstcap, out_len);
-          if(hit == 1)
+          if(hit == 1){
+            uint32 L = out_len ? *out_len : 0;
+            pmindex_cache_put(&a->ix, key, dst, L, 1);
             return 1;
+          }
           if(hit < 0)
             return -1;
         }
@@ -409,6 +435,7 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
       }
     }
   }
+  pmindex_cache_put(&a->ix, key, 0, 0, 0);
   return 0;
 }
 
@@ -457,8 +484,13 @@ pm_algo_selftest(void)
   // phys should be modest: 2 seals → a few pages, not inode-style rewrite storm.
   if(w.phys_bytes > 16ULL * PMDEV_PAGE) return -12;
 
-  printk("pmfs: ALGO_SELFTEST_PASS logical=%d phys=%d bloom_skip=%d fence_skip=%d splits=%d\n",
+  // Second get should hit query cache (Aurora LRU).
+  hit = pm_get(a, 1, buf, sizeof(buf), &len);
+  if(hit != 1 || a->ix.qhits < 1) return -13;
+
+  printk("pmfs: ALGO_SELFTEST_PASS logical=%d phys=%d bloom_skip=%d fence_skip=%d splits=%d qhits=%d\n",
          (int)w.logical_bytes, (int)w.phys_bytes,
-         (int)w.bloom_skips, (int)w.fence_skips, (int)w.splits);
+         (int)w.bloom_skips, (int)w.fence_skips, (int)w.splits,
+         (int)a->ix.qhits);
   return 0;
 }

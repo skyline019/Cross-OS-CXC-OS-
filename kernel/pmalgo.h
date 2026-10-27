@@ -5,6 +5,7 @@
 
 #include "types.h"
 #include "pmfs.h"
+#include "pmindex.h"
 
 enum {
   PM_BMAX       = 32 * 1024,   // B1: cell physical bytes
@@ -72,6 +73,7 @@ struct pm_algo {
   struct pm_run runs[PM_MAX_RUNS];
   struct pm_cell cells[PM_MAX_CELLS];
   struct pm_wa wa;
+  struct pm_index ix;   // Aurora: prefix + quant + binary postings + qcache
   // Memtable (single pending sorted batch) — FCS mem → one run / commit.
   uint32 mem_n;
   uint64 mem_key[64];
