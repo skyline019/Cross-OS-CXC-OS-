@@ -8,4 +8,4 @@
 | M3 | 恢复路径 + 故意崩溃用例 | 半写 SB 丢弃；完好 epoch 可挂 |
 | M4 | vs log+virtio 延迟/吞吐表 | `docs/BENCH.md` 数字可复现 |
 
-当前：**M0 完成；M0.5（FCS 底层存储移植）进行中** — `pmdev` + 双槽 `pmfs_commit` + `STORAGE_SELFTEST`（EMUL）。
+当前：**M0 + 存储核 + 算法骨架** — `STORAGE_SELFTEST` / `ALGO_SELFTEST`（EMUL）。下一步：真 PMEM 窗口、完整 B3 压实、用户态探针。

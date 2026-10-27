@@ -19,7 +19,9 @@
 - `e:\FCS\embdb\x\include\blockdev.h`、`layout.h`、`fcs.h`（`read_sb`/`write_sb`/`sb_flush`）
 - `e:\FCS\backup\fcs-from-zero\latex\chapters\25-crash-walk.tex`
 
-**刻意未移植（本阶段）：** 分形目录 / Run 归并 / Bloom / 异步 IO 线程 / 清单链页。先把「页设备 + 双槽提交」做实，再叠文件系统语义。
+**已移植算法骨架（`kernel/pmalgo.*`）：** mem→单 run 提交、Bloom/fence 读路径、B1 零重写分裂、B2 段数上限、WA 计量。
+
+**刻意延后：** 异步 IO 线程、分层归并 DP 全量、溢出大值链、清单链页。见 `docs/FCS-ALGORITHMS.md`。
 
 参考路径（只读借鉴，不入库）：
 

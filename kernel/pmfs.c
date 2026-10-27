@@ -9,6 +9,7 @@
 #include "pmem.h"
 #include "pmdev.h"
 #include "pmfs.h"
+#include "pmalgo.h"
 
 // 2 MiB EMUL region so storage logic is testable without QEMU 160M.
 // Static: freestanding/MinGW-style kernels dislike large frames.
@@ -323,4 +324,9 @@ pmfs_init(void)
 
   if(pmfs_storage_selftest() != 0)
     printk("pmfs: STORAGE_SELFTEST_FAIL\n");
+
+  // FCS algorithm layer: mem→run, bloom/fence get, B1/B2 maintain, WA meters.
+  pm_algo_init(pm_algo_global(), &g_fs);
+  if(pm_algo_selftest() != 0)
+    printk("pmfs: ALGO_SELFTEST_FAIL\n");
 }
