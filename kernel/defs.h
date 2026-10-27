@@ -78,6 +78,14 @@ int             printk(char*, ...) __attribute__ ((format (printf, 1, 2)));
 void            panic(char*) __attribute__((noreturn));
 void            printkinit(void);
 
+// pmem.c (thesis PMFS)
+void            pmem_init(void);
+int             pmem_ready(void);
+
+// pmfs.c (thesis PMFS)
+void            pmfs_init(void);
+int             pmfs_mounted(void);
+
 // proc.c
 int             cpuid(void);
 void            kexit(int);

@@ -43,6 +43,12 @@
 #define KERNBASE 0x80000000L
 #define PHYSTOP  (KERNBASE + 128 * 1024 * 1024)
 
+// Thesis PMFS: byte-addressable PMEM window above DRAM used by kalloc.
+// Requires QEMU -m >= 128MiB+PMEMSIZE (see docs/QEMU-NVDIMM.md).
+#define PMEMBASE PHYSTOP
+#define PMEMSIZE (32L * 1024 * 1024)
+#define PMEMEND  (PMEMBASE + PMEMSIZE)
+
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 #define TRAMPOLINE (MAXVA - PGSIZE)
