@@ -115,6 +115,8 @@ extern uint64 sys_pmfs_fwrite(void);
 extern uint64 sys_pmfs_fsync(void);
 extern uint64 sys_pmfs_funlink(void);
 extern uint64 sys_pmfs_fclose(void);
+extern uint64 sys_pmfs_mkdir(void);
+extern uint64 sys_pmfs_readdir(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -154,6 +156,8 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_fsync]   = sys_pmfs_fsync,
   [SYS_pmfs_funlink] = sys_pmfs_funlink,
   [SYS_pmfs_fclose]  = sys_pmfs_fclose,
+  [SYS_pmfs_mkdir]   = sys_pmfs_mkdir,
+  [SYS_pmfs_readdir] = sys_pmfs_readdir,
   // clang-format on
 };
 

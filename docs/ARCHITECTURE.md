@@ -25,16 +25,22 @@ PMEMEND  ─────────── PMEMBASE + 32MiB
 ## 2. 软件分层
 
 ```
-用户 create/fopen/fread/fwrite/fsync/funlink  |  put/get/seal/stat
-        │                                      │
-   pmfile（inode 表 + dentry）                  │
-        │                                      │
-   pmalgo（mem→run、B1/B2/B3、WA）◄─────────────┘
+用户 create/mkdir/fopen/fread/fwrite/fsync  |  put/get/seal/stat
+        │                                    │
+   pmfile（dir + extent 元数据）              │
+        │                                    │
+   pmstream（滑窗）→ pmcdc（Rabin/Fixed）     │
+        │                                    │
+   pmalgo（chunk→mem→run、B*、fuse_*）◄───────┘
+        │
+   pmindex（量化/posting/qcache）
         │
    pmfs（双槽 SB + commit）
         │
    pmdev → pmem_flush(行) → pmem_fence → MAP/EMUL
 ```
+
+融合证明：`fuse_puts` / `fuse_seals`；消融 A0–A4 见 `docs/ABLATION.md`；契约平级 POS/NEG/CHAOS 见 `docs/CONTRACT.md`。
 
 ## 3. 盘上布局
 

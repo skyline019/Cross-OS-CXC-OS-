@@ -17,6 +17,8 @@ enum {
   PM_MAX_FENCES = 64,
   PM_BLOOM_WORDS = 4,          // 256-bit bloom
   PM_REC_HDR    = 16,          // on-page record: key:u64 len:u32 pad:u32
+  PM_VAL_MAX    = 512,         // CDC chunk payload via KV (本土化页设备适配)
+  PM_MEM_MAX    = 32,          // memtable entries (larger values → fewer slots)
 };
 
 struct pm_bloom {
@@ -76,9 +78,13 @@ struct pm_algo {
   struct pm_index ix;   // Aurora: prefix + quant + binary postings + qcache
   // Memtable (single pending sorted batch) — FCS mem → one run / commit.
   uint32 mem_n;
-  uint64 mem_key[64];
-  uint32 mem_len[64];
-  uint8  mem_val[64][64];
+  uint64 mem_key[PM_MEM_MAX];
+  uint32 mem_len[PM_MEM_MAX];
+  uint8  mem_val[PM_MEM_MAX][PM_VAL_MAX];
+  // Fusion counters (file/CDC/stream paths must bump these).
+  uint64 fuse_puts;
+  uint64 fuse_seals;
+  uint64 fuse_gets;
 };
 
 void pm_algo_init(struct pm_algo *a, struct pmfs *fs);

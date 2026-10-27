@@ -3,7 +3,7 @@
 
 \section{模块与代码组织}
 
-实现基于 xv6-riscv，主要新增/修改模块包括：\texttt{kernel/pmem.c}（后端与 persist）、\texttt{kernel/pmfs.c}（双槽 SB 与挂载）、\texttt{kernel/pmalgo.c}（run/B 路径）、\texttt{kernel/pmindex.c}（量化索引）、\texttt{kernel/pmcontract.c}（自测与串口契约）、\texttt{kernel/syspmfs.c}（系统调用）、以及用户态 \texttt{\_pmfs\_probe}/\texttt{\_pmfs\_bench}/\texttt{\_pmfs\_posix}。构建目标区分默认内核与 \texttt{kernel-pmem}（\texttt{-DPMEM\_MAP}）。
+实现基于 xv6-riscv，主要模块包括：\texttt{pmem}/\texttt{pmfs}（后端与双槽）、\texttt{pmalgo}/\texttt{pmindex}（KV 与索引核）、\texttt{pmcdc}/\texttt{pmstream}（切分与滑窗）、\texttt{pmfile}/\texttt{syspmfile}（目录+extent 文件层）、\texttt{pmcontract}（串口契约），以及用户态 \texttt{\_pmfs\_probe}/\texttt{\_pmfs\_file}/\texttt{\_pmfs\_bench}/\texttt{\_pmfs\_posix}。文件写路径强制经 \texttt{pm\_put}/\texttt{pm\_seal}，由 \texttt{fuse\_puts}/\texttt{fuse\_seals} 计数证明未旁路。
 
 \section{双槽超级块与 seal}
 
@@ -25,7 +25,7 @@ B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmf
   \item[总闸] 必过子集全部成功后打印 \texttt{ONBOX\_PMFS\_PASS}
 \end{description}
 
-必过子集（EMUL / 默认 \texttt{make qemu}）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}，然后总闸。MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 杀启后必须出现
+必过子集（平级）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}、\texttt{PERSIST}、\texttt{FILE}、\texttt{CDC}、\texttt{STREAM}、\texttt{POS\_FILE}、\texttt{NEG\_FILE}、\texttt{CHAOS\_FILE}、\texttt{ABLATION}，然后总闸。\texttt{make contract-strict} 另检 POS/NEG CDC/STREAM 与 A0--A4。MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 杀启后必须出现
 \begin{lstlisting}
 ONBOX_PMFS_PMEM2_PASS persist=ok
 \end{lstlisting}

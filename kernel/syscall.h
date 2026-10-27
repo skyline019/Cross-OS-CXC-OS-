@@ -33,3 +33,5 @@
 #define SYS_pmfs_fsync   32
 #define SYS_pmfs_funlink 33
 #define SYS_pmfs_fclose  34
+#define SYS_pmfs_mkdir   35
+#define SYS_pmfs_readdir 36

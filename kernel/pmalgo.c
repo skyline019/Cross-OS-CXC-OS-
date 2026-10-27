@@ -64,7 +64,7 @@ rec_decode(const uint8 *src, uint64 *key, uint32 *len, const uint8 **val)
 {
   memmove(key, (void*)src, 8);
   memmove(len, (void*)(src + 8), 4);
-  if(*len > 1024)
+  if(*len > PM_VAL_MAX)
     return -1;
   *val = src + PM_REC_HDR;
   return 0;
@@ -89,16 +89,17 @@ pm_algo_init(struct pm_algo *a, struct pmfs *fs)
 int
 pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len)
 {
-  uint32 i, j;
-  if(a == 0 || len > 64 || a->mem_n >= 64)
+  uint32 i;
+  if(a == 0 || len > PM_VAL_MAX || a->mem_n >= PM_MEM_MAX)
     return -1;
   // Upsert in memtable (sorted by key) — FCS put only touches mem.
   for(i = 0; i < a->mem_n; i++){
     if(a->mem_key[i] == key){
       a->mem_len[i] = len;
-      memset(a->mem_val[i], 0, 64);
+      memset(a->mem_val[i], 0, PM_VAL_MAX);
       if(len)
         memmove(a->mem_val[i], (void*)val, len);
+      a->fuse_puts++;
       return 0;
     }
   }
@@ -106,16 +107,16 @@ pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len)
   while(i > 0 && a->mem_key[i - 1] > key){
     a->mem_key[i] = a->mem_key[i - 1];
     a->mem_len[i] = a->mem_len[i - 1];
-    memmove(a->mem_val[i], a->mem_val[i - 1], 64);
+    memmove(a->mem_val[i], a->mem_val[i - 1], PM_VAL_MAX);
     i--;
   }
   a->mem_key[i] = key;
   a->mem_len[i] = len;
-  memset(a->mem_val[i], 0, 64);
+  memset(a->mem_val[i], 0, PM_VAL_MAX);
   if(len)
     memmove(a->mem_val[i], (void*)val, len);
   a->mem_n++;
-  (void)j;
+  a->fuse_puts++;
   return 0;
 }
 
@@ -407,6 +408,7 @@ pm_seal(struct pm_algo *a)
     return -1;
   a->runs[rid].ver = a->fs->epoch;
   pm_maintain(a);
+  a->fuse_seals++;
   return 0;
 }
 
@@ -462,6 +464,7 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
           *out_len = a->mem_len[i];
         if(dst && a->mem_len[i] <= dstcap)
           memmove(dst, a->mem_val[i], a->mem_len[i]);
+        a->fuse_gets++;
         return 1;
       }
     }
@@ -510,6 +513,7 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len)
           if(hit == 1){
             uint32 L = out_len ? *out_len : 0;
             pmindex_cache_put(&a->ix, key, dst, L, 1);
+            a->fuse_gets++;
             return 1;
           }
           if(hit < 0)

@@ -98,3 +98,34 @@ sys_pmfs_fclose(void)
   argint(0, &fd);
   return pmfile_close(fd);
 }
+
+uint64
+sys_pmfs_mkdir(void)
+{
+  char path[PMFILE_NAME];
+  if(argstr(0, path, sizeof(path)) < 0)
+    return -1;
+  return pmfile_mkdir(path);
+}
+
+uint64
+sys_pmfs_readdir(void)
+{
+  char path[PMFILE_NAME];
+  uint64 udst;
+  int cap;
+  char buf[256];
+  struct proc *p = myproc();
+
+  if(argstr(0, path, sizeof(path)) < 0)
+    return -1;
+  argaddr(1, &udst);
+  argint(2, &cap);
+  if(cap < 0 || cap > (int)sizeof(buf))
+    return -1;
+  if(pmfile_readdir(path, buf, cap > 0 ? cap : (int)sizeof(buf)) != 0)
+    return -1;
+  if(copyout(p->pagetable, p->sz, udst, buf, strlen(buf) + 1) < 0)
+    return -1;
+  return 0;
+}

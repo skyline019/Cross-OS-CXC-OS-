@@ -13,13 +13,13 @@ sys_pmfs_put(void)
 {
   uint64 key, uval;
   int len;
-  char buf[64];
+  static char buf[PM_VAL_MAX];
   struct pm_algo *a = pm_algo_global();
 
   argaddr(0, &key);
   argaddr(1, &uval);
   argint(2, &len);
-  if(len < 0 || len > 64)
+  if(len < 0 || len > PM_VAL_MAX)
     return -1;
   if(a == 0 || a->fs == 0 || !a->fs->mounted)
     return -1;
@@ -35,7 +35,7 @@ sys_pmfs_get(void)
 {
   uint64 key, udst, ulen;
   int cap;
-  char buf[64];
+  static char buf[PM_VAL_MAX];
   uint32 len = 0;
   int hit;
   struct pm_algo *a = pm_algo_global();
@@ -45,7 +45,7 @@ sys_pmfs_get(void)
   argaddr(1, &udst);
   argint(2, &cap);
   argaddr(3, &ulen);
-  if(cap < 0 || cap > 64)
+  if(cap < 0 || cap > PM_VAL_MAX)
     return -1;
   if(a == 0 || a->fs == 0 || !a->fs->mounted)
     return -1;

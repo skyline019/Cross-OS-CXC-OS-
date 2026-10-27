@@ -13,6 +13,7 @@ main(int argc, char *argv[])
   (void)argc;
   (void)argv;
 
+  pmfs_mkdir("/u");
   pmfs_funlink("/u/a.txt");
   if(pmfs_create("/u/a.txt") != 0){
     printf("ONBOX_PMFS_FILEUSER_FAIL code=1\n");

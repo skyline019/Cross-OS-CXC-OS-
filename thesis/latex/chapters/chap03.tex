@@ -42,14 +42,16 @@ EMUL 用于算法与契约快速回归，\textbf{不}代表真 NVDIMM 延迟；M
 自上而下：
 
 \begin{enumerate}[leftmargin=2em]
-  \item 用户 API：\texttt{put/get/seal/stat}；
-  \item \texttt{pmalgo}：内存表 $\to$ 不可变 run、B1/B2/B3、写放大计量；
+  \item 用户 API：文件 \texttt{create/mkdir/open/read/write/fsync} 与 KV \texttt{put/get/seal}；
+  \item \texttt{pmfile}：目录树 + extent 元数据；写入经 \texttt{pmstream}/\texttt{pmcdc} 切分；
+  \item \texttt{pmcdc}/\texttt{pmstream}：Rabin 式滑动哈希切分与窗口刷写（Fixed 模式供消融）；
+  \item \texttt{pmalgo}：chunk$\to$memtable$\to$不可变 run、B1/B2/B3、融合计数；
   \item \texttt{pmindex}：量化键、posting、查询 LRU（qcache）；
   \item \texttt{pmfs}：双槽超级块与 commit；
   \item \texttt{pmdev}/\texttt{pmem\_persist}：落 EMUL 或 MAP 窗口。
 \end{enumerate}
 
-盘上布局：页 0/1 为超级块双槽；页 $\ge 2$ 为不可变 run 数据页。无 inode 表。
+盘上布局：页 0/1 为超级块双槽；页 2/3 为 inode/目录项元数据；其后为 run 数据页。文件内容不以页内联为主，而以 KV chunk（extent）承载，保证与索引核同一提交路径。
 
 \section{崩溃一致性契约（设计层）}
 

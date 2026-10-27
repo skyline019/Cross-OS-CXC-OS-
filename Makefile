@@ -32,6 +32,8 @@ OBJS = \
   $K/pmem.o \
   $K/pmfile.o \
   $K/syspmfile.o \
+  $K/pmcdc.o \
+  $K/pmstream.o \
   $K/pmdev.o \
   $K/pmfs.o \
   $K/pmalgo.o \
@@ -230,6 +232,10 @@ qemu-pmem: check-qemu-version
 # Strict ONBOX_PMFS_* serial contract (EMUL by default).
 contract: $K/kernel fs.img
 	python3 tools/contract_pmfs.py
+
+# Peer POS/NEG/CHAOS + A0–A4 extras.
+contract-strict: $K/kernel fs.img
+	python3 tools/contract_pmfs.py --strict
 
 contract-pmem:
 	$(MAKE) clean

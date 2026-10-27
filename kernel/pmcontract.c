@@ -3,10 +3,13 @@
 #include "defs.h"
 #include "pmcontract.h"
 
-enum { NREQ = 8 };
+// Peer stages: core + CDC/STREAM + POS/NEG/CHAOS file + ablation.
+enum { NREQ = 14 };
 
 static char *required[NREQ] = {
-  "PMEM0", "MOUNT", "STORE", "INDEX", "ALGO", "CRASH", "PERSIST", "FILE"
+  "PMEM0", "MOUNT", "STORE", "INDEX", "ALGO", "CRASH", "PERSIST",
+  "FILE", "CDC", "STREAM",
+  "POS_FILE", "NEG_FILE", "CHAOS_FILE", "ABLATION"
 };
 static int req_ok[NREQ];
 

@@ -37,6 +37,8 @@ int pmfs_fwrite(int fd, const void *src, int len);
 int pmfs_fsync(int fd);
 int pmfs_funlink(const char *);
 int pmfs_fclose(int fd);
+int pmfs_mkdir(const char *);
+int pmfs_readdir(const char *, char *dst, int cap);
 
 // ulib.c
 int stat(const char *, struct stat *);

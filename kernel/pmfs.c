@@ -10,6 +10,8 @@
 #include "pmalgo.h"
 #include "pmindex.h"
 #include "pmfile.h"
+#include "pmcdc.h"
+#include "pmstream.h"
 #include "pmcontract.h"
 
 #define PMFS_EMUL_BYTES (2u * 1024u * 1024u)
@@ -425,6 +427,26 @@ pmfs_init(void)
 
   pmfile_init();
   rc = pmfile_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmcdc_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmstream_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmfile_chaos_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmfile_edge_selftest();
+  if(rc != 0)
+    ;
+
+  rc = pmfile_ablation_selftest();
   if(rc != 0)
     ;
 

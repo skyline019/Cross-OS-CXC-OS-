@@ -158,6 +158,8 @@ main(int argc, char *argv[])
   memset(payload, 'x', sizeof(payload));
   memset(&wa, 0, sizeof(wa));
 
+  pmfs_mkdir("/p");
+
   for(t = 0; t < TRIALS; t++){
     t0 = cycles();
     rc = run_pmfs_kv_trial(n, key_base + (unsigned long)(t * n + n * 100), payload);
