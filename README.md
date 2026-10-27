@@ -3,26 +3,60 @@
 [![CI](https://github.com/skyline019/Cross-OS-CXC-OS-/actions/workflows/ci.yml/badge.svg)](https://github.com/skyline019/Cross-OS-CXC-OS-/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, and a minimal UDP socket API. Acceptance requires kernel `CXC_OS_SELF_TEST_PASS` **and** external Python peer `peer_ok=1`.
+**Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, userspace ELF + CXCFS `disk/`, and an on-box mini toolchain (`disk/cc` / `as` / `ld`). Acceptance requires kernel `CXC_OS_SELF_TEST_PASS`, on-box `ONBOX_CCDRV_PASS`, **and** external Python peer `peer_ok=1`.
 
-> Chinese deep-dive: [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Cadence: [`docs/midfield-cadence.md`](docs/midfield-cadence.md)
+> Chinese deep-dive (current features): [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Toolchain: [`docs/a2-mini-cc.md`](docs/a2-mini-cc.md) · Midfield 28: [`docs/midpoint-assessment-28.md`](docs/midpoint-assessment-28.md)
 
 ## Status
 
 | Item | Value |
 |---|---|
-| Baseline | Milestone 144 / v2.28.0 |
+| Baseline | **Milestone 284 / v2.80.0** (CCDRV: `disk/cc` argv driver) |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
-| Evidence | QEMU + OVMF, EDU + e1000e, UDP dgram peer |
+| On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_cc:3` / `spawn_as:4` / `spawn_ld:1`) |
+| Evidence | QEMU + OVMF, EDU + e1000e + virtio-blk, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
+| A2 claim | **Not claimed** — dialect + mini as/ld, not full gcc/g++ |
 
-## Features
+## Current features
 
-- **Boot / memory** — UEFI, MBR+FAT32 ESP, inline-extent PMM, heap, NX stacks, runtime TLB shootdown
-- **SMP** — INIT-SIPI-SIPI, per-CPU run queues, migration, Event/Mutex, stack reclaim
-- **Devices** — PCI, IOAPIC, UART IRQ, EDU MSI+DMA, e1000e MSI-X multi-vector
-- **Network** — ARP/ICMP/UDP Echo, 256-frame ring stress (+ IRQ demux/echo TX), socket `recv_wait`/`send`, M25–M28 TX submit/back-pressure/wait
-- **Contracts** — positive path + negative controls (no device / bad checksum / no peer)
+### Boot / kernel / SMP
+
+- UEFI boot, MBR+FAT32 ESP, inline-extent PMM, NX stacks, runtime TLB shootdown
+- INIT-SIPI-SIPI SMP, per-CPU run queues, explicit migration, Event/Mutex, stack reclaim
+- PCI mechanism #1, IOAPIC, UART IRQ, EDU MSI+DMA, e1000e MSI-X multi-vector (queue 0)
+
+### Network
+
+- ARP / IPv4 ICMP Echo / UDP Echo (fixed neighbor)
+- Minimal UDP sockets: bind / recv / `recv_wait` / send; IRQ demux + TX back-pressure
+- External peer validation + 256-frame stress; `peer_ok=1`
+
+### Userspace & storage
+
+- Ring-3, static ET_EXEC, Linux-ish syscalls (`int 0x80`): brk/mmap, ramfs + **`disk/` CXCFS**, fork/wait/execve, pipe/dup, cwd, time, …
+- mini_libc; host musl-gcc static ELF probes (printf/fopen/malloc/…)
+- Persistent virtio-blk + CXCFS (≈128 MiB floor, hundreds of inodes, multi-MiB files for toolchain jobs)
+
+### On-box toolchain (CCDRV)
+
+| Binary | Role |
+|---|---|
+| `disk/cc` / `disk/cxc-cc` | argv `-c` / `-o` / `@job.rsp`; default bare exec → `@disk/job.rsp` |
+| `disk/as` | subset assembler `.s` → ET_REL |
+| `disk/ld` | response-file link → static ET_EXEC |
+
+- Language: **`CXC_A2` dialect** (`fn` / `import` / control flow / struct / `#include`…) — **not ISO C**
+- Process boundaries audited by kernel `execve`: nest `cc -c` for `a.c`/`b.c`; spawn `as`/`ld` for assemble/link
+- Some musl leaf `.o` files are **host-prebuilt and planted** on `disk/`
+
+Example:
+
+```text
+disk/cc -c disk/a.c -o disk/a.o
+disk/cc -o disk/out.elf @disk/job.rsp
+disk/out.elf    # exit 42 → ONBOX_CCDRV_PASS
+```
 
 ## Quick start (Linux)
 
@@ -64,7 +98,8 @@ Linux job uploads EFI, ESP, serial/peer logs, and SHA-256 evidence summaries as 
 ```text
 cmake/          UEFI MinGW toolchain
 include/cxc/    Public headers (net, scheduler, drivers, …)
-src/            Kernel, e1000e, net, runtime tests
+src/            Kernel, e1000e, net, userspace runtime tests
+user/           mini_libc, cxc-cc / as / ld, musl subset, prebuilt ELFs
 tests/host/     Freestanding net sources compiled with host g++
 tools/          QEMU runner, network peer, contract & release validators
 docs/           Architecture, contracts, midfield assessments
@@ -72,7 +107,7 @@ docs/           Architecture, contracts, midfield assessments
 
 ## Boundaries
 
-Not claimed: userspace/syscalls/ELF, storage/VFS, TCP/IPv6, production NIC driver (multi-queue/PHY/reset), physical hardware, Windows QEMU in CI.
+Not claimed: full ISO C / gcc·gas·ld bootstrap (**A2**), dynamic linking, demand paging, TCP/IPv6, production NIC (multi-queue/PHY/reset), physical hardware, Windows QEMU in CI, GUI.
 
 ## License
 

@@ -1,211 +1,200 @@
 # CXC/OS
 
-CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，不依赖 Windows/Linux 内核运行。
+CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主机只负责构建和 QEMU 测试，**不依赖** Windows/Linux 内核运行。
 
-当前为 **Milestone 130 / v2.21.0：ld+musl 字符串闭包**（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。已经在 QEMU + OVMF 中实际启动并到达：
+| 项 | 当前值 |
+|---|---|
+| 基线 | **Milestone 284 / v2.80.0**（CCDRV：`disk/cc` argv 真驱动） |
+| 证据 | QEMU + OVMF；串口 `CXC_OS_SELF_TEST_PASS` + 外部 peer `peer_ok=1` |
+| 机上合同终点 | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` |
+| 路线说明 | [`a2-mini-cc.md`](a2-mini-cc.md) · 第二十八次中场 [`midpoint-assessment-28.md`](midpoint-assessment-28.md) |
+| 产品目标 | [`product-goals.md`](product-goals.md)（一阶段主靶仍为 **A2**；**本窗未宣称 A2**） |
+
+默认 `qemu-test` 成功时串口应同时出现：
 
 ```text
 CXC_OS_SELF_TEST_PASS
+ONBOX_CCDRV_PASS
+peer_ok=1
 ```
 
-## 当前能力
+以及工具链审计样例：`spawn_as: 4` `spawn_ld: 1` `spawn_cc: 3` `ccdrv: 1` `tdrv: 1` `edge: 1`。
 
-| 模块 | 能力 |
+---
+
+## 当前功能详解
+
+下面按层次说明**已经落地、可在默认 QEMU 合同中实证**的能力。里程碑编号只作溯源；完整分期见文末「阶段索引」。
+
+### 1. 启动与内核底座
+
+| 模块 | 具体能力 |
 |---|---|
 | UEFI | LoadedImage、ACPI、内存图/map-key 重试、低 SIPI 页预留 |
-| 内核映像 | PE32+ higher-half、DIR64 二次重定位、严格 MinGW-w64 构建 |
-| 页表权限 | text RX、data/栈 NX、MMIO cache-disabled、栈 guard、SIPI code/data 分离 |
-| ACPI | RSDP/XSDT/RSDT checksum，MADT processor ID/LAPIC/IOAPIC/ISO |
-| SMP 启动 | MADT 枚举、真实 INIT-SIPI-SIPI、16→32→64 位 AP trampoline |
-| Per-CPU | GS-based CPU block、APIC ID/CR3/状态、独立 32 KiB AP 高栈 |
-| 每 CPU 调度 | 独立 run queue/current/tick/switch/finished、本地抢占与睡眠 |
-| 线程迁移 | 两阶段 saved-frame 交接、同一线程跨 CPU 恢复、固定槽位不压缩 |
-| SMP 同步 | 跨核原子 spinlock、critical-overlap 检测、共享计数实测 |
-| SMP PMM/heap | IRQ-safe allocator 锁、heap→PMM 锁序、多核分配/内容/账目回归 |
-| 运行时 TLB | 4 KiB PTE 权限更新、逐 CPU `invlpg`/ack、只读写故障探针 |
-| IPI | 48 交付证据、49 scheduler 控制、50 迁移唤醒、51 TLB shootdown |
-| Inline-Extent PMM | 连续分配、局部合并、物理上限以下的 DMA 页分配 |
-| Local APIC | xAPIC MMIO/x2APIC MSR，BSP 校准和所有在线 CPU 的本地 timer |
-| IOAPIC | 全 RTE 接管、通用 GSI route/mask、物理目标 APIC |
-| 外部 IRQ | vector 34–47 静态注册，区分 IOAPIC GSI 与 message source |
-| UART | COM1 polling 日志及 16550 loopback IRQ4 实中断测试 |
-| PCI | 机制 1 枚举、配置读写、BAR 读取和安全 capability 遍历 |
-| MSI | EDU message address/data、单向量直接 MSI 实际交付与注销 |
-| DMA | EDU RAM→设备→RAM 256 字节往返、两次完成 MSI、越界保护检查 |
-| MSI-X | table/PBA 映射、entry address/data/mask、function mask |
-| 多向量验证 | e1000e entry 0/1/4→独立 IDT 向量，direct/PBA 后交付均实测 |
-| e1000e rings | queue 0 各 8 项 legacy RX/TX descriptors、模 8 head/tail、DD write-back |
-| 动态 RX 回收 | 七个物理页在八项 ring 中 FIFO 复用，真实 RX/TX wrap 和 guard 检查 |
-| 双向包 DMA | 60 字节已知请求/响应、真实 RXQ0/TXQ0 MSI-X、DMA 页精确清理 |
-| 外部网络证据 | Python 跨平台 UDP dgram peer 注入并逐字节验证实际响应 |
-| ARP | 固定 IPv4 邻居的 request 校验、reply 构造及 padding 检查 |
-| IPv4 / ICMP | header/message checksum、Echo Request 校验、Echo Reply 重算与外部验证 |
-| UDP Echo | 十个 1–33 字节 payload、pseudo-header checksum、端口/长度/padding 验证 |
-| UDP stress (M14) | M13 后同环 256 帧；独立 `UdpStressResult`；wrap=32；peer `m14-…-stress` |
-| 线程回收 (M15) | Finished→Empty；栈映射复用；运行中 BSP recreate；finished=reclaimed |
-| Event (M16/M17) | sticky `wait`/`signal` + FIFO 队列/`broadcast`；串口 `3/1/1/3` |
-| Mutex (M18) | worker `mutex_lock`/`unlock`；争用走 Event 队列；串口 lock/unlock/wait |
-| 栈页归还 (M19) | BSP `release_empty_stacks` unmap+free；recreate 再 map；串口 pages/TLB |
-| UDP datagram (M20) | `parse_udp_datagram` / `build_udp_datagram`；echo 复用；host 往返测 |
-| UDP socket (M21) | 固定 4 槽 bind/close；每槽 RX 深 4；`udp_deliver`/`recv`；串口合同 |
-| UDP recv_wait (M22) | 每槽 `rx_gate` Event；`udp_recv_wait`；deliver 唤醒；worker 合同 |
-| UDP send (M23) | `udp_send` 填 Ethernet/UDP 帧；不提交驱动；host/runtime 往返 |
-| UDP demux (M24) | M13 每帧 `udp_deliver`+`recv`；串口 10/10；不改 Echo/peer |
-| UDP socket TX (M25) | stress 后 `udp_send`→e1000e TX；独立 `socket_tx` 计数；不改 Echo/peer |
-| UDP stress demux (M26) | M14 256 帧 `deliver`+`recv`；独立 `stress.socket_*` 256/256 |
-| UDP TX backpressure (M27) | leave-one-empty 满环拒绝；`posted:7 rejects:1 drained:1`；不改 M25 串口 |
-| UDP TX wait (M28) | 满环后 `post_tx_wait`；`waits:1 posted:1 drained:1`；不改 M25/M27 串口 |
-| UDP IRQ RX demux (M29) | RXQ0 MSI-X 内 `udp_deliver`；BSP 仅 recv；`delivered:266`；M24/M26 串口不变 |
-| UDP IRQ RX echo (M30) | IRQ 内 Echo 构造+TX post；BSP 等 DD；`deliver/echo:266/266` |
-| UDP IRQ RDT recycle (M31) | IRQ 内 FIFO 页回收+RDT；BSP 仅确认；`deliver/echo/recycle:266/266/266` |
-| Event TX wait (M32) | TXQ0→Event sticky；`post_tx_wait` 经 `event_try_consume`；`events:1`；Event 合同改 delta |
-| Generic RX submit (M33) | `try_submit_rx_dd`（无 Echo/TestInfo）；独立 `submitted:266`；不改 M13/`266/266/266` |
-| Third midfield (M34) | [`midpoint-assessment-3.md`](midpoint-assessment-3.md)；阶段 0 收束；主线改 A1 |
-| User AS ADR (M35) | [`adr-user-address-space.md`](adr-user-address-space.md)；共享内核高半；每线程内核栈；M36 起 BSP CR3 探针 |
-| User AS probe (M36) | `create`/`map_user_page`/CR3 往返；`cr3_switch/write/read/user_bit:1`；仍 CPL0 |
-| Ring-3 probe (M37) | GDT 用户选择子 + TSS.RSP0；`iretq`→CPL3→`int 0x80`；`enter/int80/cpl/rsp0` |
-| User ELF (M38) | 嵌入静态 ET_EXEC；`write`/`exit`（Linux 号）；串口 `USER_PROGRAM_PASS` |
-| User FS (M39) | 内存 ramfs；`open`/`read`/`write`/`close`；串口 `USER_FS_PASS` |
-| User brk (M40) | `brk` 增长用户堆并触达新页；串口 `USER_BRK_PASS` |
-| User mmap (M41) | anonymous `mmap`（`MAP_PRIVATE|ANONYMOUS`）；串口 `USER_MMAP_PASS` |
-| User dir (M42) | `mkdir` + `data/note.txt` 嵌套 open/read/write；串口 `USER_DIR_PASS` |
-| User munmap (M43) | `mmap`+`munmap` 一页往返并释放帧；串口 `USER_MUNMAP_PASS` |
-| Fourth midfield (M44) | [`midpoint-assessment-4.md`](midpoint-assessment-4.md)；A1 最小闭环收束；主线仍 A2 |
-| ESP ext ELF (M45) | `EXT.ELF` 入 ESP；UEFI 读入后 `launch_user_elf`；串口 `USER_EXT_ELF_PASS` |
-| Host-gcc CROSS.ELF (M46) | `user/cross_hello.c` → ESP `CROSS.ELF`；串口 `USER_CROSS_ELF_PASS` |
-| User lseek (M47) | ramfs `lseek` SEEK_SET/CUR/END；ESP `LSEEK.ELF`；串口 `USER_LSEEK_PASS` |
-| User fstat (M48) | Linux `struct stat` ABI；ESP `FSTAT.ELF`；串口 `USER_FSTAT_PASS` |
-| User path stat (M49) | 路径 `stat` 文件+目录；ESP `STAT.ELF`；串口 `USER_STAT_PASS` |
-| User getdents64 (M50) | 目录只读 open + `linux_dirent64`；ESP `DENTS.ELF`；串口 `USER_GETDENTS_PASS` |
-| User arch_prctl (M51) | `ARCH_SET_FS`/`GET_FS`（拒 GS）；ESP `PRCTL.ELF`；串口 `USER_ARCH_PRCTL_PASS` |
-| User mini-libc (M52) | host-gcc 链接 `write`/`_exit`；ESP `LIBC.ELF`；串口 `USER_LIBC_PASS` |
-| User mini-libc FS (M53) | `open`/`read`/`write`/`close` 经 mini_libc；ESP `LIBFS.ELF`；串口 `USER_LIBC_FS_PASS` |
-| Fifth midfield (M54) | [`midpoint-assessment-5.md`](midpoint-assessment-5.md)；外部 ELF→libc 缺口→mini_libc 收束；主线仍 A2 |
-| User mini-libc sbrk (M55) | `brk`/`sbrk` 经 mini_libc；ESP `LIBBRK.ELF`；串口 `USER_LIBC_SBRK_PASS` |
-| User mini-libc malloc (M56) | sbrk 背书 `malloc`/`free`；ESP `LIBMAL.ELF`；串口 `USER_LIBC_MALLOC_PASS` |
-| User mini-libc errno (M57) | `errno`/`__errno_location` + open→ENOENT；ESP `LIBERR.ELF`；串口 `USER_LIBC_ERRNO_PASS` |
-| User mini-libc string (M58) | `strlen`/`strcmp`/`memcpy`/`memset`/`memcmp`；ESP `LIBSTR.ELF`；串口 `USER_LIBC_STRING_PASS` |
-| User mini-libc writev (M59) | syscall 20 + `writev`；ESP `LIBWRV.ELF`；串口 `USER_LIBC_WRITEV_PASS` |
-| User mini-libc crt0 (M60) | `_start`→`main`→`_exit`；ESP `LIBCRT.ELF`；串口 `USER_LIBC_CRT_PASS` |
-| User mini-libc uname (M61) | syscall 63 + `utsname`；ESP `LIBUNA.ELF`；串口 `USER_LIBC_UNAME_PASS` |
-| User mini-libc tid (M62) | syscall 218 `set_tid_address`；ESP `LIBTID.ELF`；串口 `USER_LIBC_TID_PASS` |
-| User mini-libc pid (M63) | `getpid`/`getppid`；ESP `LIBPID.ELF`；串口 `USER_LIBC_PID_PASS` |
-| Sixth midfield (M64) | [`midpoint-assessment-6.md`](midpoint-assessment-6.md)；mini_libc CRT/heap/缺口号收束；主线仍 A2 |
-| User musl subset write (M65) | `user/musl_subset`；ESP `LIBMSL.ELF`；串口 `USER_MUSL_PASS`；[`musl-subset-link-notes.md`](musl-subset-link-notes.md) |
-| SYSCALL/LSTAR (M66) | GDT STAR 序；LSTAR→同 int80 分发；musl_subset 改 `syscall` 指令 |
-| User stack auxv (M67) | `launch_user_elf` 种子 argc/argv/envp/auxv；ESP `LIBMAV.ELF`；`exit_group`；`USER_MUSL_AUXV_PASS` |
-| musl-gcc static CRT (M68) | `musl_crt.ld` PHDR-in-LOAD；ESP `LIBMCR.ELF`；串口 `USER_MUSL_CRT_PASS` |
-| musl-gcc malloc (M69) | 真 musl `malloc`/`free`；ESP `LIBMMA.ELF`；串口 `USER_MUSL_MAL_PASS` |
-| musl-gcc printf (M70) | 真 musl `printf`/`fflush`；ESP `LIBMPR.ELF`；brk 抬至 `0x407000`；串口 `USER_MUSL_PRT_PASS` |
-| musl-gcc fopen (M71) | 真 musl `fopen`/`fwrite`/`fread`/`fclose`；ESP `LIBFOP.ELF`；brk `0x409000`/栈 `0x420000`；`readv` + `mprotect`/`ioctl`/`fcntl` stub；串口 `USER_MUSL_FOP_PASS` |
-| musl-gcc opendir (M72) | 真 musl `mkdir`/`opendir`/`readdir`/`closedir`；ESP `LIBODR.ELF`；串口 `USER_MUSL_ODR_PASS` |
-| musl-gcc unlink (M73) | 真 musl `unlink` + 再创建；ESP `LIBUNL.ELF`；syscall 87；串口 `USER_MUSL_UNL_PASS` |
-| Seventh midfield (M74) | [`midpoint-assessment-7.md`](midpoint-assessment-7.md)；真 musl 子集收束；**大跨步 + 边缘契约**；下一主线块设备 |
-| virtio-blk (M75–M76) | 持久 modern virtio-blk；LBA0 魔数；扇区写回读；OOB 读/写拒绝；设备保持在线；`VIRTIO_BLK_PASS` + `VIRTIO_BLK_RW_PASS` |
-| CXCFS (M77) | 块上 CXCFS；`disk/` 前缀接入 open/read/write；format/mount/remount 持久；`CXCFS_PASS` |
-| musl disk (M78) | musl-gcc `fopen("disk/…")` 写回读；缺文件 ENOENT；remount 后内核复核；`USER_MUSL_BLK_PASS` |
-| disk dirs (M79) | `disk/bld` mkdir/opendir；12KiB 文件；64×16KiB/4MiB 盘；`USER_MUSL_DIR_PASS` |
-| disk exec (M80) | 写 `disk/run.elf`；stub `execve`；换地址空间；`DISK_EXEC_PASS` |
-| disk exec argv (M81) | `execve` 传 argv；32 KiB CXCFS；~20 KiB ELF；`DISK_ARGV_PASS` |
-| disk env+rename (M82) | `execve` envp；`rename` 持久+边缘；`DISK_ENV_PASS`/`DISK_RENAME_PASS` |
-| fork/wait (M83) | 协作式 `fork`+`wait4`；子退出码；ECHILD 边缘；`FORK_WAIT_PASS` |
-| Eighth midfield (M84) | [`midpoint-assessment-8.md`](midpoint-assessment-8.md)；块设备大跨步收束；下一刀 pipe/dup |
-| pipe/dup (M85) | `pipe`+`dup`/`dup2`；fork 克隆 fd 表；EPIPE 边缘；`PIPE_PASS` |
-| chdir/getcwd (M86) | 进程 cwd；相对路径解析；`.`/`..`；ENOENT/ERANGE；`CHDIR_PASS` |
-| nested dirs (M87) | ramfs/CXCFS 多级 `mkdir`；孤儿父目录边缘；持久回读；`NEST_PASS` |
-| capacity (M88) | CXCFS 128 KiB/文件；16 MiB virtio；`max_io=4096`；96 KiB 回读；`CAP_PASS` |
-| ELF load 128KiB (M89) | 静态加载器与 CXCFS 对齐；`disk/` 100 KiB `execve`；`LOAD128_PASS` |
-| heap/mmap 1MiB (M90) | 用户栈 `0x800000`；`brk`/`mmap` 各 256 页；768+512 KiB 探针；`HEAP_PASS` |
-| access/time (M91) | `access`/`clock_gettime`/`gettimeofday`；ENOENT/EINVAL 边缘；`TIME_PASS` |
-| on-box cc (M92) | `disk/in.c`→`cxc-cc`→`out.elf`→execve；A2 编译运行闭环；`ONBOX_CC_PASS` |
-| on-box codegen (M93) | `cxc-cc` 解析 `return N` 写入 exit(N)；`exit: 42`；`ONBOX_CGEN_PASS` |
-| Ninth midfield (M94) | [`midpoint-assessment-9.md`](midpoint-assessment-9.md)；pipe→机上 codegen 收束；下一刀表达式/汇编 |
-| on-box write (M95) | `write LIT`+`return N`→`WMSG:`+exit；`ONBOX_WRITE_PASS` |
-| on-box mini-cc (M96) | freestanding C `cxc-cc`；if/while/expr；曾用 `ONBOX_CTRL_PASS` |
-| on-box lang (M97) | `break`/`continue`/`&&`/`||`/`!`/`-`/数组；曾用 `ONBOX_LANG_PASS` |
-| on-box iorw (M98) | `input`/`print` + `disk/io.in`；曾用 `ONBOX_IORW_PASS` |
-| on-box func (M99) | `fn` 定义/调用/递归；曾用 `ONBOX_FUNC_PASS` |
-| on-box data (M100) | `struct`/`&`/`*`；曾用 `ONBOX_DATA_PASS` + `edge: 1` |
-| on-box incl (M101) | `#include`/`for`/`ptr[i]`；曾用 `ONBOX_INCL_PASS` |
-| on-box CRT (M102) | `main`/globals/`do`/`+=`/字符串；曾用 `ONBOX_CRT_PASS` |
-| on-box case (M103) | `switch`/`?:`/`%`/`'c'`；曾用 `ONBOX_CASE_PASS` |
-| on-box enum (M104) | `enum`/`sizeof`/`<<`/`0x`；曾用 `ONBOX_ENUM_PASS` |
-| on-box link (M105) | `#link`/`extern fn` 多 TU；曾用 `ONBOX_LINK_PASS` |
-| on-box lib (M106) | `#lib`/`import fn` 单符号 ET_REL；曾用 `ONBOX_LIB_PASS` |
-| on-box math (M107) | 多符号 `#lib` add/mul/mac + SysV≤4；曾用 `ONBOX_MATH_PASS` |
-| on-box pc32 (M108) | `#lib` 整节 `.text` + `R_X86_64_PC32`；曾用 `ONBOX_PC32_PASS` |
-| on-box xlib (M109) | 跨 `#lib` UND + CRT plant + `DMSG`；曾用 `ONBOX_XLIB_PASS` |
-| on-box libc (M110) | `call(...);` + `cwrite`/`io.elf`；曾用 `ONBOX_LIBC_PASS` |
-| on-box cstr (M111) | `strlen`/`memcpy` + `cwrite(…,strlen)`；曾用 `ONBOX_CSTR_PASS` |
-| on-box musl plant (M112) | `memset`/`memcmp` + `typedef` + `DMSG`/`DHINT`；曾用 `ONBOX_MUSL_PASS` |
-| on-box self obj (M113) | `lib.c`→ET_REL→`#lib` SysV；曾用 `ONBOX_OBJ_PASS` |
-| on-box C-decl (M114) | `int f(int)`/`void` + 多函数 `.o` 互调；曾用 `ONBOX_CFN_PASS`；[`midpoint-assessment-11.md`](midpoint-assessment-11.md) |
-| on-box host-gcc obj (M115) | `#lib` 真实 `gcc -c` ET_REL；曾用 `ONBOX_HOBJ_PASS` |
-| on-box host-gcc UND (M116) | `.rodata` + `R_X86_64_32` + UND→`io.elf`；曾用 `ONBOX_HUND_PASS` |
-| on-box dual host-gcc (M117) | `math.o`+`host.o` 跨 `#lib` UND；曾用 `ONBOX_H2O_PASS` |
-| on-box GOTPCREL (M118) | `-fPIC -fno-plt` 合成 GOT；曾用 `ONBOX_GOT_PASS` |
-| on-box musl labs (M119) | 真实 `labs.lo` / `.text.labs`；曾用 `ONBOX_MLAB_PASS` |
-| on-box musl isdigit (M120) | 多 `.text.*` + 节间 PLT32；曾用 `ONBOX_MDIG_PASS` |
-| on-box musl mem/str (M121) | `strlen`/`memcmp`/`memcpy` 三联；曾用 `ONBOX_MMEM_PASS` |
-| on-box atoi+.rela (M122) | 自产 `.rela.text` + musl `atoi`；曾用 `ONBOX_ATOI_PASS` |
-| on-box .rodata+strcmp (M123) | 自产 `.rodata`/PC32 + musl `strcmp`；曾用 `ONBOX_RDAT_PASS` |
-| on-box strcpy/stpcpy (M124) | 跨 `#lib` `strcpy`→`__stpcpy` + `strncmp`；曾用 `ONBOX_SCPY_PASS`；[`midpoint-assessment-12.md`](midpoint-assessment-12.md) |
-| on-box deferred UND (M125) | `#lib` 序无关 UND + 自产 `.o` UND；曾用 `ONBOX_LUND_PASS` |
-| on-box string kit (M126) | `strcat`/`strchr`/`__strchrnul` 多跳闭包；曾用 `ONBOX_SKIT_PASS` |
-| on-box as subset (M127) | `lib.s`→SysV ET_REL；曾用 `ONBOX_ASM_PASS` |
-| on-box as+.rodata (M128) | `lib.s`+`msg.s` + `.asciz`/`lea`；曾用 `ONBOX_ASRO_PASS` |
-| on-box as+ld (M129) | `link.rsp`→mini-ld ET_EXEC；曾用 `ONBOX_LD_PASS` |
-| on-box ld+musl (M130) | ld 链 musl string+io；曾用 `ONBOX_LDLIB_PASS` |
-| on-box as-deep (M131) | 延迟 lea + cmp/je/.data；曾用 `ONBOX_ASDP_PASS` |
-| on-box char/const (M132) | `char` 截断 + `const`；曾用 `ONBOX_CHAR_PASS` |
-| on-box merge (M133) | as+cc+ld+musl；`ONBOX_MERG_PASS` + `edge: 1` |
-| midfield-13 (M134) | 混沌套件 + 评估；[`midpoint-assessment-13.md`](midpoint-assessment-13.md) |
-| on-box musl-kit (M136) | atoi/scmp/labs/dig 进 MERG；曾用 `ONBOX_MKIT_PASS` |
-| on-box as-gas (M138) | jmp/test/quad/mem；曾用 `ONBOX_AGAS_PASS` |
-| on-box whole-chain (M144) | as+cc(`long`/`->`)+ld+musl；曾用 `ONBOX_WHOL_PASS` |
-| on-box deep toolchain (M154) | as 帧/sizeof/str*+ld；曾用 `ONBOX_DEEP_PASS` + `edge: 1` |
-| on-box musl closure (M164) | memchr/tolower+lea/idiv+void*；曾用 `ONBOX_MCLS_PASS` + `edge: 1` |
-| on-box musl wide (M194) | isalnum/islower+layout sizeof+leave/neg；曾用 `ONBOX_WIDE_PASS` |
-| on-box musl ctyp (M204) | isupper/isblank/isgraph/isprint+endbr/sete/jbe；曾用 `ONBOX_CTYP_PASS` |
-| on-box musl leaf (M214) | isxdigit/iscntrl/ispunct/abs+sub edi/setne/jb；曾用 `ONBOX_LEAF_PASS` |
-| on-box musl walk (M224) | bzero/strnlen/isascii/llabs+mem-walk；曾用 `ONBOX_WALK_PASS` |
-| on-box musl wrap (M234) | toascii/imaxabs/bcmp/ffs+inc/seta；曾用 `ONBOX_WRAP_PASS` |
-| on-box TCAP (M264) | OS 容量还债 + 胖 ELF + mini-as；`ONBOX_TCAP_PASS` + `tcap: 1` + `edge: 1` |
-| on-box TDRV (M274) | cxc-cc 外部 as→ld；曾用 `ONBOX_TDRV_PASS` + `tdrv: 1` |
-| on-box CCDRV (M284) | `disk/cc` argv；`ONBOX_CCDRV_PASS` + `ccdrv: 1` + `spawn_cc: 3` + `spawn_as: 4` + `spawn_ld: 1` |
-| 中断帧 | 完整 176 字节，timer/IOAPIC/MSI/MSI-X/IPI/spurious 分发 |
-| 启动盘 | Python 标准库生成 MBR + FAT32 ESP |
+| 映像 | PE32+ higher-half、DIR64 二次重定位；MinGW-w64 严格构建 |
+| 内存 | Inline-extent PMM、堆、text RX / data·栈 NX、MMIO UC、栈 guard |
+| 中断 | 完整 176 字节中断帧；timer / IOAPIC / MSI / MSI-X / IPI / spurious |
+| ACPI/APIC | MADT 枚举；xAPIC MMIO 与 x2APIC MSR；IOAPIC 全 RTE 接管 |
+| 启动盘 | Python 生成 MBR + FAT32 ESP |
+
+### 2. SMP、调度与同步
+
+| 模块 | 具体能力 |
+|---|---|
+| AP 启动 | 真实 INIT-SIPI-SIPI；16→32→64 trampoline；GS per-CPU block |
+| 调度 | 每 CPU 独立 run queue；本地 timer；显式两阶段线程迁移 |
+| 同步 | 跨核 spinlock、Event（sticky wait/signal/broadcast）、worker Mutex |
+| TLB | 4 KiB PTE 权限更新 + 逐 CPU `invlpg`/ack shootdown |
+| 回收 | Finished→Empty；可选栈页 unmap+归还 PMM |
+
+默认 4 vCPU 合同：worker 完成、迁移往返、PMM/heap 账目闭合、TLB 故障探针恢复写成功。
+
+### 3. 设备与最小网络栈
+
+| 模块 | 具体能力 |
+|---|---|
+| PCI | 机制 1 枚举、BAR、capability 安全遍历 |
+| EDU | 单向量 MSI + RAM↔设备 DMA 往返与越界拒绝 |
+| e1000e | queue 0 legacy RX/TX ring、MSI-X 多向量、FIFO 页回收 |
+| 协议 | ARP / IPv4 ICMP Echo / UDP Echo（固定地址邻居） |
+| Socket API | 4 槽 UDP bind/recv/recv_wait/send；IRQ 内 demux/echo；TX 背压与 Event wait |
+| 外部证据 | Python UDP dgram peer 逐字段校验；`peer_ok=1`；256 帧 stress |
+
+**不宣称**：TCP/IPv6、多队列、PHY/完整 reset、物理网卡、生产级驱动模型。
+
+### 4. 用户态与系统调用面
+
+| 层 | 具体能力 |
+|---|---|
+| 地址空间 | 每进程用户 CR3；共享内核高半；`iretq`→CPL3；`int 0x80` Linux 号 |
+| ELF | 静态 ET_EXEC 加载（嵌入 / ESP / `disk/`）；argc/argv/envp/auxv |
+| 内存 | `brk`/`sbrk`、`mmap`/`munmap`（匿名）；用户栈约 `0x800000` 量级 |
+| 文件 | ramfs + **`disk/` CXCFS**；`open/read/write/close/lseek/stat/fstat/getdents64/mkdir/unlink/rename/chdir/getcwd/access` |
+| 进程 | 协作式 `fork` + `wait4`；`execve`（换地址空间，传 argv/envp）；`pipe`/`dup`/`dup2` |
+| 其它 | `arch_prctl(FS)`、`uname`、`getpid`/`getppid`、`set_tid_address`、`clock_gettime`/`gettimeofday`、`writev`；部分 `mprotect`/`ioctl`/`fcntl` stub |
+| 用户库 | 自研 **mini_libc**；可加载宿主 **musl-gcc 静态 ELF**（printf/fopen/malloc/opendir 等探针） |
+
+### 5. 持久存储（virtio-blk + CXCFS）
+
+| 项 | 当前合同 |
+|---|---|
+| 块设备 | modern virtio-blk；扇区写回读；OOB 拒绝；设备保持在线 |
+| 文件系统 | 块上 CXCFS；路径前缀 `disk/`；format/mount/remount 持久 |
+| 容量（TCAP 后） | 验收底线 **128 MiB** virtio；`max_files≈256`；单文件可达数 MiB（胖 ELF/工具链作业） |
+| 用途 | 工具链输入/输出、`.o` 种植、`out.elf` 落盘再 `execve` |
+
+### 6. 机上工具链（本窗重点 · CCDRV）
+
+目标路线是 A2（机上完整 gcc/g++），**当前未宣称 A2**。已落地的是可审计的迷你工具链闭环：
+
+| 组件 | 盘上路径 | 作用 |
+|---|---|---|
+| 驱动器 | `disk/cc` / `disk/cxc-cc` | argv CLI：`-c` / `-o` / `@job.rsp`；默认无参 → `-o disk/out.elf @disk/job.rsp` |
+| 汇编器 | `disk/as` | `.s` → ET_REL（子集 gas 形） |
+| 链接器 | `disk/ld` | response 文件 → 静态 ET_EXEC（可含 R rodata 段、`.bss` NOBITS） |
+| 前端方言 | `CXC_A2` | `fn` / `import fn` / 控制流 / struct·指针·`sizeof` / `#include` 等子集（**非 ISO C**） |
+
+**进程边界（内核 `execve` 审计，禁止成功路径 in-process 冒充）：**
+
+- `.s` → 仅 spawn `disk/as`
+- 链接 ET_EXEC → 仅 spawn `disk/ld`
+- 多 `.c`：HARD 作业中 `a.c`/`b.c` **嵌套** `disk/cc -c`；大 `lib.c` 可同进程编译
+- 默认 HARD 审计：`spawn_cc: 3`、`spawn_as: 4`、`spawn_ld: 1`
+
+**CLI 示例：**
+
+```text
+disk/cc -c disk/a.c -o disk/a.o
+disk/cc -c disk/b.c -o disk/b.o
+disk/as disk/main.s disk/main.o
+disk/cc -o disk/out.elf @disk/job.rsp
+disk/out.elf          # exit 42 → 串口 WMSG:CD / ONBOX_CCDRV_PASS
+```
+
+**`job.rsp` 形状（概念）：** 若干 `.s` + `a.c`/`b.c`/`lib.c` + 预种 musl/叶子 `.o` → 一次链接出 `out.elf`。
+
+**语言面示例（HARD 探针同源）：**
+
+```c
+CXC_A2
+#include "hdr.h"
+fn a_sum(){
+  int a[4]; int i; int s;
+  s=0; a[0]=10; a[1]=10; a[2]=10; a[3]=12;
+  for(i=0;i<4;i=i+1){s=s+a[i];}
+  return s;   /* 42 */
+}
+```
+
+```c
+CXC_A2
+import fn a_sum();
+import fn b_val();
+fn score(){
+  /* struct / -> / sizeof(char**) / 调用 a_sum·b_val … */
+  return n;   /* 42 */
+}
+```
+
+**边缘合同：** 改写 `job.rsp` 仅含未定义符号的 `bad.c` → 非零退出 + `DMSG`，`edge: 1` 与成功路径同权。
+
+**musl：** 合同作业链接的是宿主预先编译并种入 `disk/` 的叶子 `.o`（ctype/string/…），不是机上完整编译 musl 源码。
+
+### 7. 验证与工程面
+
+| 面 | 内容 |
+|---|---|
+| 默认验收 | `cmake --build build/uefi --target qemu-test` → `SELF_TEST_PASS` + `ONBOX_CCDRV_PASS` + `peer_ok=1` |
+| 合同脚本 | `tools/contract_test.py`（主机协议 + 镜像混沌/边缘；CCDRV 种子 `0xC2C6`） |
+| 主机单测 | `tests/host` + `ctest`（`cxc::net` 等） |
+| CI | Linux QEMU 矩阵 + Windows MSYS2 构建（见根 [`README.md`](../README.md)） |
+| 中场纪律 | 合同只增不减；修根因，禁止删断言/超时刷绿 |
+
+---
+
+## 阶段索引（能力如何长出来）
+
+| 阶段 | 里程碑约 | 收束能力 | 代表 PASS / 文档 |
+|---|---|---|---|
+| 内核与网 | M0–M34 | UEFI/SMP/PCI/e1000e/UDP | `CXC_OS_SELF_TEST_PASS` · [中场 1–3](midpoint-assessment.md) |
+| 用户态 A1 | M35–M74 | ring3/ELF/mini_libc/musl 子集 | `USER_*` / `USER_MUSL_*` · [中场 4–7](midpoint-assessment-4.md) |
+| 持久根 | M75–M91 | virtio-blk、CXCFS、`execve`/`fork`/pipe | `CXCFS_PASS` / `DISK_*` · [中场 8](midpoint-assessment-8.md) |
+| 机上 mini-cc | M92–M134 | 方言加深、`#lib`、as/ld 起步 | `ONBOX_*` · [中场 9–13](midpoint-assessment-9.md) |
+| 整链加深 | M135–M254 | musl 叶子闭包、as 加厚、布局/ctype | `ONBOX_DEEP/MCLS/…` · [`a2-mini-cc.md`](a2-mini-cc.md) |
+| TCAP/TDRV/CCDRV | M255–M284 | 容量还债 → 外部 as/ld → **`disk/cc` argv** | `ONBOX_CCDRV_PASS` · [中场 28](midpoint-assessment-28.md) |
+
+更细的逐里程碑对照见各 `midpoint-assessment-*.md` 与 git 历史；本文不再逐条展开 M0–M284。
 
 文档：
 
-- [`docs/phase1-assessment-roadmap.md`](docs/phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
-- [`docs/adr-user-address-space.md`](docs/adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
-- [`docs/midfield-cadence.md`](docs/midfield-cadence.md)：每 10 阶段中场 + CI/测试同步；M74 后大跨步 + 边缘契约；
-- [`docs/midpoint-assessment-7.md`](docs/midpoint-assessment-7.md)：第七次中场（M65–M74、真 musl 收束、块设备大跨步）；
-- [`docs/midpoint-assessment-9.md`](docs/midpoint-assessment-9.md)：第九次中场（M85–M94、pipe→机上 codegen）；
-- [`docs/midpoint-assessment-10.md`](docs/midpoint-assessment-10.md)：第十次中场（M95–M104、mini-cc 加深→enum/sizeof）；
-- [`docs/midpoint-assessment-8.md`](docs/midpoint-assessment-8.md)：第八次中场（M75–M84、持久根/exec/fork 收束、pipe/dup 下一刀）；
-- [`docs/midpoint-assessment-6.md`](docs/midpoint-assessment-6.md)：第六次中场（M55–M64、mini_libc CRT）；
-- [`docs/midpoint-assessment-5.md`](docs/midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc）；
-- [`docs/midpoint-assessment-4.md`](docs/midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环）；
-- [`docs/midpoint-assessment-3.md`](docs/midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
-- [`docs/midpoint-assessment-2.md`](docs/midpoint-assessment-2.md)：第二次中场评估（M14–M24）；
-- [`docs/midpoint-assessment.md`](docs/midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13）；
-- [`docs/from-zero-pitfalls.md`](docs/from-zero-pitfalls.md)：从零重建与持续踩坑记录；
-- [`docs/smp-memory-migration.md`](docs/smp-memory-migration.md)：M10 锁域、两阶段迁移、TLB shootdown 和故障探针；
-- [`docs/smp-scheduler.md`](docs/smp-scheduler.md)：M9 每 CPU run queue、共享锁和本地 timer；
-- [`docs/smp-startup.md`](docs/smp-startup.md)：trampoline、GS CPU block、SIPI/IPI 和停车循环；
-- [`docs/test-contract.md`](docs/test-contract.md)：中场测试契约；§8 边缘合同（M74 起）；
-- [`docs/udp-ring-wrap.md`](docs/udp-ring-wrap.md)：M13–M14 UDP/ring、M20–M25 socket 栈、RX demux 与 TX submit；
-- [`docs/arp-ipv4-icmp.md`](docs/arp-ipv4-icmp.md)：M12 ARP/IPv4/ICMP、checksum、跨向量 cause 与负对照；
-- [`docs/e1000e-packet-dma.md`](docs/e1000e-packet-dma.md)：M11 queue 0 rings、双向 DMA、peer 协议与清理；
-- [`docs/msix-e1000e.md`](docs/msix-e1000e.md)：M7 MSI-X table/PBA、IVAR、多向量和节流处理基线；
-- [`docs/edu-msi-dma.md`](docs/edu-msi-dma.md)：EDU BAR、MSI、DMA、清理顺序和实测方法；
-- [`docs/pci-irq.md`](docs/pci-irq.md)：PCI、GSI/message IRQ 生命周期和 UART loopback；
-- [`docs/acpi-ioapic.md`](docs/acpi-ioapic.md)：MADT、x2APIC、IOAPIC；
-- [`docs/interrupts-scheduler.md`](docs/interrupts-scheduler.md)：中断帧、每 CPU 调度、迁移和同步；
-- [`docs/higher-half.md`](docs/higher-half.md)：二次重定位与权限；
-- [`docs/algorithms.md`](docs/algorithms.md)：PMM、受限 DMA 分配和内存例程。
+- [`phase1-assessment-roadmap.md`](phase1-assessment-roadmap.md)：一期总评、与生产级差距、A1 编译器可跑 / 生产级内核路线图；
+- [`adr-user-address-space.md`](adr-user-address-space.md)：A1 用户 CR3 / 内核映射 / syscall 入口栈 ADR（M35）；
+- [`midfield-cadence.md`](midfield-cadence.md)：每 10 阶段中场 + CI/测试同步；M74 后大跨步 + 边缘契约；
+- [`midpoint-assessment-7.md`](midpoint-assessment-7.md)：第七次中场（M65–M74、真 musl 收束、块设备大跨步）；
+- [`midpoint-assessment-9.md`](midpoint-assessment-9.md)：第九次中场（M85–M94、pipe→机上 codegen）；
+- [`midpoint-assessment-10.md`](midpoint-assessment-10.md)：第十次中场（M95–M104、mini-cc 加深→enum/sizeof）；
+- [`midpoint-assessment-8.md`](midpoint-assessment-8.md)：第八次中场（M75–M84、持久根/exec/fork 收束、pipe/dup 下一刀）；
+- [`midpoint-assessment-6.md`](midpoint-assessment-6.md)：第六次中场（M55–M64、mini_libc CRT）；
+- [`midpoint-assessment-5.md`](midpoint-assessment-5.md)：第五次中场评估（M45–M54、外部 ELF/libc）；
+- [`midpoint-assessment-4.md`](midpoint-assessment-4.md)：第四次中场评估（M35–M44、A1 闭环）；
+- [`midpoint-assessment-3.md`](midpoint-assessment-3.md)：第三次中场评估（M25–M34、主线改 A1）；
+- [`midpoint-assessment-2.md`](midpoint-assessment-2.md)：第二次中场评估（M14–M24）；
+- [`midpoint-assessment.md`](midpoint-assessment.md)：第一次中场评估与 TD 登记（M0–M13）；
+- [`from-zero-pitfalls.md`](from-zero-pitfalls.md)：从零重建与持续踩坑记录；
+- [`smp-memory-migration.md`](smp-memory-migration.md)：M10 锁域、两阶段迁移、TLB shootdown 和故障探针；
+- [`smp-scheduler.md`](smp-scheduler.md)：M9 每 CPU run queue、共享锁和本地 timer；
+- [`smp-startup.md`](smp-startup.md)：trampoline、GS CPU block、SIPI/IPI 和停车循环；
+- [`test-contract.md`](test-contract.md)：中场测试契约；§8 边缘合同（M74 起）；
+- [`udp-ring-wrap.md`](udp-ring-wrap.md)：M13–M14 UDP/ring、M20–M25 socket 栈、RX demux 与 TX submit；
+- [`arp-ipv4-icmp.md`](arp-ipv4-icmp.md)：M12 ARP/IPv4/ICMP、checksum、跨向量 cause 与负对照；
+- [`e1000e-packet-dma.md`](e1000e-packet-dma.md)：M11 queue 0 rings、双向 DMA、peer 协议与清理；
+- [`msix-e1000e.md`](msix-e1000e.md)：M7 MSI-X table/PBA、IVAR、多向量和节流处理基线；
+- [`edu-msi-dma.md`](edu-msi-dma.md)：EDU BAR、MSI、DMA、清理顺序和实测方法；
+- [`pci-irq.md`](pci-irq.md)：PCI、GSI/message IRQ 生命周期和 UART loopback；
+- [`acpi-ioapic.md`](acpi-ioapic.md)：MADT、x2APIC、IOAPIC；
+- [`interrupts-scheduler.md`](interrupts-scheduler.md)：中断帧、每 CPU 调度、迁移和同步；
+- [`higher-half.md`](higher-half.md)：二次重定位与权限；
+- [`algorithms.md`](algorithms.md)：PMM、受限 DMA 分配和内存例程。
 
 ## 当前实测
 
@@ -247,7 +236,7 @@ python3 tools/contract_test.py --host-only \
   --work-dir build/contract-host --seed 20261025
 ```
 
-掉电仅指 QEMU 进程硬断电及后续干净启动，不宣称持久化数据恢复；主机 ring 模型也不冒充 10000 帧真实 NIC 流量。详见 [`docs/test-contract.md`](docs/test-contract.md) 和 `contract-results/CONTRACT_VALIDATION.txt`。
+掉电仅指 QEMU 进程硬断电及后续干净启动，不宣称持久化数据恢复；主机 ring 模型也不冒充 10000 帧真实 NIC 流量。详见 [`test-contract.md`](test-contract.md) 和 `contract-results/CONTRACT_VALIDATION.txt`。
 
 ## 构建与运行
 
@@ -323,7 +312,7 @@ python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
   --work-dir build/test-bad-udp
 ```
 
-正常 `--check` 的成功条件是串口 `CXC_OS_SELF_TEST_PASS` 和 `peer_ok=1` 同时成立；日志位于各自 work directory 的 `serial.log`、`network-peer.log`。
+正常 `--check` / 默认 `qemu-test` 的成功条件是串口 `CXC_OS_SELF_TEST_PASS`、`ONBOX_CCDRV_PASS` 与 `peer_ok=1` 同时成立；日志位于各自 work directory 的 `serial.log`、`network-peer.log`。
 
 ### Windows
 
@@ -345,21 +334,22 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 
 ## 当前边界
 
-- 迁移由 worker 显式请求，任意时刻仅一个在途；没有自动迁移、work stealing 或负载平衡；
-- 全局 run-queue/allocator 锁以正确性为先，不宣称可扩展性能；
-- 线程仍由 BSP 创建；M15–M19 支持 Finished→Empty、可选栈页归还与再 map；尚无非 BSP 创建；
-- M16–M18 有 Event 队列与非递归 worker Mutex；M22 将 Event 接到 UDP `recv_wait`；仍无 condvar、优先级继承或通用阻塞 IO；
-- 运行时 VMM 仅支持 BSP 发起、共享内核 root 中已存在 4 KiB PTE 的权限更新；
-- 新建映射仍由 BSP 准备，没有通用并发页表编辑、用户 CR3、PCID 或 INVPCID；
-- 每 CPU 固定三个 slots，无通用阻塞 IO 或 CPU hotplug；
-- 当前最多 16 个 enabled processors，32 位 AP 过渡要求共享 CR3 低于 4 GiB；
-- IRQ 注册固定容量，不支持 shared IRQ 或中断线程化；
-- MSI/MSI-X 设备测试仍使用 BSP 物理目标，APIC ID 不超过 255；
-- e1000e 仅限 queue 0 legacy ring、七页 FIFO 回收和测试所需 MAC/link/RCTL/TCTL 初始化；没有完整 reset/PHY 管理、多队列、offload 或生产级异常恢复；
-- M20–M34：datagram/socket/recv_wait/send + M13/M14 IRQ demux/Echo/RDT recycle + generic RX submit + socket TX 提交/背压/Event wait；第三次中场裁定下一主线为 A1 用户态；无 ephemeral 端口；协议仍为固定地址 ARP/ICMP/UDP Echo；
-- 包测试使用 EtherType `0x88B5`、ARP/ICMP/UDP 和 QEMU 本机 dgram peer，未实测物理网卡；
-- EDU DMA 不含 AHCI/block IO、IOMMU 或用户缓冲区 pinning；
-- PCI 仅机制 1，不含 ECAM、通用 BAR 资源分配或完整设备驱动模型；
-- 已有最小用户态闭环（ring-3 / `int 0x80` / 嵌入 ELF / ramfs / brk·mmap·munmap）；尚无 musl、机上编译器、动态链接、按需分页和 GUI。
+**内核 / SMP / 网**
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前切片走 A2 完整落地（下一刀 **更大 musl 闭包 / 机上 as+ld**，见 [`a2-mini-cc.md`](a2-mini-cc.md)；边缘纳入测试契约；第十二次中场见 [`midpoint-assessment-12.md`](midpoint-assessment-12.md)）。须保持 M13–M126 回归证据。
+- 迁移由 worker 显式请求，任意时刻仅一个在途；无自动迁移、work stealing 或负载平衡；
+- 全局 run-queue/allocator 锁以正确性为先，不宣称可扩展性能；
+- 线程仍由 BSP 创建；支持 Finished→Empty 与可选栈页归还；尚无非 BSP 创建、condvar、优先级继承或通用阻塞 IO；
+- 运行时 VMM：BSP 发起的已存在 4 KiB PTE 权限更新 + shootdown；无通用并发页表编辑、PCID/INVPCID；
+- 最多 16 个 enabled CPU；IRQ 固定容量；无 shared IRQ / 中断线程化 / CPU hotplug；
+- e1000e 仅 queue 0 legacy ring；无多队列、完整 PHY/reset、offload；包测走 QEMU dgram peer，未测物理网卡；
+- 协议面：固定邻居 ARP/ICMP/UDP Echo + 最小 socket API；无 TCP/IPv6/ephemeral 端口。
+
+**用户态 / 存储 / 工具链**
+
+- 有 ring-3、静态 ELF、`disk/` CXCFS、协作式 fork/exec、mini_libc，以及可加载的宿主 musl 静态 ELF；
+- **无**动态链接、按需分页、GUI、抢占式多用户调度；
+- 机上工具链是 **CXC_A2 方言 + mini as/ld + `disk/cc` argv**，不是 ISO C / 真 gcc·gas·ld；
+- HARD 作业中部分 musl/叶子 `.o` 为宿主预编译种植；嵌套 `cc -c` 与外部 as/ld 由内核 `execve` 审计；
+- **未宣称 A2**（完整机上 g++/gcc 自举）；当前合同终点是 `ONBOX_CCDRV_PASS`。
+
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前主线停在 CCDRV（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-28.md`](midpoint-assessment-28.md)）；下一刀继续加深机上工具链/musl 闭包，合同只增不减，保持 `SELF_TEST_PASS` + `peer_ok=1` + `ONBOX_CCDRV_PASS` 不回退。
