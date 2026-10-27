@@ -2,15 +2,24 @@
 
 本课题**不**把 FCS 或 cxc-os 代码整树拷进 xv6；只移植**可验证的设计约束**与**工程手法**。
 
-## 1. 来自 `e:\FCS`（尤其讲义掉电章 + embdb Soft 提交语义）
+## 1. 来自 `e:\FCS` 底层存储（已落到代码）
 
-| 思想 | 落点 |
+| FCS 构件 | 本仓库落点 |
 |---|---|
-| 「只承诺完好超级块指向的提交点」 | `THESIS.md` 掉电承诺；`pmfs` 恢复只认校验通过且 epoch 最大的槽 |
-| 双槽超级块，半写不怕 | slot A/B；写新槽时旧槽仍可挂载 |
-| 未 commit 的更新掉电即无 | 无「偷偷」在 SB 翻转前发布目录 |
-| 提交边界清晰（数据 → 清单 → SB） | PMFS：数据/元数据 flush → 写 SB → fence |
-| 对比测试要可复现 | 后续 `bench/`：固定负载 + 原版 fs vs PMFS |
+| `BlockDev` / `RamDev`（页读写 + sync） | `kernel/pmdev.h/.c`；EMUL 缓冲 = RamDev 类比 |
+| `PAGE=4096`、页号寻址 | `PMDEV_PAGE`；`pm_page_t` |
+| 双槽 SB（页 0/1）、`COMMIT_WORD`、校验 | `struct pmfs_sb`；`PMFS_COMMIT_WD`；`pmfs_sb_chk` |
+| `read_sb` / 选更高 `vers` | `pmfs_read_sb` + `pmfs_mount` |
+| `sb_flush`：sync → 写交替槽 → sync；成功才翻槽 | `pmfs_write_sb_slot` + `pmfs_commit` |
+| `tail` 页分配从 2 起 | `PMFS_DATA0`；`pmfs_alloc_pages` |
+| 「只承诺完好 SB 指向的提交点」 | `pmfs_storage_selftest` 损坏非活动槽仍可挂载 |
+
+参考（只读，不入库）：
+
+- `e:\FCS\embdb\x\include\blockdev.h`、`layout.h`、`fcs.h`（`read_sb`/`write_sb`/`sb_flush`）
+- `e:\FCS\backup\fcs-from-zero\latex\chapters\25-crash-walk.tex`
+
+**刻意未移植（本阶段）：** 分形目录 / Run 归并 / Bloom / 异步 IO 线程 / 清单链页。先把「页设备 + 双槽提交」做实，再叠文件系统语义。
 
 参考路径（只读借鉴，不入库）：
 

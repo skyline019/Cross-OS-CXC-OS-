@@ -30,6 +30,7 @@ OBJS = \
   $K/plic.o \
   $K/virtio_disk.o \
   $K/pmem.o \
+  $K/pmdev.o \
   $K/pmfs.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-

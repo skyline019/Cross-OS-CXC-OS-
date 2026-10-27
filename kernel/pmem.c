@@ -61,6 +61,7 @@ pmem_fence(void)
 void
 pmem_persist(void *p, uint64 n)
 {
+  // Works for real PMEM and for EMUL DRAM stand-in (ordering + future flush).
   pmem_flush(p, n);
   pmem_fence();
 }

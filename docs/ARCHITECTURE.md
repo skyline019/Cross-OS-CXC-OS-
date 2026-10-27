@@ -17,16 +17,20 @@ QEMU：总内存 `PHYSTOP-KERNBASE+PMEMSIZE`，或用 `memory-backend-file,share
 内核在 `kvminit` 中把 `[PMEMBASE, PMEMEND)` **直映射**为可读写（后续可加 UXN/PXN 策略），
 **不**进入 `kalloc` 空闲链。
 
-## 2. 软件分层（目标态）
+## 2. 软件分层（当前 + 目标）
 
 ```
-用户 syscall (open/read/write/…)
+用户 syscall (open/read/write/…)     ← 未接（M2+）
         │
-   pmfs 逻辑（inode、目录、extent/字节区）
+   pmfs 逻辑（inode/目录）            ← 未接
         │
-   persist 原语（pmem_memcpy_persist / flush+fence）
+   pmfs 存储核（双槽 SB + tail 分配 + commit）  ← 已有（FCS 移植）
         │
-   PMEM 直映射窗口
+   pmdev（页设备：read/write/sync）              ← 已有
+        │
+   pmem_persist（flush+fence）
+        │
+   PMEM 直映射 或 EMUL 2MiB 缓冲
 ```
 
 对照：原版路径 `sysfile → fs → bio → virtio_disk`（块设备抽象）在 PMFS **主路径上绕开**。

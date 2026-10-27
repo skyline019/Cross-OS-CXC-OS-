@@ -81,6 +81,7 @@ void            printkinit(void);
 // pmem.c (thesis PMFS)
 void            pmem_init(void);
 int             pmem_ready(void);
+void            pmem_persist(void*, uint64);
 
 // pmfs.c (thesis PMFS)
 void            pmfs_init(void);
