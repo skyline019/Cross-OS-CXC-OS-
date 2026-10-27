@@ -8,8 +8,20 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu qemu-system-riscv clang-format bc
       - run: make fmt && git diff --exit-code
       - run: make kernel/kernel fs.img
-      - run: ./test-xv6.py usertests
-      - run: ./test-xv6.py crash
+      # Baseline xv6 regression (must stay green beside PMFS-KV)
+      - name: usertests regression
+        run: ./test-xv6.py usertests
+      - name: crash regression
+        run: ./test-xv6.py crash
+      - run: make contract
+      - name: contract probe+posix+bench
+        run: make contract-full
+      - name: bench-sweep depth tables
+        run: make bench-sweep
+      - name: contract-pmem
+        run: make contract-pmem
+      - name: contract-pmem2
+        run: make contract-pmem2
 
   macos:
     runs-on: macos-latest

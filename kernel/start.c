@@ -8,7 +8,8 @@ void main();
 void timerinit();
 
 // entry.S needs one stack per CPU.
-__attribute__((aligned(16))) char stack0[4096 * NCPU];
+// 16KiB per hart: pmfs boot selftests need headroom beyond classic 4KiB.
+__attribute__((aligned(16))) char stack0[16384 * NCPU];
 
 // entry.S jumps here in machine mode on stack0.
 void

@@ -1,0 +1,111 @@
+% 精修实验图（pgfplots）——数据来自 docs/BENCH.md / make bench-sweep
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18,
+  every axis/.append style={
+    font=\small,
+    label style={font=\small},
+    tick label style={font=\footnotesize},
+    legend style={font=\footnotesize},
+    grid=both,
+    grid style={line width=.1pt, draw=gray!25},
+    major grid style={line width=.2pt,draw=gray!40},
+  }
+}
+
+% 图：双轴 N–延迟
+\newcommand{\FigNLatency}{%
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}
+  \begin{axis}[
+    width=0.92\textwidth,
+    height=0.52\textwidth,
+    xlabel={$N$（每 trial 键/文件数）},
+    ylabel={PMFS-KV 中位数（$r\_time$ 相对单位）},
+    ylabel near ticks,
+    axis y line*=left,
+    xmin=4, xmax=36,
+    ymin=0, ymax=45000,
+    xtick={8,16,32},
+    legend pos=north west,
+  ]
+  \addplot+[thick, mark=*, mark size=2.5pt] coordinates {
+    (8,9206) (16,12168) (32,35830)
+  };
+  \addlegendentry{PMFS-KV}
+  \end{axis}
+  \begin{axis}[
+    width=0.92\textwidth,
+    height=0.52\textwidth,
+    ylabel={xv6 fs+sync 中位数（同单位）},
+    ylabel near ticks,
+    axis y line*=right,
+    axis x line=none,
+    xmin=4, xmax=36,
+    ymin=0, ymax=4.0e7,
+    xtick=\empty,
+    legend pos=south east,
+  ]
+  \addplot+[thick, dashed, mark=square*, mark size=2.2pt, red!70!black] coordinates {
+    (8,7408714) (16,16440967) (32,33130730)
+  };
+  \addlegendentry{xv6 fs+sync}
+  \end{axis}
+  \end{tikzpicture}
+  \caption{随 $N$ 变化的中位数延迟（EMUL，5 trial）。左右纵轴分属两条路径；对比动机为架构量级差异，API 故意不对等。}
+  \label{fig:n-latency}
+\end{figure}
+}
+
+% 图：WA vs N
+\newcommand{\FigWaN}{%
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}
+  \begin{axis}[
+    width=0.85\textwidth,
+    height=0.48\textwidth,
+    xlabel={$N$},
+    ylabel={$\mathrm{wa\_x100}=\mathrm{phys}\times100/\mathrm{logical}$},
+    xmin=4, xmax=36,
+    ymin=0, ymax=10000,
+    xtick={8,16,32},
+  ]
+  \addplot+[thick, mark=*, mark size=2.5pt, blue!60!black] coordinates {
+    (8,8432) (16,4344) (32,2205)
+  };
+  \node at (axis cs:20,7500) [align=left, font=\footnotesize] {
+    小 value（8\,B）相对 4\,KiB 页\\
+    对齐主导放大；$N$ 增大摊销下降
+  };
+  \end{axis}
+  \end{tikzpicture}
+  \caption{写放大 $\mathrm{wa\_x100}$ 随 $N$ 变化（EMUL）。高放大属页粒度预期，与 xv6 日志放大不同源。}
+  \label{fig:wa-n}
+\end{figure}
+}
+
+% 图：MAP vs EMUL 柱状
+\newcommand{\FigMapEmul}{%
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}
+  \begin{axis}[
+    ybar,
+    width=0.75\textwidth,
+    height=0.45\textwidth,
+    ylabel={中位数延迟（$r\_time$）},
+    symbolic x coords={EMUL,MAP},
+    xtick=data,
+    ymin=0, ymax=45000,
+    bar width=18pt,
+    nodes near coords,
+    every node near coord/.append style={font=\footnotesize},
+  ]
+  \addplot coordinates {(EMUL,35830) (MAP,26477)};
+  \end{axis}
+  \end{tikzpicture}
+  \caption{$N{=}32$ 时 PMFS-KV 在 EMUL 与 MAP 下的中位数延迟。同量级表明瓶颈主要在软件提交路径。}
+  \label{fig:map-emul}
+\end{figure}
+}

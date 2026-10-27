@@ -55,5 +55,6 @@ int     pmfs_write_data_page(struct pmfs *fs, uint32 pid, const void *src);
 
 // Self-test: format → write page → commit → remount → verify.
 int     pmfs_storage_selftest(void);
+int     pmfs_crash_selftest(void);
 
 #endif

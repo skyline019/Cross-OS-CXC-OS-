@@ -1,0 +1,42 @@
+\chapter{系统实现}
+\label{chap:impl}
+
+\section{模块与代码组织}
+
+实现基于 xv6-riscv，主要新增/修改模块包括：\texttt{kernel/pmem.c}（后端与 persist）、\texttt{kernel/pmfs.c}（双槽 SB 与挂载）、\texttt{kernel/pmalgo.c}（run/B 路径）、\texttt{kernel/pmindex.c}（量化索引）、\texttt{kernel/pmcontract.c}（自测与串口契约）、\texttt{kernel/syspmfs.c}（系统调用）、以及用户态 \texttt{\_pmfs\_probe}/\texttt{\_pmfs\_bench}/\texttt{\_pmfs\_posix}。构建目标区分默认内核与 \texttt{kernel-pmem}（\texttt{-DPMEM\_MAP}）。
+
+\section{双槽超级块与 seal}
+
+活动槽与镜像槽交替提交。\texttt{seal} 路径将当前 mem 表固化为 run 页，更新超级块字段（epoch、校验、run 元数据），再经 \texttt{pmem\_persist} 落后端。挂载时选择校验合法且 epoch 较新的槽；半写损坏触发 \texttt{CRASH} 相关失败码并回退。
+
+B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmfs\_stat} 导出 logical/phys 与 $\mathrm{wa\_x100}$，使写放大可在用户态契约行中观测。
+
+\section{索引路径}
+
+索引采用键量化与 posting 结构，查询侧维护 LRU 缓存（qcache）。索引可自 run 重建：在挂载或自测阶段扫描已提交 run，避免「索引已更新而数据未提交」的窗口。该约束来自 Aurora 前序设计~\cite{auroraown}，实现为 xv6 C 重写。
+
+\section{ONBOX\_PMFS 契约套件}
+
+所有契约行必须可被 \texttt{grep} / \texttt{tools/contract\_pmfs.py} 匹配。
+
+\begin{description}[leftmargin=1.5em,style=nextline]
+  \item[成功行] \texttt{ONBOX\_PMFS\_$\langle$STAGE$\rangle$\_PASS} + 空格分隔 \texttt{key=value}
+  \item[失败行] \texttt{ONBOX\_PMFS\_$\langle$STAGE$\rangle$\_FAIL stage=$\ldots$ code=$\ldots$}
+  \item[总闸] 必过子集全部成功后打印 \texttt{ONBOX\_PMFS\_PASS}
+\end{description}
+
+必过子集（EMUL / 默认 \texttt{make qemu}）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}，然后总闸。MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 杀启后必须出现
+\begin{lstlisting}
+ONBOX_PMFS_PMEM2_PASS persist=ok
+\end{lstlisting}
+脚本成功时再印 \texttt{ONBOX\_PMFS\_PMEM2\_CONTRACT\_PASS boots=2}。
+
+用户态：\texttt{\_pmfs\_probe} $\to$ \texttt{SYSCALL\_PASS}；\texttt{\_pmfs\_bench [N]} $\to$ \texttt{BENCH\_PASS}（含 $\mathrm{wa\_x100}$）；\texttt{\_pmfs\_posix} $\to$ \texttt{POSIX\_PASS}（薄 shim，不升主线）。
+
+\section{计时与评测脚手架}
+
+用户态原调用 \texttt{cycles()} 依赖 \texttt{rdcycle}；在未开放 \texttt{mcounteren.CY} 时会触发非法指令（计数器与特权态约束见 RISC-V 特权规范~\cite{riscvpriv}）。实现将 \texttt{sys\_cycles} 改为已允许的 \texttt{r\_time()}，文档明确其为\textbf{相对时间单位}，不作墙钟微秒解读。评测脚本对每个 $N$ 执行 5 次 trial 取中位数，并等待契约行字段齐全后再杀 QEMU，避免截断解析。
+
+\section{与 CI 的衔接}
+
+持续集成挂接 \texttt{usertests} 与契约目标，使回归不以人工读完整串口日志为前提。尖刺价值正在于此：正确性与掉电语义「grep 一行即可判过」。

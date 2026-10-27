@@ -33,7 +33,9 @@ OBJS = \
   $K/pmdev.o \
   $K/pmfs.o \
   $K/pmalgo.o \
-  $K/pmindex.o
+  $K/pmindex.o \
+  $K/pmcontract.o \
+  $K/syspmfs.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -156,6 +158,9 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_sync\
+	$U/_pmfs_probe\
+	$U/_pmfs_bench\
+	$U/_pmfs_posix\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -185,8 +190,79 @@ QEMUOPTS += -global virtio-mmio.force-legacy=false
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
+# MAP mode: DRAM past PHYSTOP backs PMEMBASE (32MiB) → total 160MiB.
+QEMUOPTS_PMEM = -machine virt -bios none -kernel $K/kernel -m 160M -smp $(CPUS) -nographic
+QEMUOPTS_PMEM += -global virtio-mmio.force-legacy=false
+QEMUOPTS_PMEM += -drive file=fs.img,if=none,format=raw,id=x0
+QEMUOPTS_PMEM += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
+# File-backed guest RAM for PMEM2 cold-reboot (set PMEM_RAM_FILE).
+# -m must match backend size or QEMU rejects NUMA layout.
+PMEM_RAM_FILE ?= guest-ram.img
+QEMUOPTS_PMEM_FILE = -machine virt -bios none -kernel $K/kernel -m 160M -smp $(CPUS) -nographic
+QEMUOPTS_PMEM_FILE += -object memory-backend-file,id=mem,size=160M,mem-path=$(PMEM_RAM_FILE),share=on
+QEMUOPTS_PMEM_FILE += -numa node,memdev=mem
+QEMUOPTS_PMEM_FILE += -global virtio-mmio.force-legacy=false
+QEMUOPTS_PMEM_FILE += -drive file=fs.img,if=none,format=raw,id=x0
+QEMUOPTS_PMEM_FILE += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
 qemu: check-qemu-version $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)
+
+# Run already-built kernel at -m 160M (kernel must be built with -DPMEM_MAP).
+qemu-pmem-run: check-qemu-version $K/kernel fs.img
+	$(QEMU) $(QEMUOPTS_PMEM)
+
+# File-backed MAP boot (kernel must already be -DPMEM_MAP).
+qemu-pmem-file: check-qemu-version $K/kernel fs.img
+	@test -f $(PMEM_RAM_FILE) || truncate -s 160M $(PMEM_RAM_FILE)
+	$(QEMU) $(QEMUOPTS_PMEM_FILE)
+
+# MAP mode: force-rebuild with -DPMEM_MAP then -m 160M.
+qemu-pmem: check-qemu-version
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
+	$(QEMU) $(QEMUOPTS_PMEM)
+
+# Strict ONBOX_PMFS_* serial contract (EMUL by default).
+contract: $K/kernel fs.img
+	python3 tools/contract_pmfs.py
+
+contract-pmem:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
+	python3 tools/contract_pmfs.py --pmem
+	# Restore default EMUL kernel so subsequent -m 128M targets stay safe.
+	$(MAKE) clean
+	$(MAKE) $K/kernel fs.img
+
+# Kill+reboot same memory-backend-file → ONBOX_PMFS_PMEM2_PASS
+contract-pmem2:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
+	python3 tools/contract_pmem2.py
+	$(MAKE) clean
+	$(MAKE) $K/kernel fs.img
+
+contract-full: $K/kernel fs.img
+	python3 tools/contract_pmfs.py --probe --posix --bench
+
+# Rebuild bench numbers into docs/BENCH.md
+bench-fill: $K/kernel fs.img
+	python3 tools/run_bench_fill.py
+
+# N-sweep EMUL + MAP vs EMUL depth tables
+bench-sweep: $K/kernel fs.img
+	python3 tools/run_bench_sweep.py
+
+# Explicit rebuild helpers for sweep / CI
+kernel-pmem:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
+
+kernel-emul:
+	$(MAKE) clean
+	$(MAKE) $K/kernel fs.img
 
 .gdbinit: .gdbinit.tmpl-riscv
 	sed "s/:1234/:$(GDBPORT)/" < $^ > $@

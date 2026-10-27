@@ -8,6 +8,7 @@
 #include "pmalgo.h"
 #include "pmindex.h"
 #include "pmem.h"
+#include "pmcontract.h"
 
 static struct pm_algo g_algo;
 
@@ -81,7 +82,7 @@ pm_algo_init(struct pm_algo *a, struct pmfs *fs)
   memset(a, 0, sizeof(*a));
   a->fs = fs;
   a->next_seq = 1;
-  a->wa.budget = 8; // B3: pages allowed to rewrite per maintain (stub)
+  a->wa.budget = 64; // B3: pages allowed to rewrite across maintain
   pmindex_init(&a->ix);
 }
 
@@ -118,13 +119,15 @@ pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len)
   return 0;
 }
 
+static int cell_compact_b3(struct pm_algo *a, struct pm_cell *c);
+
 // Pack memtable into consecutive pages as one immutable run (FCS: 1 run / commit).
 static int
 seal_run(struct pm_algo *a, uint32 *out_rid)
 {
   struct pm_run *r;
   uint32 rid, pid, need, i, off, np;
-  uint8 page[PMDEV_PAGE];
+  static uint8 page[PMDEV_PAGE];
   uint64 logical = 0;
 
   if(a->mem_n == 0)
@@ -214,8 +217,11 @@ attach_run(struct pm_algo *a, uint32 rid)
     c = &a->cells[0];
   }
 
-  if(c->nseg >= PM_MAX_SEGS)
-    return -1; // B2 will compact
+  if(c->nseg >= PM_MAX_SEGS){
+    cell_compact_b3(a, c);
+    if(c->nseg >= PM_MAX_SEGS)
+      return -1;
+  }
 
   seg.rid = rid;
   seg.p0 = 0;
@@ -265,29 +271,71 @@ cell_split_b1(struct pm_algo *a, struct pm_cell *c)
   return 0;
 }
 
-// B2: too many segs → mark older segs' bytes as compact candidates (MVP: drop oldest
-// from view after copying survivors would be full compact; here we only count).
+// B2/B3: too many segs → rewrite oldest segs into one new run (true compact).
 static int
-cell_compact_b2(struct pm_algo *a, struct pm_cell *c)
+cell_compact_b3(struct pm_algo *a, struct pm_cell *c)
 {
-  if(c->nseg <= PM_SMAX)
+  struct pm_seg oldest;
+  struct pm_run *old;
+  uint32 rid, pid, p, np, i;
+  static uint8 page[PMDEV_PAGE];
+
+  if(c->nseg < PM_SMAX)
     return 0;
-  // True compact rewrites one run; respect B3 budget.
   if(a->wa.budget == 0)
     return 0;
-  // MVP: drop oldest segment from the cell view if its run is fully obsolete
-  // (live_bytes==0). Otherwise leave for later full merge.
-  {
-    struct pm_seg oldest = c->segs[c->nseg - 1];
-    struct pm_run *r = &a->runs[oldest.rid];
-    if(r->live_bytes == 0 || r->live_recs == 0){
-      c->nbytes -= r->nbytes;
-      c->nseg--;
-      a->wa.compacts++;
-      if(a->wa.budget)
-        a->wa.budget--;
-    }
+  if(a->nruns >= PM_MAX_RUNS)
+    return 0;
+
+  oldest = c->segs[c->nseg - 1];
+  old = &a->runs[oldest.rid];
+  np = old->npages;
+  if(np == 0 || np > a->wa.budget)
+    return 0;
+
+  if(pmfs_alloc_pages(a->fs, np, &pid) != 0)
+    return -1;
+
+  // Physically rewrite oldest seg pages into a new immutable run.
+  for(p = 0; p < np; p++){
+    if(pmdev_read(&a->fs->dev, old->page0 + p, 0, page, PMDEV_PAGE) != 0)
+      return -1;
+    if(pmfs_write_data_page(a->fs, pid + p, page) != 0)
+      return -1;
+    a->wa.phys_bytes += PMDEV_PAGE;
   }
+
+  rid = a->nruns;
+  a->runs[rid] = *old;
+  a->runs[rid].page0 = pid;
+  a->runs[rid].seq = a->next_seq++;
+  a->nruns++;
+
+  // Drop oldest from cell view; attach new run at back (still covered).
+  c->nbytes -= old->nbytes;
+  c->nseg--;
+  if(c->nseg < PM_MAX_SEGS){
+    c->segs[c->nseg].rid = rid;
+    c->segs[c->nseg].p0 = 0;
+    c->segs[c->nseg].p1 = np;
+    c->segs[c->nseg].klo = a->runs[rid].first;
+    c->segs[c->nseg].khi = a->runs[rid].last + 1;
+    c->segs[c->nseg].live = a->runs[rid].live_recs;
+    c->nseg++;
+    c->nbytes += a->runs[rid].nbytes;
+  }
+
+  // Refresh index entries that pointed at old rid → new rid.
+  for(i = 0; i < a->ix.nkeys; i++){
+    if(a->ix.keys[i].rid == oldest.rid)
+      a->ix.keys[i].rid = rid;
+  }
+
+  a->wa.compacts++;
+  a->wa.budget -= np;
+  if(pmfs_commit(a->fs) != 0)
+    return -1;
+  a->runs[rid].ver = a->fs->epoch;
   return 0;
 }
 
@@ -301,7 +349,43 @@ pm_maintain(struct pm_algo *a)
     if(!a->cells[i].used)
       continue;
     cell_split_b1(a, &a->cells[i]);
-    cell_compact_b2(a, &a->cells[i]);
+    cell_compact_b3(a, &a->cells[i]);
+  }
+  return 0;
+}
+
+int
+pm_algo_rebuild_index(struct pm_algo *a)
+{
+  uint32 r, p, off;
+  static uint8 page[PMDEV_PAGE];
+
+  if(a == 0 || a->fs == 0)
+    return -1;
+  pmindex_clear(&a->ix);
+  for(r = 0; r < a->nruns; r++){
+    struct pm_run *run = &a->runs[r];
+    if(!run->used)
+      continue;
+    for(p = 0; p < run->npages; p++){
+      if(pmdev_read(&a->fs->dev, run->page0 + p, 0, page, PMDEV_PAGE) != 0)
+        return -1;
+      off = 0;
+      while(off + PM_REC_HDR <= PMDEV_PAGE){
+        uint64 k;
+        uint32 len;
+        const uint8 *val;
+        if(rec_decode(page + off, &k, &len, &val) != 0)
+          break;
+        if(len == 0 && k == 0 && off > 0)
+          break;
+        if(off + PM_REC_HDR + len > PMDEV_PAGE)
+          break;
+        if(k != 0 || len != 0)
+          pmindex_upsert(&a->ix, k, r, p);
+        off += PM_REC_HDR + len;
+      }
+    }
   }
   return 0;
 }
@@ -331,7 +415,7 @@ static int
 page_find(struct pm_algo *a, uint32 abs_pid, uint64 key,
           void *dst, uint32 dstcap, uint32 *out_len)
 {
-  uint8 page[PMDEV_PAGE];
+  static uint8 page[PMDEV_PAGE];
   uint32 off = 0;
   a->wa.page_reads++;
   if(pmdev_read(&a->fs->dev, abs_pid, 0, page, PMDEV_PAGE) != 0)
@@ -458,39 +542,44 @@ pm_algo_selftest(void)
   struct pm_wa w;
   int hit;
 
-  if(a->fs == 0 || !a->fs->mounted)
-    return -1;
+  if(a->fs == 0 || !a->fs->mounted){
+    pmcontract_fail("ALGO", 1); return -1;
+  }
 
-  if(pm_put(a, 1, "apple", 5) != 0) return -2;
-  if(pm_put(a, 2, "banana", 6) != 0) return -3;
-  if(pm_put(a, 9, "pear", 4) != 0) return -4;
-  if(pm_seal(a) != 0) return -5;
+  if(pm_put(a, 1, "apple", 5) != 0){ pmcontract_fail("ALGO", 2); return -2; }
+  if(pm_put(a, 2, "banana", 6) != 0){ pmcontract_fail("ALGO", 3); return -3; }
+  if(pm_put(a, 9, "pear", 4) != 0){ pmcontract_fail("ALGO", 4); return -4; }
+  if(pm_seal(a) != 0){ pmcontract_fail("ALGO", 5); return -5; }
 
-  // Overwrite key 1 without touching old run pages (anti-WA).
-  if(pm_put(a, 1, "peach", 5) != 0) return -6;
-  if(pm_seal(a) != 0) return -7;
+  if(pm_put(a, 1, "peach", 5) != 0){ pmcontract_fail("ALGO", 6); return -6; }
+  if(pm_seal(a) != 0){ pmcontract_fail("ALGO", 7); return -7; }
 
   hit = pm_get(a, 1, buf, sizeof(buf), &len);
-  if(hit != 1 || len != 5 || buf[0] != 'p' || buf[1] != 'e') return -8;
+  if(hit != 1 || len != 5 || buf[0] != 'p' || buf[1] != 'e'){
+    pmcontract_fail("ALGO", 8); return -8;
+  }
 
   hit = pm_get(a, 9, buf, sizeof(buf), &len);
-  if(hit != 1 || len != 4) return -9;
+  if(hit != 1 || len != 4){ pmcontract_fail("ALGO", 9); return -9; }
 
   hit = pm_get(a, 7, buf, sizeof(buf), &len);
-  if(hit != 0) return -10;
+  if(hit != 0){ pmcontract_fail("ALGO", 10); return -10; }
 
   w = pm_wa_snapshot(a);
-  if(w.logical_bytes == 0 || w.phys_bytes == 0) return -11;
-  // phys should be modest: 2 seals → a few pages, not inode-style rewrite storm.
-  if(w.phys_bytes > 16ULL * PMDEV_PAGE) return -12;
+  if(w.logical_bytes == 0 || w.phys_bytes == 0){
+    pmcontract_fail("ALGO", 11); return -11;
+  }
+  if(w.phys_bytes > 16ULL * PMDEV_PAGE){
+    pmcontract_fail("ALGO", 12); return -12;
+  }
 
-  // Second get should hit query cache (Aurora LRU).
   hit = pm_get(a, 1, buf, sizeof(buf), &len);
-  if(hit != 1 || a->ix.qhits < 1) return -13;
+  if(hit != 1 || a->ix.qhits < 1){ pmcontract_fail("ALGO", 13); return -13; }
 
-  printk("pmfs: ALGO_SELFTEST_PASS logical=%d phys=%d bloom_skip=%d fence_skip=%d splits=%d qhits=%d\n",
+  printk("ONBOX_PMFS_ALGO_PASS logical=%d phys=%d bloom_skip=%d fence_skip=%d splits=%d qhits=%d\n",
          (int)w.logical_bytes, (int)w.phys_bytes,
          (int)w.bloom_skips, (int)w.fence_skips, (int)w.splits,
          (int)a->ix.qhits);
+  pmcontract_mark("ALGO", 1);
   return 0;
 }

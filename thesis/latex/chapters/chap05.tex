@@ -1,0 +1,141 @@
+\chapter{实验与分析}
+\label{chap:eval}
+
+\section{实验环境}
+
+\begin{table}[htbp]
+  \centering
+  \caption{实验环境}
+  \label{tab:env}
+  \begin{tabular}{ll}
+    \toprule
+    项 & 配置 \\
+    \midrule
+    基线 & xv6-riscv（课题分支） \\
+    模拟器 & QEMU \texttt{virt}，\texttt{CPUS=1} \\
+    后端 & EMUL / MAP / PMEM2（见第~\ref{chap:design}~章） \\
+    回归 & \texttt{usertests}、契约目标（CI） \\
+    计时 & 内核 \texttt{r\_time()} 相对单位；每 $N$ 取 5 trial 中位数 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-pmem}、\texttt{contract-pmem2}。
+
+\section{功能、崩溃与掉电（尖刺证据）}
+
+\begin{table}[htbp]
+  \centering
+  \caption{契约验收用例}
+  \label{tab:contract}
+  \begin{tabular}{llll}
+    \toprule
+    用例 & 命令 & 期望 & 说明 \\
+    \midrule
+    总闸 & \texttt{make contract} & \texttt{ONBOX\_PMFS\_PASS} & EMUL 必过子集 \\
+    MAP & \texttt{make contract-pmem} & \texttt{mode=MAP}+PMEM1 & 窗口映射 \\
+    掉电 & \texttt{make contract-pmem2} & \texttt{PMEM2\_PASS} & 文件后端杀启 \\
+    CRASH & 内嵌自测 & \texttt{CRASH\_PASS} & 半写/未提交 \\
+    POSIX shim & \texttt{pmfs\_posix} & \texttt{POSIX\_PASS} & 不升主线 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+分析：契约套件使「完好 SB / 未提交不可见 / 窗口 persist」可机器判定；相对仅演示双槽结构，这是方法学差异，构成本文尖刺。
+
+\section{性能：随 $N$ 变化的延迟}
+
+对比路径故意不对等（表~\ref{tab:unequal}）。ratio$\gg 1$ 主要反映避免 virtio 日志与目录更新的架构差，\textbf{不可}解读为同等 POSIX 文件 API 下的千倍加速。
+
+\begin{table}[htbp]
+  \centering
+  \caption{故意不对等的对比维度}
+  \label{tab:unequal}
+  \begin{tabular}{p{2.4cm}p{5.2cm}p{5.2cm}}
+    \toprule
+    维度 & PMFS-KV & xv6 fs+log \\
+    \midrule
+    API & \texttt{put}$\times N$ + 1$\times$\texttt{seal} + \texttt{get}$\times N$
+         & \texttt{open/create}+\texttt{write(8B)}$\times N$ + \texttt{sync} \\
+    持久语义 & 双槽 SB 提交点 & 块日志检查点 \\
+    I/O 栈 & 字节寻址窗口 / EMUL & virtio-blk + bio + log \\
+    元数据 & 无目录/inode & 目录项 + inode + 位图 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{EMUL 下随 $N$ 变化的中位数（5 trial）}
+  \label{tab:bench-n}
+  \begin{tabular}{rrrrrrr}
+    \toprule
+    $N$ & median\_pmfs & median\_xv6 & ratio$\times$100 & wa\_x100 & logical & phys \\
+    \midrule
+    8  & 9206  & 7408714  & 80477  & 8432 & 340  & 28672 \\
+    16 & 12168 & 16440967 & 135116 & 4344 & 660  & 28672 \\
+    32 & 35830 & 33130730 & 92466  & 2205 & 1300 & 28672 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\FigNLatency
+
+观察：（1）xv6 随 $N$ 近似线性；（2）PMFS 以一次 seal 摊销提交，ratio 通常仍 $\gg 1$；（3）论文结论写作\textbf{量级优势 + 边界}。
+
+\section{写放大}
+
+\FigWaN
+
+小 value（8\,B）相对 4\,KiB 页对齐主导放大；$N$ 增大时 logical 上升而 phys 在本负载下保持 28672，故 $\mathrm{wa\_x100}$ 下降。该现象属页粒度预期，与 xv6 日志放大不同源。
+
+\section{MAP 与 EMUL 对照}
+
+\begin{table}[htbp]
+  \centering
+  \caption{$N{=}32$ 时 EMUL 与 MAP}
+  \label{tab:map-emul}
+  \begin{tabular}{lrrrr}
+    \toprule
+    mode & median\_pmfs & median\_xv6 & ratio$\times$100 & wa\_x100 \\
+    \midrule
+    EMUL & 35830 & 33130730 & 92466 & 2205 \\
+    MAP  & 26477 & 23651219 & 89327 & 2205 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\FigMapEmul
+
+若 EMUL/MAP 同量级，可推断评测瓶颈主要在算法/提交路径，而非 EMUL 假缓冲主导结果。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
+
+\section{实现难点与失败史}
+
+下列踩坑用于证明系统是「调出来的」，并可复核。
+
+\paragraph{P0 启动栈溢出}
+\texttt{main()} 跑在原 4\,KiB/hart 的 \texttt{stack0} 上；自测栈上放置多页缓冲导致溢出，污染邻近内存。修复：页缓冲改 \texttt{static}；\texttt{stack0} 扩至 16\,KiB/hart。
+
+\paragraph{P1 \texttt{rdcycle} 非法指令}
+\texttt{timerinit} 未开放 \texttt{CY} 时，S 态 \texttt{rdcycle} 触发 \texttt{kerneltrap}。修复：改用已允许的 \texttt{r\_time()}，并在论文中不作墙钟 $\mu$s 解读。
+
+\paragraph{P2 QEMU NUMA / RAM 尺寸不匹配}
+仅配置 160\,M 文件后端而默认 $-m$ 仍为 128\,M 时，QEMU 立即退出，契约表现为超时。修复：文件后端启动同步 $-m$\,160M。
+
+\paragraph{P3 MAP 在 $-m$\,128M 下写 PMEMBASE}
+无物理后备窗口上的写探测导致 store fault。修复：仅 \texttt{-DPMEM\_MAP} 时映射并探测。
+
+\paragraph{P4 Bench 过早杀进程截断契约行}
+匹配到 \texttt{BENCH\_PASS} 子串即杀 QEMU，导致字段截断。修复：等待 \texttt{median\_xv6=} / \texttt{phys=} / \texttt{wa\_x100=} 齐全。
+
+\section{局限与威胁效度}
+
+\begin{enumerate}[leftmargin=2em]
+  \item QEMU 非真 NVDIMM；附录给出扩展路径但不喧宾夺主。
+  \item 性能对比 API 异构；结论限于量级说明。
+  \item 薄 POSIX 仅为 hash$\to$KV shim，不代表文件语义完备性。
+\end{enumerate}
+
+\section{本章小结}
+
+尖刺（契约套件）+ 支撑柱（存储核 / PMEM2）+ 可复核踩坑，构成实验章叙事主线；性能图服务于量级与写放大机制说明，而非绝对公平微基准夺冠。

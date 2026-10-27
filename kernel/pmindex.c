@@ -3,6 +3,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "pmindex.h"
+#include "pmcontract.h"
 
 uint32
 pm_key_bucket(uint64 key)
@@ -199,30 +200,36 @@ pmindex_selftest(void)
   pmindex_init(&ix);
 
   // Quantization: nearby keys share coarse bucket.
-  if(pm_key_coarse(0x1000000000000ULL) != pm_key_coarse(0x1000000000001ULL))
-    return -1;
+  if(pm_key_coarse(0x1000000000000ULL) != pm_key_coarse(0x1000000000001ULL)){
+    pmcontract_fail("INDEX", 1); return -1;
+  }
 
-  if(pmindex_upsert(&ix, 10, 0, 0) != 0) return -2;
-  if(pmindex_upsert(&ix, 20, 1, 0) != 0) return -3;
-  if(pmindex_upsert(&ix, 30, 0, 1) != 0) return -4;
+  if(pmindex_upsert(&ix, 10, 0, 0) != 0){ pmcontract_fail("INDEX", 2); return -2; }
+  if(pmindex_upsert(&ix, 20, 1, 0) != 0){ pmcontract_fail("INDEX", 3); return -3; }
+  if(pmindex_upsert(&ix, 30, 0, 1) != 0){ pmcontract_fail("INDEX", 4); return -4; }
 
   n = pmindex_hint_runs(&ix, 20, rids, 8);
-  if(n < 1 || rids[0] != 1) return -5;
+  if(n < 1 || rids[0] != 1){ pmcontract_fail("INDEX", 5); return -5; }
 
-  // Binary posting: run0 must be set for keys in same coarse region as 10.
-  if(!pm_post_test(&ix.coarse[pm_key_coarse(10)], 0)) return -6;
+  if(!pm_post_test(&ix.coarse[pm_key_coarse(10)], 0)){
+    pmcontract_fail("INDEX", 6); return -6;
+  }
 
   pmindex_cache_put(&ix, 20, "ok", 2, 1);
-  if(!pmindex_cache_get(&ix, 20, buf, sizeof(buf), &len, &found)) return -7;
-  if(!found || len != 2 || buf[0] != 'o') return -8;
+  if(!pmindex_cache_get(&ix, 20, buf, sizeof(buf), &len, &found)){
+    pmcontract_fail("INDEX", 7); return -7;
+  }
+  if(!found || len != 2 || buf[0] != 'o'){ pmcontract_fail("INDEX", 8); return -8; }
 
-  // Negative cache
   pmindex_cache_put(&ix, 99, 0, 0, 0);
   found = 1;
-  if(!pmindex_cache_get(&ix, 99, buf, sizeof(buf), &len, &found)) return -9;
-  if(found != 0) return -10;
+  if(!pmindex_cache_get(&ix, 99, buf, sizeof(buf), &len, &found)){
+    pmcontract_fail("INDEX", 9); return -9;
+  }
+  if(found != 0){ pmcontract_fail("INDEX", 10); return -10; }
 
-  printk("pmfs: INDEX_SELFTEST_PASS keys=%d qhits=%d buck_skip=%d\n",
+  printk("ONBOX_PMFS_INDEX_PASS keys=%d qhits=%d buck_skip=%d\n",
          ix.nkeys, (int)ix.qhits, (int)ix.buck_skip);
+  pmcontract_mark("INDEX", 1);
   return 0;
 }

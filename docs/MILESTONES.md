@@ -1,11 +1,12 @@
-# 实施切片
+# 实施切片 ↔ 契约（PMFS-KV）
 
-| ID | 内容 | 完成判据 |
+| ID | 内容 | 判据 |
 |---|---|---|
-| M0 | 独立分支 `thesis/pmem-fs`、文档、`pmem`/`pmfs` 桩、原版仍可启动 | 本文档 + `THESIS.md`；串口见 `pmem:` / `pmfs:` 行 |
-| M1 | QEMU 扩内存；`kvmmap` PMEM；`pmem_persist`；selftest 掉电读回 | `pmem_ready()==1`；重启魔数仍在 |
-| M2 | 双槽 SB + inode/数据布局；create/read/write 不经 bio | 用户态探针程序 PASS |
-| M3 | 恢复路径 + 故意崩溃用例 | 半写 SB 丢弃；完好 epoch 可挂 |
-| M4 | vs log+virtio 延迟/吞吐表 | `docs/BENCH.md` 数字可复现 |
+| M0–M4 | 契约 / MAP / CRASH / syscall / bench | `CONTRACT.md` |
+| M1b | PMEM2 掉电 | `contract-pmem2` |
+| 深度 | N 扫参 + MAP/EMUL + 实验分析 | `make bench-sweep` → `BENCH.md` / `EXPERIMENT.md` |
+| 贡献 | C1–C3 口答 | `CONTRIBUTIONS.md` |
+| 加分 | 薄 POSIX shim / NVDIMM 附录 / usertests CI | `pmfs_posix` · `APPENDIX-NVDIMM` · workflow |
 
-当前：**M0 + 存储核 + 算法骨架** — `STORAGE_SELFTEST` / `ALGO_SELFTEST`（EMUL）。下一步：真 PMEM 窗口、完整 B3 压实、用户态探针。
+题面：字节寻址 KV + **契约尖刺**；FCS/Aurora=作者前序原生；完整 VFS/真 NVDIMM 不升主线。  
+图与踩坑：`docs/figures/`、`docs/PITFALLS.md`。

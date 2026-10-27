@@ -25,6 +25,11 @@ char *sys_sbrk(int, int);
 int pause(int);
 int uptime(void);
 int sync(void);
+int pmfs_put(unsigned long key, const void *val, int len);
+int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
+int pmfs_seal(void);
+int pmfs_stat(void *wa);
+unsigned long cycles(void);
 
 // ulib.c
 int stat(const char *, struct stat *);

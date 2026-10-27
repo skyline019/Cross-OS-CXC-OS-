@@ -1,0 +1,28 @@
+\chapter{复现命令与扩展说明}
+\label{app:repro}
+
+\section{一键契约与评测}
+
+在仓库根目录（WSL）执行：
+
+\begin{lstlisting}
+make contract          # EMUL 总闸 -> ONBOX_PMFS_PASS
+make contract-pmem     # MAP
+make contract-pmem2    # 文件后端掉电二次启动
+make bench-sweep       # N=8/16/32 中位数，回填 docs/BENCH.md
+\end{lstlisting}
+
+宿主解析脚本位于 \texttt{tools/contract\_pmfs.py}、\texttt{tools/contract\_pmem2.py} 与 bench 相关脚本。
+
+\section{关于真 NVDIMM}
+
+主线以 QEMU 窗口与文件后端验证语义与契约。若需真 NVDIMM：在具备硬件与内核/固件支持的平台上，将 MAP 窗口替换为实际持久区映射，并重新校准延迟与 \texttt{pmem\_persist} 屏障语义。该路径不改变契约阶段码表的方法学，但会影响绝对延迟数字；故正文不以其为依赖。
+
+\section{论文 PDF 编译}
+
+\begin{lstlisting}
+cd thesis/latex
+make          # xelatex + bibtex + xelatex x2
+\end{lstlisting}
+
+要求：TeX Live（含 \texttt{ctex}、\texttt{pgfplots}）、Noto CJK 字体。封面姓名/学院等宏可在 \texttt{main.tex} 中替换为学校正式模板。

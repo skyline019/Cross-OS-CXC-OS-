@@ -1,6 +1,4 @@
 // PMFS durable storage — port of FCS mount/write_sb/dual-slot protocol to xv6 C.
-// Reference (read-only): e:\FCS\embdb\x\include\fcs.h read_sb/write_sb/sb_flush
-//                         e:\FCS\backup\fcs-from-zero latex crash chapter
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -11,16 +9,14 @@
 #include "pmfs.h"
 #include "pmalgo.h"
 #include "pmindex.h"
+#include "pmcontract.h"
 
-// 2 MiB EMUL region so storage logic is testable without QEMU 160M.
-// Static: freestanding/MinGW-style kernels dislike large frames.
 #define PMFS_EMUL_BYTES (2u * 1024u * 1024u)
 static uint8 pmfs_emul_buf[PMFS_EMUL_BYTES];
 static struct pmfs g_fs;
 
 enum { PMFS_NIL = 0xffffffffu };
 
-// --- FCS-style checksum (FNV-ish over header with chk zeroed) ---
 static uint32
 pmfs_sb_chk(const struct pmfs_sb *s)
 {
@@ -76,7 +72,6 @@ pmfs_sb_epoch(const struct pmfs_sb *s)
   return ((uint64)s->vers_hi << 32) | s->vers_lo;
 }
 
-// FCS read_sb(slot): load page, validate commit word + checksum.
 static int
 pmfs_read_sb(struct pmfs *fs, uint32 slot, struct pmfs_sb *out)
 {
@@ -91,18 +86,15 @@ pmfs_read_sb(struct pmfs *fs, uint32 slot, struct pmfs_sb *out)
   return 0;
 }
 
-// FCS sb_flush: sync → erase/write alternate slot → sync. Slot flips only on success.
 static int
 pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
 {
-  uint8 page[PMDEV_PAGE];
+  static uint8 page[PMDEV_PAGE];
   memset(page, 0, sizeof(page));
   memmove(page, (void*)s, PMFS_SB_HDR);
 
-  // Barrier 1: data pages already persisted by caller; sync again like FCS.
   pmdev_sync(&fs->dev);
 
-  // "Erase" slot (zero) then write full page — CRC/state make tear-safe.
   memset(pmdev_raw(&fs->dev, slot), 0, PMDEV_PAGE);
   pmem_persist(pmdev_raw(&fs->dev, slot), PMDEV_PAGE);
 
@@ -136,14 +128,13 @@ pmfs_format(struct pmfs *fs)
 
   fs->epoch = 1;
   fs->tail = PMFS_DATA0;
-  fs->sb_slot = PMFS_SLOT_B; // first durable write lands on A (slot^1)
+  fs->sb_slot = PMFS_SLOT_B;
 
   pmfs_sb_pack(&sb, fs->epoch, fs->tail);
   if(pmfs_write_sb_slot(fs, &sb, PMFS_SLOT_A) != 0)
     return -1;
   fs->sb_slot = PMFS_SLOT_A;
 
-  // Second SB so both slots valid (FCS mount formats with two write_sb).
   fs->epoch = 2;
   pmfs_sb_pack(&sb, fs->epoch, fs->tail);
   if(pmfs_write_sb_slot(fs, &sb, PMFS_SLOT_B) != 0)
@@ -199,7 +190,7 @@ pmfs_commit(struct pmfs *fs)
 
   fs->epoch++;
   pmfs_sb_pack(&sb, fs->epoch, fs->tail);
-  slot = fs->sb_slot ^ 1u;   // FCS: alternate every durable SB write
+  slot = fs->sb_slot ^ 1u;
   if(pmfs_write_sb_slot(fs, &sb, slot) != 0)
     return -1;
   fs->sb_slot = slot;
@@ -212,7 +203,7 @@ pmfs_alloc_pages(struct pmfs *fs, uint32 n, uint32 *out_pid)
   uint32 pid;
   if(fs == 0 || !fs->mounted || n == 0 || out_pid == 0)
     return -1;
-  if((uint64)fs->tail + n > fs->npages)
+  if(fs->tail + n > fs->npages)
     return -1;
   pid = fs->tail;
   fs->tail += n;
@@ -233,59 +224,133 @@ pmfs_storage_selftest(void)
 {
   struct pmfs *fs = &g_fs;
   uint32 pid = 0;
-  uint8 page[PMDEV_PAGE];
-  uint8 back[PMDEV_PAGE];
+  // Must be static: main() runs on 4KiB stack0; 2×4KiB locals overflow.
+  static uint8 page[PMDEV_PAGE];
+  static uint8 back[PMDEV_PAGE];
   uint64 ep_before;
   uint32 slot_before;
+  int code;
 
-  if(!fs->mounted)
-    return -1;
+  if(!fs->mounted){
+    code = 1;
+    goto fail;
+  }
 
   memset(page, 0x5a, sizeof(page));
   page[0] = 'P'; page[1] = 'M'; page[2] = 'T'; page[3] = '0';
 
-  if(pmfs_alloc_pages(fs, 1, &pid) != 0)
-    return -2;
-  if(pmfs_write_data_page(fs, pid, page) != 0)
-    return -3;
+  if(pmfs_alloc_pages(fs, 1, &pid) != 0){ code = 2; goto fail; }
+  if(pmfs_write_data_page(fs, pid, page) != 0){ code = 3; goto fail; }
 
   ep_before = fs->epoch;
   slot_before = fs->sb_slot;
-  if(pmfs_commit(fs) != 0)
-    return -4;
-  if(fs->epoch != ep_before + 1)
-    return -5;
-  if(fs->sb_slot == slot_before)
-    return -6; // must flip slot
+  if(pmfs_commit(fs) != 0){ code = 4; goto fail; }
+  if(fs->epoch != ep_before + 1){ code = 5; goto fail; }
+  if(fs->sb_slot == slot_before){ code = 6; goto fail; }
 
-  // Simulate remount (drop RAM state, reload SBs).
   fs->mounted = 0;
   fs->epoch = 0;
   fs->tail = 0;
-  if(pmfs_mount(fs) != 0)
-    return -7;
-  if(fs->epoch != ep_before + 1)
-    return -8;
-  if(fs->tail != pid + 1)
-    return -9;
+  if(pmfs_mount(fs) != 0){ code = 7; goto fail; }
+  if(fs->epoch != ep_before + 1){ code = 8; goto fail; }
+  if(fs->tail != pid + 1){ code = 9; goto fail; }
 
-  if(pmdev_read(&fs->dev, pid, 0, back, PMDEV_PAGE) != 0)
-    return -10;
-  if(back[0] != 'P' || back[1] != 'M' || back[2] != 'T' || back[3] != '0')
-    return -11;
+  if(pmdev_read(&fs->dev, pid, 0, back, PMDEV_PAGE) != 0){ code = 10; goto fail; }
+  if(back[0] != 'P' || back[1] != 'M' || back[2] != 'T' || back[3] != '0'){
+    code = 11;
+    goto fail;
+  }
 
-  // Corrupt inactive slot; mount must still succeed (FCS dual-slot).
   {
     uint32 bad = fs->sb_slot ^ 1u;
     memset(pmdev_raw(&fs->dev, bad), 0xee, PMDEV_PAGE);
     pmem_persist(pmdev_raw(&fs->dev, bad), PMDEV_PAGE);
   }
   fs->mounted = 0;
-  if(pmfs_mount(fs) != 0)
-    return -12;
+  if(pmfs_mount(fs) != 0){ code = 12; goto fail; }
 
-  printk("pmfs: STORAGE_SELFTEST_PASS epoch=%d pid=%d\n",
-         (int)fs->epoch, pid);
+  // Restore dual-slot health so CRASH can tear the active slot safely.
+  if(pmfs_commit(fs) != 0){ code = 12; goto fail; }
+
+  printk("ONBOX_PMFS_STORE_PASS epoch=%d pid=%d\n", (int)fs->epoch, pid);
+  pmcontract_mark("STORE", 1);
+  return 0;
+
+fail:
+  pmcontract_fail("STORE", code);
+  return -code;
+}
+
+// CRASH: tear active slot must still mount via other; uncommitted not visible.
+int
+pmfs_crash_selftest(void)
+{
+  struct pmfs *fs = &g_fs;
+  uint32 pid = 0;
+  static uint8 page[PMDEV_PAGE];
+  uint64 ep0, ep1;
+  uint32 slot_act;
+  uint32 tail0;
+
+  if(!fs->mounted){
+    pmcontract_fail("CRASH", 1);
+    return -1;
+  }
+
+  // --- 1) Tear the *active* (latest) slot; mount must use the other ---
+  ep0 = fs->epoch;
+  slot_act = fs->sb_slot;
+  memset(pmdev_raw(&fs->dev, slot_act), 0xcc, PMDEV_PAGE);
+  pmem_persist(pmdev_raw(&fs->dev, slot_act), PMDEV_PAGE);
+  fs->mounted = 0;
+  if(pmfs_mount(fs) != 0){
+    // Both bad? Should not happen — other slot still valid.
+    pmcontract_fail("CRASH", 1);
+    return -1;
+  }
+  if(fs->sb_slot == slot_act){
+    // Mounted the torn slot somehow
+    pmcontract_fail("CRASH", 1);
+    return -1;
+  }
+  if(fs->epoch > ep0){
+    pmcontract_fail("CRASH", 1);
+    return -1;
+  }
+  // Restore a clean dual-slot state for further tests.
+  if(pmfs_commit(fs) != 0){
+    pmcontract_fail("CRASH", 1);
+    return -1;
+  }
+
+  // --- 2) Uncommitted write must not advance durable tail ---
+  ep1 = fs->epoch;
+  tail0 = fs->tail;
+  memset(page, 0x11, sizeof(page));
+  page[0] = 'U'; page[1] = 'N'; page[2] = 'C'; page[3] = 'M';
+  if(pmfs_alloc_pages(fs, 1, &pid) != 0){
+    pmcontract_fail("CRASH", 2);
+    return -1;
+  }
+  if(pmfs_write_data_page(fs, pid, page) != 0){
+    pmcontract_fail("CRASH", 2);
+    return -1;
+  }
+  // Intentionally NO commit — remount must restore old tail/epoch.
+  fs->mounted = 0;
+  fs->epoch = 0;
+  fs->tail = 0;
+  if(pmfs_mount(fs) != 0){
+    pmcontract_fail("CRASH", 2);
+    return -1;
+  }
+  if(fs->epoch != ep1 || fs->tail != tail0){
+    pmcontract_fail("CRASH", 2);
+    return -1;
+  }
+
+  printk("ONBOX_PMFS_CRASH_PASS epoch=%d\n", (int)fs->epoch);
+  pmcontract_mark("CRASH", 1);
   return 0;
 }
 
@@ -295,6 +360,7 @@ pmfs_init(void)
   void *base = 0;
   uint64 nbytes = 0;
   int emul = 0;
+  int rc;
 
   memset(&g_fs, 0, sizeof(g_fs));
 
@@ -302,35 +368,55 @@ pmfs_init(void)
     base = pmem_base_va();
     nbytes = pmem_size();
     emul = 0;
+    // Skip first 16 bytes used by pmem probe/selftest magic.
+    base = (void *)((uint64)base + PGSIZE);
+    nbytes -= PGSIZE;
+    printk("ONBOX_PMFS_PMEM0_PASS mode=MAP size=%d\n", (int)nbytes);
+    pmcontract_mark("PMEM0", 1);
+    pmem_contract_map();
   } else {
-    // FCS RamDev stand-in until QEMU NVDIMM window is wired (M1).
     base = pmfs_emul_buf;
     nbytes = PMFS_EMUL_BYTES;
     emul = 1;
-    printk("pmfs: using EMUL buffer (%d KiB) — FCS RamDev analogue\n",
-           (int)(PMFS_EMUL_BYTES / 1024));
+    printk("ONBOX_PMFS_PMEM0_PASS mode=EMUL size=%d\n", (int)nbytes);
+    pmcontract_mark("PMEM0", 1);
   }
 
   if(pmdev_open(&g_fs.dev, base, nbytes) != 0){
-    printk("pmfs: pmdev_open failed\n");
+    pmcontract_fail("MOUNT", 1);
     return;
   }
   g_fs.emul = emul;
   g_fs.npages = pmdev_capacity(&g_fs.dev);
 
   if(pmfs_mount(&g_fs) != 0){
-    printk("pmfs: mount/format failed\n");
+    pmcontract_fail("MOUNT", 1);
     return;
   }
+  printk("ONBOX_PMFS_MOUNT_PASS epoch=%d slot=%d emul=%d\n",
+         (int)g_fs.epoch, g_fs.sb_slot, emul);
+  pmcontract_mark("MOUNT", 1);
 
-  if(pmfs_storage_selftest() != 0)
-    printk("pmfs: STORAGE_SELFTEST_FAIL\n");
+  rc = pmfs_storage_selftest();
+  if(rc != 0)
+    ; // already FAIL-lined
 
-  if(pmindex_selftest() != 0)
-    printk("pmfs: INDEX_SELFTEST_FAIL\n");
+  rc = pmindex_selftest();
+  if(rc != 0)
+    ; // already FAIL-lined
 
-  // FCS algorithm layer + Aurora index: mem→run, quant/bit postings, B1/B2.
   pm_algo_init(pm_algo_global(), &g_fs);
-  if(pm_algo_selftest() != 0)
-    printk("pmfs: ALGO_SELFTEST_FAIL\n");
+  rc = pm_algo_selftest();
+  if(rc != 0)
+    ;
+
+  // Prove index is rebuildable from sealed runs (Aurora remount path).
+  if(pm_algo_rebuild_index(pm_algo_global()) != 0)
+    pmcontract_fail("INDEX", 20);
+
+  rc = pmfs_crash_selftest();
+  if(rc != 0)
+    ;
+
+  pmcontract_gate();
 }

@@ -1,0 +1,76 @@
+\chapter{系统设计}
+\label{chap:design}
+
+\section{产品形态与非目标}
+
+PMFS-KV 的产品形态是：\textbf{并行于 virtio 根文件系统的字节寻址键值引擎}。用户态通过系统调用 \texttt{pmfs\_put}、\texttt{pmfs\_get}、\texttt{pmfs\_seal}、\texttt{pmfs\_stat} 访问；可选薄层 \texttt{pmfs\_posix} 仅做路径 hash$\to$KV 的 shim，\textbf{不}升格为内核 VFS。
+
+明确非目标：完整 inode/目录文件系统；真物理 NVDIMM 作为主线依赖；将 FCS/Aurora 源码树并入库。
+
+\section{地址空间与三种后端}
+
+内核约定物理/虚拟布局（相对地址）：
+
+\begin{lstlisting}[caption={PMEM 窗口相对布局示意},label={lst:layout}]
+KERNBASE  ---------- 0x80000000
+  kernel + user pages（易失 DRAM）
+PHYSTOP   ---------- KERNBASE + 128MiB
+PMEMBASE  ---------- PHYSTOP
+  字节寻址持久区（双槽 SB / 数据 run）
+PMEMEND   ---------- PMEMBASE + 32MiB
+\end{lstlisting}
+
+\begin{table}[htbp]
+  \centering
+  \caption{三种物理后端}
+  \label{tab:backends}
+  \begin{tabular}{lll}
+    \toprule
+    模式 & 构建 & 运行要点 \\
+    \midrule
+    EMUL & 默认 & $-m$\,128M，2\,MiB 静态缓冲 \\
+    MAP & \texttt{-DPMEM\_MAP} & $-m$\,160M，映射 \texttt{[PMEMBASE,PMEMEND)} \\
+    PMEM2 & \texttt{-DPMEM\_MAP} & \texttt{memory-backend-file,share=on} 杀启 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+EMUL 用于算法与契约快速回归，\textbf{不}代表真 NVDIMM 延迟；MAP/PMEM2 验证窗口级映射与文件后端掉电存活（QEMU 文件内存后端配置见官方文档~\cite{qemu}）。
+
+\section{软件分层}
+
+自上而下：
+
+\begin{enumerate}[leftmargin=2em]
+  \item 用户 API：\texttt{put/get/seal/stat}；
+  \item \texttt{pmalgo}：内存表 $\to$ 不可变 run、B1/B2/B3、写放大计量；
+  \item \texttt{pmindex}：量化键、posting、查询 LRU（qcache）；
+  \item \texttt{pmfs}：双槽超级块与 commit；
+  \item \texttt{pmdev}/\texttt{pmem\_persist}：落 EMUL 或 MAP 窗口。
+\end{enumerate}
+
+盘上布局：页 0/1 为超级块双槽；页 $\ge 2$ 为不可变 run 数据页。无 inode 表。
+
+\section{崩溃一致性契约（设计层）}
+
+提交以 \texttt{seal} 为显式边界：批量 \texttt{put} 进入内存表后，\texttt{seal} 将 run 持久化并原子翻转活动超级块槽位（epoch + 校验）。设计保证：
+
+\begin{itemize}[leftmargin=2em]
+  \item 半写活动槽在挂载时可检测并回退；
+  \item 未提交数据对 \texttt{get} 不可见；
+  \item 索引可自 run 重建，避免单独持久索引与数据不一致。
+\end{itemize}
+
+契约的机器判定形式在第~\ref{chap:impl}~章展开：串口阶段码与宿主脚本。
+
+\section{写放大与可观测性}
+
+定义
+\[
+  \mathrm{wa\_x100} = \frac{\mathrm{phys}\times 100}{\mathrm{logical}},
+\]
+其中 logical 为用户 payload 字节，phys 为整页写入（对齐、run、B3 重写）。小 value（如 8\,B）相对 4\,KiB 页必然放大；该放大与 xv6 日志放大\textbf{不同源}，论文中分开叙述。
+
+\section{性能对比的设计意图}
+
+实验故意对比异构路径：PMFS-KV 为 $N$ 次 \texttt{put} + 一次 \texttt{seal} + $N$ 次 \texttt{get}；xv6 为每键一次小文件 \texttt{create/write} + \texttt{sync}。目的是说明「避免 virtio 日志与目录更新」的\textbf{量级}差异，而非宣称同等 POSIX 文件 API 下的绝对加速比。

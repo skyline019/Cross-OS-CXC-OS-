@@ -1,49 +1,42 @@
-# 借鉴说明：FCS 与 CXC/OS
+# 前序约束下沉说明（非第三方移植清单）
 
-本课题**不**把 FCS 或 cxc-os 代码整树拷进 xv6；只移植**可验证的设计约束**与**工程手法**。
+FCS、Aurora 为**作者原生前序项目**；本课题把其中设计约束下沉到 xv6，并**自研重写**全部内核代码。  
+口径与关系图见 `docs/PRIOR-ART-OWN.md`。尖刺见 `docs/CONTRIBUTIONS.md`。
 
-## 1. 来自 `e:\FCS` 底层存储（已落到代码）
+本仓库**不**把前序源码树拷进 git。
 
-| FCS 构件 | 本仓库落点 |
+## 1. 来自作者 FCS 的约束 → xv6 落点
+
+| FCS 约束 | 本仓库落点 |
 |---|---|
-| `BlockDev` / `RamDev`（页读写 + sync） | `kernel/pmdev.h/.c`；EMUL 缓冲 = RamDev 类比 |
-| `PAGE=4096`、页号寻址 | `PMDEV_PAGE`；`pm_page_t` |
-| 双槽 SB（页 0/1）、`COMMIT_WORD`、校验 | `struct pmfs_sb`；`PMFS_COMMIT_WD`；`pmfs_sb_chk` |
-| `read_sb` / 选更高 `vers` | `pmfs_read_sb` + `pmfs_mount` |
-| `sb_flush`：sync → 写交替槽 → sync；成功才翻槽 | `pmfs_write_sb_slot` + `pmfs_commit` |
-| `tail` 页分配从 2 起 | `PMFS_DATA0`；`pmfs_alloc_pages` |
-| 「只承诺完好 SB 指向的提交点」 | `pmfs_storage_selftest` 损坏非活动槽仍可挂载 |
+| 页设备 + sync | `kernel/pmdev.*`；EMUL≈RamDev |
+| 双槽 SB + commit word + 校验 | `pmfs_sb` / `pmfs_commit` |
+| 只承诺完好 SB 提交点 | `CRASH` 自测 + 契约 |
+| mem→单 run、Bloom/fence、B1–B3、WA | `pmalgo.*`（C 重写） |
 
-参考（只读，不入库）：
+**刻意不带入：** 异步 IO 线程、分层归并 DP 全量、溢出大值链。
 
-- `e:\FCS\embdb\x\include\blockdev.h`、`layout.h`、`fcs.h`（`read_sb`/`write_sb`/`sb_flush`）
-- `e:\FCS\backup\fcs-from-zero\latex\chapters\25-crash-walk.tex`
+## 2. 来自作者 Aurora 的约束 → xv6 落点
 
-**已移植算法骨架（`kernel/pmalgo.*`）：** mem→单 run 提交、Bloom/fence 读路径、B1 零重写分裂、B2 段数上限、WA 计量。
-
-**已移植 Aurora 索引（`kernel/pmindex.*`）：** 有序键二分（RB 前缀类比）、键 MSB 量化、二值 run posting、查询 LRU。见 `docs/AURORA-INDEX.md`。
-
-**刻意延后：** 异步 IO 线程、分层归并 DP 全量、溢出大值链、清单链页、完整跳表节点堆。见 `docs/FCS-ALGORITHMS.md`。
-
-参考路径（只读借鉴，不入库）：
-
-- `e:\FCS\backup\fcs-from-zero\latex\chapters\25-crash-walk.tex`
-- `e:\FCS\embdb\x\include\fcs.h` 导读中的提交/回退叙述
-- `e:\FCS\embdb\x\README.md` 中 commit / fsync 相关评测习惯
-
-## 2. 来自 `workspace-study/cxc-os`
-
-| 思想 | 落点 |
+| Aurora 约束 | 本仓库落点 |
 |---|---|
-| QEMU 脚本化、可重复契约 | `docs/QEMU-NVDIMM.md` + 后续 `tools/run_pmem_qemu.sh` |
-| 持久后端与易失 RAM 分离 | CXCFS/`disk/` ↔ 本课题 PMEM 窗口 vs DRAM `kalloc` |
-| virtio / 设备探测要有失败码与 stage | `pmem_init` / `pmfs_mount` 返回明确 failure，串口打印 PASS 行 |
-| 内核侧直管存储、少层抽象 | PMFS 主路径不经 bio（对标 cxc 对块层的取舍讨论） |
+| 键量化 / 粗桶 | `pm_key_coarse` |
+| 二值 posting | `pm_posting` |
+| 查询 LRU | `pmindex` qcache |
 
-**明确不借鉴：** Mini-IDE、GUI、UEFI 引导；那些属于 cxc-os GUIUX 线。
+详见 `docs/AURORA-INDEX.md`。
 
-## 3. 差异声明
+## 3. 来自 cxc-os 的工程手法
 
-- FCS 是用户态存储引擎；本课题是**教学内核内**文件系统。
-- cxc-os 是 UEFI/x86_64 自研内核；本课题基线是 **xv6-riscv**。
-- PMEM 刷写指令在 RISC-V 上用 `fence` + 可用的 CMO/`cbo.flush`（视工具链/QEMU 而定）；语义对齐「缓存行对持久域可见」，实现可分阶段降级为「全内存 fence + 文件后端」。
+| 手法 | 落点 |
+|---|---|
+| 可脚本化契约 | `ONBOX_PMFS_*`（**重写**码表，非原样拷贝） |
+| 持久与易失分离 | PMEM 窗 vs `kalloc` |
+
+**不带入：** Mini-IDE / GUI / UEFI。
+
+## 4. 差异声明（答辩用）
+
+- 前序：用户态/其他内核场景；本课题：**xv6-riscv 教学内核内**。  
+- 新增尖刺：可机器判定的崩溃/掉电契约套件（前序未提供）。  
+- 失败史：`docs/PITFALLS.md`。

@@ -110,3 +110,10 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Time CSR for microbench (mcounteren.TM already enabled in timerinit).
+uint64
+sys_cycles(void)
+{
+  return r_time();
+}

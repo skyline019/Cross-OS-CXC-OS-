@@ -9,11 +9,11 @@
 
 enum {
   PM_BMAX       = 32 * 1024,   // B1: cell physical bytes
-  PM_SMAX       = 8,           // B2: max segs per cell
+  PM_SMAX       = 16,          // B2: compact when segs reach this
   PM_GC_RATIO   = 2,           // compact if dead >= ratio * live
   PM_MAX_RUNS   = 48,
   PM_MAX_CELLS  = 24,
-  PM_MAX_SEGS   = 8,
+  PM_MAX_SEGS   = 24,          // headroom for multi-N bench sweeps
   PM_MAX_FENCES = 64,
   PM_BLOOM_WORDS = 4,          // 256-bit bloom
   PM_REC_HDR    = 16,          // on-page record: key:u64 len:u32 pad:u32
@@ -91,8 +91,11 @@ int  pm_seal(struct pm_algo *a);   // mem → run → pmfs_commit; then maintain
 // Fast read: cells → segs new-to-old → bloom → fences → page.
 int  pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap, uint32 *out_len);
 
-// Anti-frag: enforce B1/B2; B3 budget placeholder.
+// Anti-frag: enforce B1/B2; B3 true rewrite under budget.
 int  pm_maintain(struct pm_algo *a);
+
+// Rebuild Aurora index from sealed runs (remount / crash recovery).
+int  pm_algo_rebuild_index(struct pm_algo *a);
 
 struct pm_wa pm_wa_snapshot(struct pm_algo *a);
 

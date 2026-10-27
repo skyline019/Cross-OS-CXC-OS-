@@ -46,3 +46,21 @@ You will need a RISC-V "newlib" tool chain from
 https://github.com/riscv/riscv-gnu-toolchain, and qemu compiled for
 riscv64-softmmu.  Once they are installed, and in your shell
 search path, you can run "make qemu".
+
+THESIS PMFS-KV (branch thesis/pmem-fs)
+=====================================
+
+Byte-addressable PMEM key-value store beside the virtio root fs
+(NOT a POSIX inode filesystem). Strict serial contract: docs/CONTRACT.md
+Title/abstract: THESIS.md
+
+  make contract          # EMUL → ONBOX_PMFS_PASS
+  make contract-pmem     # MAP → mode=MAP + PMEM1
+  make contract-pmem2    # memory-backend-file kill+reboot → PMEM2_PASS
+  make contract-full     # probe + posix shim + bench
+  make bench-sweep       # N=8/16/32 + MAP vs EMUL → docs/BENCH.md
+  make bench-fill        # single-point N=32 snapshot
+
+Shell: pmfs_probe, pmfs_posix, pmfs_bench
+Docs: CONTRIBUTIONS (spike), PRIOR-ART-OWN (FCS/Aurora), PITFALLS, figures/, EXPERIMENT
+WSL: gcc-riscv64-linux-gnu, qemu-system-riscv64, python3, bc

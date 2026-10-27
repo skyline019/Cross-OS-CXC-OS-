@@ -1,0 +1,41 @@
+\chapter{相关工作}
+\label{chap:related}
+
+\section{教学操作系统中的块文件系统}
+
+xv6~\cite{xv6book} 的 \texttt{fs+log} 路径以 inode、目录项、位图与日志检查点保证崩溃后可恢复。该设计适合教学，但其 I/O 路径绑定 virtio 块设备与 bio，元数据更新成本随「每文件一次 create/write/sync」近似线性增长。本文将该路径作为对照基线，\textbf{仍保留为根文件系统}，不主张用 PMFS-KV 替换日常用户程序的文件语义。
+
+\section{持久内存文件系统与编程模型}
+
+PMFS~\cite{pmfs2014} 与 NOVA~\cite{nova2016} 面向 PMEM 提供文件语义；Strata~\cite{strata2017} 等探索跨介质分层。BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 强调细粒度持久与编程抽象。上述工作的问题域是通用或接近生产的 PMEM 文件/运行时。本文取其「字节寻址 + 显式持久」动机，但产品形态收敛为 \textbf{KV 子集}，体量与 xv6 教学代码库匹配。
+
+\section{日志结构与近似索引}
+
+LSM 类结构~\cite{blsm2012} 与 Bloom 过滤器~\cite{bloom1970} 广泛用于写入友好与存在性过滤。本文 run 不可变、批量 seal 与 Bloom/fence 属于同一设计家族，但实现服务于教学内核约束（页粒度、有限段数、无用户态复杂压缩管线）。
+
+\section{作者前序原生工作与工程契约手法}
+
+作者前序原生项目 \textbf{FCS}~\cite{fcsown} 提供嵌入式耐久 KV 的设计约束：双槽超级块、不可变 run、B1/B2/B3 与写放大计量；\textbf{Aurora}~\cite{auroraown} 提供键量化、二值 posting 与查询 LRU 等索引约束。二者代码不并入本仓库，xv6 侧为 C 语言自研重写，以防「移植题」误读。
+
+工程验收上，作者在其他内核工程中使用过 \texttt{ONBOX\_*} 串口契约手法~\cite{cxcos}；本课题将其重写为服务存储语义的 \texttt{ONBOX\_PMFS\_*} 阶段/失败码，使崩溃与掉电可被 \texttt{grep} 与 CI 判定。
+
+\section{本文定位小结}
+
+\begin{table}[htbp]
+  \centering
+  \caption{相关工作与本文关系}
+  \label{tab:related}
+  \begin{tabular}{p{3.2cm}p{4.2cm}p{5.2cm}}
+    \toprule
+    工作 & 问题域 & 与本文 \\
+    \midrule
+    xv6 fs+log & 教学块 FS & 对照基线；仍作根 FS \\
+    Linux PMFS/NOVA 等 & PMEM 文件 FS & 动机参考；本文为 KV 子集 \\
+    作者 FCS / Aurora & 耐久引擎与索引（原生前序） & 约束下沉；代码自研重写 \\
+    cxc-os 类契约 & 串口阶段验收 & 手法参考；码表重写 \\
+    \textbf{本文 PMFS-KV} & 教学 OS 上 PMEM-KV + 契约套件 & \textbf{尖刺 = 可机器判定崩溃/掉电} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+防「移植题」的标准表述：数据结构思想可追溯前序约束，但验收资产（契约套件）与 xv6 内实现为本课题自有贡献。

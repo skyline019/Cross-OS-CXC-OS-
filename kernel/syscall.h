@@ -21,3 +21,8 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_sync   22
+#define SYS_pmfs_put  23
+#define SYS_pmfs_get  24
+#define SYS_pmfs_seal 25
+#define SYS_pmfs_stat 26
+#define SYS_cycles    27

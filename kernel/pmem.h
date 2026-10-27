@@ -20,5 +20,6 @@ void            pmem_persist(void *p, uint64 n);  // flush + fence
 
 // Development probe: write magic, persist, verify.
 int             pmem_selftest(void);
+void            pmem_contract_map(void);  // PMEM1 when MAP
 
 #endif

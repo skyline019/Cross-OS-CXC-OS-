@@ -43,3 +43,8 @@ entry("sbrk");
 entry("pause");
 entry("uptime");
 entry("sync");
+entry("pmfs_put");
+entry("pmfs_get");
+entry("pmfs_seal");
+entry("pmfs_stat");
+entry("cycles");

@@ -1,44 +1,32 @@
-# QEMU 持久内存窗口（xv6-riscv / virt）
+# QEMU 持久内存窗口（PMFS-KV）
 
-## 阶段 A（推荐先做）：扩容 DRAM + 软件划界
-
-xv6 原版：`-m 128M`，`PHYSTOP = KERNBASE + 128MiB`。
-
-课题：
-
-```text
-QEMU  -m 160M
-内核  PHYSTOP  = KERNBASE + 128MiB   # kalloc 仍只用前 128MiB
-      PMEMBASE = PHYSTOP
-      PMEMSIZE = 32MiB               # 后 32MiB 当 PMEM
-```
-
-`share=on` 的 memory-backend-file 可把整段 guest RAM 落到文件，便于「掉电」后重启读回：
+## MAP：扩容 DRAM
 
 ```bash
-# 示例：整机 RAM 落盘（开发期）
-qemu-system-riscv64 -machine virt -bios none -kernel kernel/kernel \
-  -object memory-backend-file,id=mem,size=160M,mem-path=./guest-ram.img,share=on \
-  -numa node,memdev=mem \
-  -smp 3 -nographic \
-  -global virtio-mmio.force-legacy=false \
-  -drive file=fs.img,if=none,format=raw,id=x0 \
-  -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+make qemu-pmem          # 重建 -DPMEM_MAP，-m 160M
+make contract-pmem      # 断言 mode=MAP + PMEM1
 ```
 
-（具体参数随本机 QEMU 版本微调；以能启动并看到 `pmem:` 探针为准。）
+## PMEM2：文件后端掉电
 
-## 阶段 B：NVDIMM / virtio-pmem（可选）
+整机 guest RAM 落到宿主机文件，`kill` 后再启可读回探针魔数。  
+注意：`-m 160M` 必须与 `memory-backend-file` 的 `size=160M` 一致，否则 QEMU 会报 NUMA/RAM mismatch。
 
-在 **x86 `pc` + nvdimm** 上更贴近真设备；若毕设评审强调「NVDIMM」字样，可：
+```bash
+make contract-pmem2     # truncate guest-ram.img → boot1 → kill → boot2 → PMEM2_PASS
+# 手工：
+PMEM_RAM_FILE=./guest-ram.img make qemu-pmem-file
+```
 
-- 另开实验附录：同套 `pmem_*` API 接到 ACPI NFIT 物理范围；或
-- RISC-V 上尝试 `virtio-pmem`（视 QEMU 是否启用）。
+对应串口：
 
-主线仍以「字节寻址 + 刷写原语 + 双槽 SB」论证架构优势，设备形态为附录。
+1. boot1：`ONBOX_PMFS_PMEM1_PASS`（并写入 durable word）
+2. boot2：`ONBOX_PMFS_PMEM2_PASS persist=ok`
 
 ## 验收探针
 
-1. `pmem_init` 打印 `PMEMBASE/SIZE`。
-2. 写入魔数 → `pmem_persist` → 正常关机/杀 QEMU → 再启动仍可读。
-3. 对比：不调用 persist 的写在部分配置下可能丢失（作反例）。
+| 行 | 含义 |
+|----|------|
+| `PMEM0 mode=MAP` | 窗口可用 |
+| `PMEM1 magic=ok` | 写-刷-读 |
+| `PMEM2 persist=ok` | 杀进程再启仍在 |
