@@ -5,15 +5,19 @@
 
 实现基于 xv6-riscv，主要模块包括：\texttt{pmem}/\texttt{pmfs}（后端与双槽）、\texttt{pmalgo}/\texttt{pmindex}（KV 与索引核）、\texttt{pmcdc}/\texttt{pmstream}（切分与滑窗）、\texttt{pmfile}/\texttt{syspmfile}（目录+extent 文件层）、\texttt{pmcontract}（串口契约），以及用户态 \texttt{\_pmfs\_probe}/\texttt{\_pmfs\_file}/\texttt{\_pmfs\_bench}/\texttt{\_pmfs\_posix}。文件写路径强制经 \texttt{pm\_put}/\texttt{pm\_seal}，由 \texttt{fuse\_puts}/\texttt{fuse\_seals} 计数证明未旁路。
 
-\section{双槽超级块与 seal}
+\section{双槽超级块、meta 页与 seal}
 
 活动槽与镜像槽交替提交。\texttt{seal} 路径将当前 mem 表固化为 run 页，更新超级块字段（epoch、校验、run 元数据），再经 \texttt{pmem\_persist} 落后端。挂载时选择校验合法且 epoch 较新的槽；半写损坏触发 \texttt{CRASH} 相关失败码并回退。
 
-B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmfs\_stat} 导出 logical/phys 与 $\mathrm{wa\_x100}$，使写放大可在用户态契约行中观测。
+inode/dentry 页带 magic 与校验和：加载失败则拒绝把损坏页当作真相（契约 \texttt{FAULT\_HALFPAGE}）。B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmfs\_stat} 导出 logical/phys 与 $\mathrm{wa\_x100}$。段数上限（\texttt{PM\_MAX\_RUNS} 等）在扫参与多 trial 下曾成为楔死点，实现侧提高余量并在 attach 压力下淘汰最旧段视图，保证契约与 bench 可重复跑通。
 
 \section{索引路径}
 
-索引采用键量化与 posting 结构，查询侧维护 LRU 缓存（qcache）。索引可自 run 重建：在挂载或自测阶段扫描已提交 run，避免「索引已更新而数据未提交」的窗口。该约束来自 Aurora 前序设计~\cite{auroraown}，实现为 xv6 C 重写。
+索引采用键量化与 posting 结构，查询侧维护 LRU 缓存（qcache）。\texttt{pm\_get} 的 hint 仅为软提示：命中失败时回退完整查找，并在故障注入后使脏 dent 失效，避免「缓存撒谎」。索引可自 run 重建：在挂载或自测阶段扫描已提交 run，避免「索引已更新而数据未提交」的窗口。该约束来自 Aurora 前序设计~\cite{auroraown}，实现为 xv6 C 重写。
+
+\section{CDC / stream / 文件层}
+
+\texttt{pmcdc} 实现 Rabin 滑动哈希与 Fixed 定长两种切分；\texttt{pmstream} 维护写窗并在策略要求时 seal。\texttt{pmfile} 将 chunk 记为 extent，读路径按 extent 拼装；若读时空内容而 stream 已有数据，则从 stream 同步 extent，避免「写成功但读空」的假失败。目录项保存路径与 parent，支持有限深度的 \texttt{mkdir}/\texttt{readdir}，非完整 VFS \texttt{namei}。
 
 \section{ONBOX\_PMFS 契约套件}
 
@@ -25,18 +29,23 @@ B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmf
   \item[总闸] 必过子集全部成功后打印 \texttt{ONBOX\_PMFS\_PASS}
 \end{description}
 
-必过子集（平级）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}、\texttt{PERSIST}、\texttt{FILE}、\texttt{CDC}、\texttt{STREAM}、\texttt{POS\_FILE}、\texttt{NEG\_FILE}、\texttt{CHAOS\_FILE}、\texttt{ABLATION}，然后总闸。\texttt{make contract-strict} 另检 POS/NEG CDC/STREAM 与 A0--A4。MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 杀启后必须出现
+必过子集（平级）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}、\texttt{PERSIST}、\texttt{FILE}、\texttt{CDC}、\texttt{STREAM}、\texttt{POS\_FILE}、\texttt{NEG\_FILE}、\texttt{CHAOS\_FILE}、\texttt{ABLATION}、\texttt{REMOUNT}、\texttt{FAULT}，然后总闸。\texttt{make contract-strict} 另检 POS/NEG CDC/STREAM、\texttt{EDGE\_FILE}、A0--A4（含 \texttt{wa\_x100=}）、\texttt{FAULT\_SEALMID}/\texttt{FAULT\_HALFPAGE}。
+
+语义证明行（尖刺证据的核心子集）：
 \begin{lstlisting}
+ONBOX_PMFS_REMOUNT_PASS bytes=... equal=1
+ONBOX_PMFS_FAULT_SEALMID_PASS invisible=1
+ONBOX_PMFS_FAULT_HALFPAGE_PASS chk_reject=1
 ONBOX_PMFS_PMEM2_PASS persist=ok
 \end{lstlisting}
-脚本成功时再印 \texttt{ONBOX\_PMFS\_PMEM2\_CONTRACT\_PASS boots=2}。
+MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 脚本成功时再印 \texttt{ONBOX\_PMFS\_PMEM2\_CONTRACT\_PASS boots=2}。
 
-用户态：\texttt{\_pmfs\_probe} $\to$ \texttt{SYSCALL\_PASS}；\texttt{\_pmfs\_bench [N]} $\to$ \texttt{BENCH\_PASS}（含 $\mathrm{wa\_x100}$）；\texttt{\_pmfs\_posix} $\to$ \texttt{POSIX\_PASS}（薄 shim，不升主线）。
+用户态：\texttt{\_pmfs\_probe} $\to$ \texttt{SYSCALL\_PASS}；\texttt{\_pmfs\_file} $\to$ \texttt{FILEUSER\_PASS}；\texttt{\_pmfs\_bench [N]} $\to$ \texttt{BENCH\_PASS}；\texttt{\_pmfs\_posix} $\to$ \texttt{POSIX\_PASS}（真实 \texttt{mkdir}/\texttt{readdir}/\texttt{fsync}/\texttt{reopen}，不升主线为根 FS）。
 
 \section{计时与评测脚手架}
 
-用户态原调用 \texttt{cycles()} 依赖 \texttt{rdcycle}；在未开放 \texttt{mcounteren.CY} 时会触发非法指令（计数器与特权态约束见 RISC-V 特权规范~\cite{riscvpriv}）。实现将 \texttt{sys\_cycles} 改为已允许的 \texttt{r\_time()}，文档明确其为\textbf{相对时间单位}，不作墙钟微秒解读。评测脚本对每个 $N$ 执行 5 次 trial 取中位数，并等待契约行字段齐全后再杀 QEMU，避免截断解析。
+用户态原调用 \texttt{cycles()} 依赖 \texttt{rdcycle}；在未开放 \texttt{mcounteren.CY} 时会触发非法指令（计数器与特权态约束见 RISC-V 特权规范~\cite{riscvpriv}）。实现将 \texttt{sys\_cycles} 改为已允许的 \texttt{r\_time()}，文档明确其为\textbf{相对时间单位}，不作墙钟微秒解读。评测脚本对每个 $N$ 执行 5 次 trial 取中位数，\textbf{每 $N$ 独立开机}，并等待契约行字段齐全后再杀 QEMU，避免截断解析与段数楔死。
 
 \section{与 CI 的衔接}
 
-持续集成挂接 \texttt{usertests} 与契约目标，使回归不以人工读完整串口日志为前提。尖刺价值正在于此：正确性与掉电语义「grep 一行即可判过」。
+持续集成挂接 \texttt{usertests} 与契约目标（含 strict），使回归不以人工读完整串口日志为前提。尖刺价值正在于此：正确性与掉电语义「grep 一行即可判过」。

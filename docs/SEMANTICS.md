@@ -33,7 +33,7 @@
 
 | 边界 | 现状 |
 |------|------|
-| 大文件 | `PMFILE_MAX_EXT=8` × `PM_VAL_MAX=512` ≈ 4KiB/文件量级 |
+| 大文件 | `PMFILE_MAX_EXT=4` × `PM_VAL_MAX=512` ≈ 2KiB/文件量级 |
 | 多写者 | 单 open 写；无字节范围锁 |
 | 并发 | UP 契约默认 `CPUS=1`；无多核一致性证明 |
 | 半页损坏元数据 | inode 页带 magic+chk；损坏 → 拒绝加载 |

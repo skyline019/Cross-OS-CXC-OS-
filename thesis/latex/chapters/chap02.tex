@@ -3,21 +3,29 @@
 
 \section{教学操作系统中的块文件系统}
 
-xv6~\cite{xv6book} 的 \texttt{fs+log} 路径以 inode、目录项、位图与日志检查点保证崩溃后可恢复。该设计适合教学，但其 I/O 路径绑定 virtio 块设备与 bio，元数据更新成本随「每文件一次 create/write/sync」近似线性增长。本文将该路径作为对照基线，\textbf{仍保留为根文件系统}，不主张用 PMFS-KV 替换日常用户程序的文件语义。
+xv6~\cite{xv6book} 的 \texttt{fs+log} 路径以 inode、目录项、位图与日志检查点保证崩溃后可恢复。该设计适合教学，但其 I/O 路径绑定 virtio 块设备与 bio，元数据更新成本随「每文件一次 create/write/sync」近似线性增长。本文将该路径作为\textbf{架构面}对照基线，\textbf{仍保留为根文件系统}：PMFS 并行挂接，不主张替换日常用户程序的完整文件语义。
 
 \section{持久内存文件系统与编程模型}
 
-PMFS~\cite{pmfs2014} 与 NOVA~\cite{nova2016} 面向 PMEM 提供文件语义；Strata~\cite{strata2017} 等探索跨介质分层。BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 强调细粒度持久与编程抽象。上述工作的问题域是通用或接近生产的 PMEM 文件/运行时。本文取其「字节寻址 + 显式持久」动机，但产品形态收敛为 \textbf{KV 子集}，体量与 xv6 教学代码库匹配。
+PMFS~\cite{pmfs2014} 与 NOVA~\cite{nova2016} 面向 PMEM 提供完整或接近完整的文件语义；Strata~\cite{strata2017} 等探索跨介质分层。BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 强调细粒度持久与编程抽象。上述工作的问题域是通用或接近生产的 PMEM 文件/运行时。本文取其「字节寻址 + 显式持久」动机，但产品形态收敛为：
 
-\section{日志结构与近似索引}
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{教学体量的文件子系统子集}（目录/extent + \texttt{fsync} 可见点），而非 Linux VFS 替身；
+  \item 内容块经 CDC/stream 落入 \textbf{KV/run 核}，使刷写、索引与写放大可在同一提交路径上计量；
+  \item 以契约套件把崩溃/掉电变成可机器判定资产，而非仅依赖手工故障演练。
+\end{itemize}
 
-LSM 类结构~\cite{blsm2012} 与 Bloom 过滤器~\cite{bloom1970} 广泛用于写入友好与存在性过滤。本文 run 不可变、批量 seal 与 Bloom/fence 属于同一设计家族，但实现服务于教学内核约束（页粒度、有限段数、无用户态复杂压缩管线）。
+相对 Linux PMFS/NOVA：差异化不在「又一个双槽/日志结构 FS」，而在 xv6 上的\textbf{方法学验收}与合题可答辩的语义边界。
+
+\section{日志结构、切分与近似索引}
+
+LSM 类结构~\cite{blsm2012} 与 Bloom 过滤器~\cite{bloom1970} 广泛用于写入友好与存在性过滤。本文 run 不可变、批量 seal 与 Bloom/fence 属于同一设计家族；CDC（内容定义切分）用于把文件写流切成可复用 chunk，定长切分仅作消融对照。实现服务于教学内核约束（页粒度、有限段数、无用户态复杂压缩管线）。
 
 \section{作者前序原生工作与工程契约手法}
 
 作者前序原生项目 \textbf{FCS}~\cite{fcsown} 提供嵌入式耐久 KV 的设计约束：双槽超级块、不可变 run、B1/B2/B3 与写放大计量；\textbf{Aurora}~\cite{auroraown} 提供键量化、二值 posting 与查询 LRU 等索引约束。二者代码不并入本仓库，xv6 侧为 C 语言自研重写，以防「移植题」误读。
 
-工程验收上，作者在其他内核工程中使用过 \texttt{ONBOX\_*} 串口契约手法~\cite{cxcos}；本课题将其重写为服务存储语义的 \texttt{ONBOX\_PMFS\_*} 阶段/失败码，使崩溃与掉电可被 \texttt{grep} 与 CI 判定。
+工程验收上，作者在其他内核工程中使用过 \texttt{ONBOX\_*} 串口契约手法~\cite{cxcos}；本课题将其重写为服务存储语义的 \texttt{ONBOX\_PMFS\_*} 阶段/失败码（含 \texttt{REMOUNT}/\texttt{FAULT}/\texttt{ABLATION}），使崩溃与掉电可被 \texttt{grep} 与 CI 判定。
 
 \section{本文定位小结}
 
@@ -29,13 +37,14 @@ LSM 类结构~\cite{blsm2012} 与 Bloom 过滤器~\cite{bloom1970} 广泛用于�
     \toprule
     工作 & 问题域 & 与本文 \\
     \midrule
-    xv6 fs+log & 教学块 FS & 对照基线；仍作根 FS \\
-    Linux PMFS/NOVA 等 & PMEM 文件 FS & 动机参考；本文为 KV 子集 \\
+    xv6 fs+log & 教学块 FS & 架构面对照；仍作根 FS \\
+    Linux PMFS/NOVA 等 & PMEM 文件 FS & 动机参考；本文为可测子集 \\
     作者 FCS / Aurora & 耐久引擎与索引（原生前序） & 约束下沉；代码自研重写 \\
     cxc-os 类契约 & 串口阶段验收 & 手法参考；码表重写 \\
-    \textbf{本文 PMFS-KV} & 教学 OS 上 PMEM-KV + 契约套件 & \textbf{尖刺 = 可机器判定崩溃/掉电} \\
+    \textbf{本文 PMFS} & 教学 OS 上文件子系统 + KV 核 + 契约套件
+      & \textbf{尖刺 = 可机器判定崩溃/掉电} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-防「移植题」的标准表述：数据结构思想可追溯前序约束，但验收资产（契约套件）与 xv6 内实现为本课题自有贡献。
+防「移植题」的标准表述：数据结构思想可追溯前序约束，但验收资产（契约套件）与 xv6 内实现为本课题自有贡献；文件层与 CDC/stream 为合题后的一等公民，而非事后贴皮。

@@ -18,7 +18,7 @@ PMEMEND  ─────────── PMEMBASE + 32MiB
 
 | 模式 | 构建 | 运行 | backend 字段 |
 |------|------|------|--------------|
-| EMUL | 默认 | `-m 128M`，2MiB 缓冲 | `emul` |
+| EMUL | 默认 | `-m 128M`，8MiB 缓冲 | `emul` |
 | MAP | `-DPMEM_MAP` | `-m 160M` | `map` |
 | PMEM2 | `-DPMEM_MAP` | `memory-backend-file,share=on` | `map` + 掉电 |
 

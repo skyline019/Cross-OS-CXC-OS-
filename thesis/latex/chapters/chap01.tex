@@ -5,26 +5,27 @@
 
 操作系统存储子系统长期以块设备为中心：文件内容经缓冲缓存、日志与块 I/O 栈落盘，崩溃一致性依赖有序刷写与检查点。教学操作系统 xv6~\cite{xv6book} 以 virtio-blk 与日志型文件系统讲授这一经典路径，语义清晰、代码可阅读，但延迟受块设备与元数据更新约束，且难以自然表达字节寻址持久内存（Persistent Memory, PMEM）上的提交与掉电语义。
 
-PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数据~\cite{nvmm2021}。学术界与工业界已出现面向 PMEM 的文件系统与编程模型，如 PMFS~\cite{pmfs2014}、NOVA~\cite{nova2016}、BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 等。它们多面向通用或接近生产的 Linux 环境；将完整 POSIX 文件层移植进 xv6 既超出本科毕设合理体量，也易掩盖「如何验收崩溃正确性」这一更尖锐的工程问题。
+PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数据~\cite{nvmm2021}。学术界与工业界已出现面向 PMEM 的文件系统与编程模型，如 PMFS~\cite{pmfs2014}、NOVA~\cite{nova2016}、BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 等。它们多面向通用或接近生产的 Linux 环境；将完整 POSIX VFS 移植进 xv6 既超出本科毕设合理体量，也易掩盖「如何验收崩溃正确性」这一更尖锐的工程问题。合题要求的「文件子系统 + 刷写/NVDIMM 仿真 + 吞吐」，需要的是\textbf{可陈述、可测的子集语义}，而非声称完整生产 FS。
 
 \section{问题陈述}
 
 本文关注三个相互耦合的问题：
 
 \begin{enumerate}[leftmargin=2em]
-  \item \textbf{形态选择：}在 xv6 上是替换根文件系统，还是提供并行的字节寻址键值（KV）引擎？完整 inode/目录层成本高，且与「验证提交与掉电」目标不对齐。
-  \item \textbf{一致性模型：}双槽超级块、不可变 run、批量 seal 提交如何保证「未提交不可见、半写活动槽可检测」？
-  \item \textbf{验收方法：}如何让崩溃与掉电语义\textbf{可机器判定}（串口一行、宿主脚本、CI），而非仅靠人工读日志？
+  \item \textbf{形态选择：}在 xv6 上如何提供并行于 virtio 根的 PMEM \textbf{文件子系统}（目录/extent + \texttt{create}/\texttt{fsync}），同时以 KV/run 核承载切分后的内容块，而不替换根 FS、也不假装完整 VFS？
+  \item \textbf{一致性模型：}双槽超级块、不可变 run、批量 seal、inode 页 magic+校验，如何共同保证「未 \texttt{fsync}/未提交不可见、半写活动槽与半页元数据可检测」？
+  \item \textbf{验收方法：}如何让崩溃、remount 字节等价与故障注入语义\textbf{可机器判定}（串口一行、宿主脚本、CI），而非仅靠人工读日志？
 \end{enumerate}
 
 \section{研究内容与目标}
 
-本文设计并实现 \textbf{PMFS}：并行于 virtio 根的 PMEM 文件子系统（\texttt{create}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}）与 KV 引擎（\texttt{put}/\texttt{get}/\texttt{seal}）；后端支持 EMUL、MAP 与 PMEM2。研究目标：
+本文设计并实现 \textbf{PMFS}：并行于 virtio 根的 PMEM 文件子系统（\texttt{create}/\texttt{mkdir}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{readdir}/\texttt{funlink}）与融合 KV 引擎（\texttt{put}/\texttt{get}/\texttt{seal}）；写入经 CDC/stream 切分后落入同一 run 核；后端支持 EMUL、MAP 与 PMEM2。研究目标：
 
 \begin{itemize}[leftmargin=2em]
   \item 映射 QEMU NVDIMM 仿真窗；inode/dentry 去块设备布局；行级刷写协议；
-  \item 建立含 \texttt{PERSIST}/\texttt{FILE} 的 \texttt{ONBOX\_PMFS\_*} 契约验收门；
-  \item 报告文件 API 延迟中位数与相对吞吐，并记录可复核踩坑。
+  \item 建立含 \texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2} 的 \texttt{ONBOX\_PMFS\_*} 契约验收门；
+  \item 报告文件 API 延迟中位数与相对吞吐，并以 A0--A4 公平消融给出切分/刷写效应量；
+  \item 写死崩溃可见点与 POSIX 差集（见语义清单），使答辩口径可复核。
 \end{itemize}
 
 \section{主要贡献}
@@ -34,11 +35,11 @@ PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数
 \begin{description}[leftmargin=2em,style=nextline]
   \item[尖刺（C1）] 教学 OS 上可机器判定的崩溃与掉电契约套件（含 remount 字节等价与故障注入）：相对同类，不可替代的是方法学验收，而非又一个双槽。
   \item[系统柱（C2）] 去块设备文件布局 + CDC/stream 融合 KV 核 + 行级 persist + 双槽/B3/WA。
-  \item[实验柱（C3）] PMEM2 掉电一行过 + A0--A4 公平消融效应量。
+  \item[实验柱（C3）] PMEM2 掉电一行过 + A0--A4 公平消融效应量（\texttt{cycles}/\texttt{wa\_x100}）。
 \end{description}
 
-主动不宣称的内容包括：完整内核 VFS、真 NVDIMM 主线化、将 FCS/Aurora 源码并入库、多写者并发。
+主动不宣称的内容包括：完整内核 VFS、真 NVDIMM 主线化、将 FCS/Aurora 源码并入库、多写者并发、\texttt{lseek}/\texttt{mmap}/\texttt{rename}。
 
 \section{论文结构}
 
-第~\ref{chap:related}~章综述相关工作与借鉴边界；第~\ref{chap:design}~章给出总体设计；第~\ref{chap:impl}~章描述实现与契约；第~\ref{chap:eval}~章报告实验、性能图与踩坑；第~\ref{chap:concl}~章总结并展望。附录给出真 NVDIMM 与复现命令。
+第~\ref{chap:related}~章综述相关工作与借鉴边界；第~\ref{chap:design}~章给出总体设计（含可见点与差集）；第~\ref{chap:impl}~章描述实现与契约；第~\ref{chap:eval}~章报告实验、消融、性能图与踩坑；第~\ref{chap:concl}~章总结并展望。附录给出真 NVDIMM 与复现命令。

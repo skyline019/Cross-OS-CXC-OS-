@@ -63,7 +63,7 @@
 % 页眉页脚
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[C]{\small 面向持久内存的键值存储系统设计与实现}
+\fancyhead[C]{\small 面向持久内存的文件系统设计与实现——基于xv6的PMFS}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
@@ -124,11 +124,11 @@
 
 持久内存（Persistent Memory, PMEM）以字节寻址方式提供近似 DRAM 的访问延迟，同时具备掉电后数据保留能力，为操作系统存储子系统提出了不同于块设备日志文件系统的一致性模型与工程验收问题。教学操作系统 xv6 以 virtio 块设备与日志型文件系统作为根文件系统，适合讲授经典 UNIX 语义，但难以直接承载「可机器判定的崩溃与掉电语义」这一工程化目标。
 
-本文按原题四要件，在 xv6-riscv 上实现并行于根文件系统的字节寻址 \textbf{PMFS 文件子系统}：改造内存管理以映射 QEMU NVDIMM 仿真窗口；以 inode/dentry 页与双槽超级块重构去块设备布局；以缓存行粒度 \texttt{pmem\_flush}+\texttt{fence} 有序协议保障掉电安全；并以契约套件验收。KV/run 引擎并行提供批量 seal 路径。后端含 EMUL、MAP 与 PMEM2（\texttt{memory-backend-file}）。
+本文按原题四要件，在 xv6-riscv 上实现并行于根文件系统的字节寻址 \textbf{PMFS 文件子系统}：映射 QEMU NVDIMM 仿真窗口；以 inode/dentry 页与双槽超级块重构去块设备布局；文件写入经 CDC/stream 切分后融合至 KV/run 核；以缓存行粒度 \texttt{pmem\_flush}+\texttt{fence} 有序协议保障掉电安全。后端含 EMUL、MAP 与 PMEM2（\texttt{memory-backend-file}）。语义上写死崩溃可见点与 POSIX 差集：仅 \texttt{fsync}/提交后写可见。
 
-核心贡献是教学 OS 上\textbf{可机器判定的崩溃与掉电契约套件}（含 \texttt{PERSIST}/\texttt{FILE}/\texttt{PMEM2}）。实验报告文件 API 相对原生 \texttt{fs+log} 的延迟中位数与相对吞吐，并记录可复核踩坑。
+核心贡献是教学 OS 上\textbf{可机器判定的崩溃与掉电契约套件}（含 \texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2}）。实验分两套口径：架构面报告文件 API 相对原生 \texttt{fs+log} 的延迟中位数与相对吞吐；公平面以 A0--A4 公平消融给出切分/刷写效应量，并记录可复核踩坑。
 
-\textbf{关键词：}持久内存；NVDIMM；文件系统；崩溃一致性；写放大；xv6；契约测试
+\textbf{关键词：}持久内存；NVDIMM；文件系统；崩溃一致性；写放大；xv6；契约测试；消融实验
 
 % ========== 英文摘要 ==========
 \chapter*{Abstract}
@@ -137,11 +137,11 @@
 
 Persistent memory (PMEM) offers byte-addressable access with near-DRAM latency while retaining data across power loss, which challenges the consistency model and acceptance methodology of OS storage stacks built around block devices. The teaching OS xv6 uses a virtio block device and a log-structured file system as its root file system; it is excellent for classic UNIX semantics but does not by itself provide machine-checkable crash and power-loss contracts.
 
-This thesis implements \textbf{PMFS}, a byte-addressable persistent-memory \emph{file subsystem} alongside the xv6 root file system: QEMU NVDIMM-window mapping, inode/dentry layout without the block I/O stack, and a cache-line flush + fence persist protocol, plus a parallel KV/run engine. Backends include EMUL, MAP, and file-backed PMEM2.
+This thesis implements \textbf{PMFS}, a byte-addressable persistent-memory \emph{file subsystem} alongside the xv6 root file system: QEMU NVDIMM-window mapping, inode/dentry layout without the block I/O stack, CDC/stream chunking fused into a KV/run core, and a cache-line flush + fence persist protocol. Backends include EMUL, MAP, and file-backed PMEM2. Crash visibility is stated explicitly: only post-\texttt{fsync}/commit writes survive remount.
 
-The distinctive contribution remains a \textbf{machine-checkable crash/power-loss contract suite} (\texttt{PERSIST}/\texttt{FILE}/\texttt{PMEM2}). Benchmarks report file-API latency medians and relative throughput versus xv6 \texttt{fs+log}.
+The distinctive contribution remains a \textbf{machine-checkable crash/power-loss contract suite} (\texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2}). Evaluation separates an architectural plane (latency/throughput magnitude versus xv6 \texttt{fs+log}) from a fairness plane (A0--A4 ablation of split/seal policy).
 
-\textbf{Keywords:} persistent memory; NVDIMM; file system; crash consistency; write amplification; xv6; contract testing
+\textbf{Keywords:} persistent memory; NVDIMM; file system; crash consistency; write amplification; xv6; contract testing; ablation study
 
 \tableofcontents
 \clearpage

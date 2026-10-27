@@ -13,14 +13,14 @@
     \midrule
     基线 & xv6-riscv（课题分支） \\
     模拟器 & QEMU \texttt{virt}，\texttt{CPUS=1} \\
-    后端 & EMUL / MAP / PMEM2（见第~\ref{chap:design}~章） \\
-    回归 & \texttt{usertests}、契约目标（CI） \\
-    计时 & 内核 \texttt{r\_time()} 相对单位；每 $N$ 取 5 trial 中位数 \\
+    后端 & EMUL（8\,MiB）/ MAP / PMEM2（见第~\ref{chap:design}~章） \\
+    回归 & \texttt{usertests}、\texttt{contract}/\texttt{contract-strict}/MAP/PMEM2（CI） \\
+    计时 & 内核 \texttt{r\_time()} 相对单位；每 $N$ 取 5 trial 中位数；每 $N$ 独立开机 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-strict}、\texttt{contract-pmem}、\texttt{contract-pmem2}。公平消融见 \texttt{docs/ABLATION.md}（A0--A4 输出 \texttt{cycles}/\texttt{wa\_x100}）。语义与故障矩阵见 \texttt{docs/SEMANTICS.md}（\texttt{REMOUNT}/\texttt{FAULT\_SEALMID}/\texttt{FAULT\_HALFPAGE}）。
+数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-strict}、\texttt{contract-pmem}、\texttt{contract-pmem2}。公平消融见 \texttt{docs/ABLATION.md}。语义与故障矩阵见第~\ref{sec:semantics}~节与 \texttt{docs/SEMANTICS.md}。
 
 \textbf{两套结论：}架构面——相对 xv6 日志路径的量级差；公平面——同载荷消融效应量。禁止把 \texttt{fratio} 读成同等 POSIX API 加速比。
 
@@ -32,43 +32,46 @@
   \label{tab:contract}
   \begin{tabular}{llll}
     \toprule
-    用例 & 命令 & 期望 & 说明 \\
+    用例 & 命令/阶段 & 期望 & 说明 \\
     \midrule
     总闸 & \texttt{make contract} & \texttt{ONBOX\_PMFS\_PASS} & EMUL 必过子集 \\
-    MAP & \texttt{make contract-pmem} & \texttt{mode=MAP}+PMEM1 & 窗口映射 \\
-    掉电 & \texttt{make contract-pmem2} & \texttt{PMEM2\_PASS} & 文件后端杀启 \\
-    CRASH & 内嵌自测 & \texttt{CRASH\_PASS} & 半写/未提交 \\
-    POSIX shim & \texttt{pmfs\_posix} & \texttt{POSIX\_PASS} & 不升主线 \\
+    严格 & \texttt{contract-strict} & 同上 + A0--A4/\texttt{FAULT\_*} & POS/NEG/效应量 \\
+    MAP & \texttt{contract-pmem} & \texttt{mode=MAP}+PMEM1 & 窗口映射 \\
+    掉电 & \texttt{contract-pmem2} & \texttt{PMEM2\_PASS} & 文件后端杀启 \\
+    remount & \texttt{REMOUNT} & \texttt{equal=1} & sync 后字节等价 \\
+    故障 & \texttt{FAULT\_*} & 不可见 / chk 拒绝 & 未 sync；半页撕坏 \\
+    POSIX & \texttt{pmfs\_posix} & \texttt{POSIX\_PASS} & 真实文件 API，不升主线 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-分析：契约套件使「完好 SB / 未提交不可见 / 窗口 persist」可机器判定；相对仅演示双槽结构，这是方法学差异，构成本文尖刺。
+分析：契约套件使「完好 SB / 未提交不可见 / remount 等价 / 半页拒绝 / 窗口 persist」可机器判定；相对仅演示双槽结构，这是方法学差异，构成本文尖刺。
 
 \section{性能：随 $N$ 变化的延迟}
 
-对比路径故意不对等（表~\ref{tab:unequal}）。ratio$\gg 1$ 主要反映避免 virtio 日志与目录更新的架构差，\textbf{不可}解读为同等 POSIX 文件 API 下的千倍加速。
+对比路径故意不对等（表~\ref{tab:unequal}）。ratio$\gg 1$ 主要反映避免 virtio 日志与块栈的架构差，\textbf{不可}解读为同等完整 POSIX 下的千倍加速。
 
 \begin{table}[htbp]
   \centering
   \caption{故意不对等的对比维度}
   \label{tab:unequal}
-  \begin{tabular}{p{2.4cm}p{5.2cm}p{5.2cm}}
+  \begin{tabular}{p{2.0cm}p{5.0cm}p{5.2cm}}
     \toprule
-    维度 & PMFS-KV & xv6 fs+log \\
+    维度 & PMFS-KV / File & xv6 fs+log \\
     \midrule
-    API & \texttt{put}$\times N$ + 1$\times$\texttt{seal} + \texttt{get}$\times N$
-         & \texttt{open/create}+\texttt{write(8B)}$\times N$ + \texttt{sync} \\
-    持久语义 & 双槽 SB 提交点 & 块日志检查点 \\
+    API & KV：put$\times N$+seal+get；
+         File：create/write/fsync$\times N$
+         & open/create+write(8B)$\times N$+sync \\
+    持久语义 & 双槽 SB + inode/dentry 页 & 块日志检查点 \\
     I/O 栈 & 字节寻址窗口 / EMUL & virtio-blk + bio + log \\
-    元数据 & 无目录/inode & 目录项 + inode + 位图 \\
+    元数据 & 有限 inode/dentry（无块位图日志） & 目录+inode+位图+log \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{table}[htbp]
   \centering
-  \caption{EMUL 下随 $N$ 变化的中位数与相对吞吐（5 trial）}
+  \caption{EMUL 下随 $N$ 变化的中位数与相对吞吐（5 trial，CDC 融合后）}
   \label{tab:bench-n}
   \begin{tabular}{rrrrrrr}
     \toprule
@@ -83,13 +86,13 @@
 
 \FigNLatency
 
-观察：（1）xv6 随 $N$ 近似线性；（2）PMFS-File 每文件 fsync 仍避开块日志栈，fratio$\gg 1$；（3）结论写作\textbf{量级优势 + 边界}。
+观察：（1）xv6 随 $N$ 近似线性；（2）PMFS-File 每文件 fsync 仍避开块日志栈，fratio$\gg 1$；（3）File 路径因 CDC/stream/meta 提交高于纯 KV，但仍与 xv6 差一个数量级以上；（4）结论写作\textbf{量级优势 + 边界}。
 
 \section{写放大}
 
 \FigWaN
 
-小 value（8\,B）相对 4\,KiB 页对齐主导放大；$N$ 增大时 logical 上升而 phys 在本负载下保持 28672，故 $\mathrm{wa\_x100}$ 下降。该现象属页粒度预期，与 xv6 日志放大不同源。
+小 value（8\,B）相对 4\,KiB 页对齐主导放大。CDC 融合后本负载下 $\mathrm{wa\_x100}$ 维持在高位且随 $N$ 近似平台（表~\ref{tab:bench-n}），属页粒度与 run 打包的预期行为；与 xv6 日志放大不同源，不可横向比绝对值。
 
 \section{MAP 与 EMUL 对照}
 
@@ -111,7 +114,28 @@
 
 \FigThr
 
-文件路径相对吞吐在 EMUL 下稳定高于 xv6 一个数量级以上（表中 \texttt{thr\_file}）。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
+文件路径相对吞吐在 EMUL 下稳定高于 xv6 一个数量级以上（表中 \texttt{thr\_file}）。MAP 抬升软件路径开销后 fratio 下降但仍 $\gg 1$。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
+
+\section{公平消融（公平面）}
+
+\begin{table}[htbp]
+  \centering
+  \caption{A0--A4 公平消融效应量（EMUL，\texttt{contract-strict} 实测）}
+  \label{tab:ablation}
+  \begin{tabular}{lccrrr}
+    \toprule
+    变体 & CDC & batch seal & cycles & wa\_x100 & 解读 \\
+    \midrule
+    A0 & 开 & 开 & 30029 & 1600 & 默认策略 \\
+    A1 & 关 & 开 & 27490 & 1600 & 定长+批量 \\
+    A2 & 开 & 关 & 52066 & 4800 & 每 chunk seal，WA/时延升 \\
+    A3 & 关 & 关 & 36238 & 3200 & 定长+立即 seal \\
+    A4 & 开 & 开 & 24146 & 1600 & A0 复测（稳定性） \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+同 payload 下，关闭批量 seal（A2/A3）显著抬升 $\mathrm{wa\_x100}$ 与 cycles；A0/A4 同配置复测同量级，说明效应量可重复。公平面只据此表陈述，\textbf{不}与表~\ref{tab:bench-n} 的 fratio 混读。
 
 \section{实现难点与失败史}
 
@@ -132,14 +156,21 @@
 \paragraph{P4 Bench 过早杀进程截断契约行}
 匹配到 \texttt{BENCH\_PASS} 子串即杀 QEMU，导致字段截断。修复：等待 \texttt{median\_xv6=} / \texttt{phys=} / \texttt{wa\_x100=} 齐全。
 
+\paragraph{P5 多 trial 撑爆段数}
+连续 seal 耗尽段视图导致后续 trial 失败。修复：提高 run/段余量、attach 压力阀、\textbf{每 $N$ 独立开机}扫参。
+
+\paragraph{P6 题面「文件系统」与实现漂移}
+早期曾偏并行 KV。修复：升格 dir/extent/CDC + 深化 \texttt{pmfs\_posix}，并以语义清单写死差集，避免题实不符。
+
 \section{局限与威胁效度}
 
 \begin{enumerate}[leftmargin=2em]
   \item QEMU 非真 NVDIMM；附录给出扩展路径但不喧宾夺主。
-  \item 性能对比 API 异构；结论限于量级说明。
-  \item 薄 POSIX 仅为 hash$\to$KV shim，不代表文件语义完备性。
+  \item 架构面性能对比 API 异构；结论限于量级说明。公平面仅 A0--A4 同载荷可比。
+  \item 文件语义为可测子集：无 \texttt{lseek}/\texttt{mmap}/\texttt{rename}；容量受 extent/chunk 上限约束；默认 \texttt{CPUS=1}。
+  \item 计时为相对单位；外推墙钟或真机延迟需重新校准。
 \end{enumerate}
 
 \section{本章小结}
 
-尖刺（契约套件）+ 支撑柱（存储核 / PMEM2）+ 可复核踩坑，构成实验章叙事主线；性能图服务于量级与写放大机制说明，而非绝对公平微基准夺冠。
+尖刺（契约套件，含 remount/故障）+ 支撑柱（文件子系统/KV 核/PMEM2）+ 两套结论口径 + 可复核踩坑，构成实验章叙事主线；性能图服务于量级与写放大机制说明，消融表服务于公平面效应量，而非绝对公平微基准夺冠。

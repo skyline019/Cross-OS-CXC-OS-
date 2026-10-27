@@ -6,13 +6,14 @@
 在仓库根目录（WSL）执行：
 
 \begin{lstlisting}
-make contract          # EMUL 总闸 -> ONBOX_PMFS_PASS
-make contract-pmem     # MAP
-make contract-pmem2    # 文件后端掉电二次启动
-make bench-sweep       # N=8/16/32 中位数，回填 docs/BENCH.md
+make contract           # EMUL 总闸 -> ONBOX_PMFS_PASS
+make contract-strict    # 另检 POS/NEG、A0--A4、FAULT_*
+make contract-pmem      # MAP
+make contract-pmem2     # 文件后端掉电二次启动
+make bench-sweep        # N=8/16/32 中位数，回填 docs/BENCH.md
 \end{lstlisting}
 
-宿主解析脚本位于 \texttt{tools/contract\_pmfs.py}、\texttt{tools/contract\_pmem2.py} 与 bench 相关脚本。
+宿主解析脚本位于 \texttt{tools/contract\_pmfs.py}、\texttt{tools/contract\_pmem2.py} 与 bench 相关脚本。语义清单与故障矩阵见仓库 \texttt{docs/SEMANTICS.md}；消融口径见 \texttt{docs/ABLATION.md}。
 
 \section{关于真 NVDIMM}
 

@@ -18,9 +18,20 @@ ONBOX_PMFS_ABLATION_A0_PASS cdc=1 batch=1 dputs=… dseals=… cycles=… wa_x10
 ONBOX_PMFS_ABLATION_PASS variants=5 fair=1 effects=1
 ```
 
+### 实测效应量（EMUL，`make contract-strict` 抽样）
+
+| 变体 | CDC | batch | cycles | wa_x100 |
+|------|-----|-------|--------|---------|
+| A0 | 1 | 1 | 30029 | 1600 |
+| A1 | 0 | 1 | 27490 | 1600 |
+| A2 | 1 | 0 | 52066 | 4800 |
+| A3 | 0 | 0 | 36238 | 3200 |
+| A4 | 1 | 1 | 24146 | 1600 |
+
 - `cycles`：该变体 write+fsync 的相对时间（`r_time`）
 - `wa_x100`：该变体增量 phys/logical×100（KV 密封路径）
 - `dputs` / `dseals`：融合计数，证明未旁路 `pm_put`/`pm_seal`
+- 解读：关闭批量 seal（A2/A3）抬升 WA/时延；A0/A4 同配置复测同量级
 
 ## 两套结论口径
 

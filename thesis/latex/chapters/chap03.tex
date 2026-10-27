@@ -3,9 +3,9 @@
 
 \section{产品形态与非目标}
 
-PMFS 的产品形态是：\textbf{并行于 virtio 根的字节寻址文件子系统}。用户态通过 \texttt{pmfs\_create}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{funlink} 访问文件对象；并保留 \texttt{put}/\texttt{get}/\texttt{seal} 作批量引擎。\textbf{不}替换根 FS，\textbf{不}做完整 VFS。
+PMFS 的产品形态是：\textbf{并行于 virtio 根的字节寻址文件子系统}。用户态通过 \texttt{pmfs\_create}/\texttt{mkdir}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{readdir}/\texttt{funlink} 访问文件对象；并保留 \texttt{put}/\texttt{get}/\texttt{seal} 作批量引擎与融合证明。\textbf{不}替换根 FS，\textbf{不}做完整 VFS。
 
-明确非目标：挂载替换 `/`；真物理 NVDIMM 驱动主线；并入 FCS/Aurora 源码树。
+明确非目标：挂载替换 `/`；真物理 NVDIMM 驱动主线；并入 FCS/Aurora 源码树；\texttt{lseek}/\texttt{mmap}/\texttt{rename}/硬链接；多写者字节范围锁。
 
 \section{地址空间与三种后端}
 
@@ -16,7 +16,7 @@ KERNBASE  ---------- 0x80000000
   kernel + user pages（易失 DRAM）
 PHYSTOP   ---------- KERNBASE + 128MiB
 PMEMBASE  ---------- PHYSTOP
-  字节寻址持久区（双槽 SB / 数据 run）
+  字节寻址持久区（双槽 SB / inode / dentry / run）
 PMEMEND   ---------- PMEMBASE + 32MiB
 \end{lstlisting}
 
@@ -28,7 +28,7 @@ PMEMEND   ---------- PMEMBASE + 32MiB
     \toprule
     模式 & 构建 & 运行要点 \\
     \midrule
-    EMUL & 默认 & $-m$\,128M，2\,MiB 静态缓冲 \\
+    EMUL & 默认 & $-m$\,128M，8\,MiB 静态缓冲（契约+扫参余量） \\
     MAP & \texttt{-DPMEM\_MAP} & $-m$\,160M，映射 \texttt{[PMEMBASE,PMEMEND)} \\
     PMEM2 & \texttt{-DPMEM\_MAP} & \texttt{memory-backend-file,share=on} 杀启 \\
     \bottomrule
@@ -42,28 +42,52 @@ EMUL 用于算法与契约快速回归，\textbf{不}代表真 NVDIMM 延迟；M
 自上而下：
 
 \begin{enumerate}[leftmargin=2em]
-  \item 用户 API：文件 \texttt{create/mkdir/open/read/write/fsync} 与 KV \texttt{put/get/seal}；
-  \item \texttt{pmfile}：目录树 + extent 元数据；写入经 \texttt{pmstream}/\texttt{pmcdc} 切分；
+  \item 用户 API：文件 \texttt{create/mkdir/open/read/write/fsync/readdir} 与 KV \texttt{put/get/seal}；
+  \item \texttt{pmfile}：目录树 + extent 元数据（inode/dentry 页，magic+校验）；
   \item \texttt{pmcdc}/\texttt{pmstream}：Rabin 式滑动哈希切分与窗口刷写（Fixed 模式供消融）；
-  \item \texttt{pmalgo}：chunk$\to$memtable$\to$不可变 run、B1/B2/B3、融合计数；
+  \item \texttt{pmalgo}：chunk$\to$memtable$\to$不可变 run、B1/B2/B3、融合计数 \texttt{fuse\_*}；
   \item \texttt{pmindex}：量化键、posting、查询 LRU（qcache）；
   \item \texttt{pmfs}：双槽超级块与 commit；
-  \item \texttt{pmdev}/\texttt{pmem\_persist}：落 EMUL 或 MAP 窗口。
+  \item \texttt{pmdev}/\texttt{pmem\_persist}：行级 flush+fence，落 EMUL 或 MAP 窗口。
 \end{enumerate}
 
-盘上布局：页 0/1 为超级块双槽；页 2/3 为 inode/目录项元数据；其后为 run 数据页。文件内容不以页内联为主，而以 KV chunk（extent）承载，保证与索引核同一提交路径。
+盘上布局：页 0/1 为超级块双槽；页 2/3 为 inode/目录项元数据；其后为 run 数据页。文件内容不以页内联为主，而以 KV chunk（extent）承载，保证与索引核同一提交路径。容量边界由实现常数约束：约 \texttt{PMFILE\_MAX\_INO}${}={}$40、\texttt{PMFILE\_MAX\_EXT}${}={}$4、\texttt{PM\_VAL\_MAX}${}={}$512，单文件量级约 2\,KiB（刻意不声称大文件生产能力）。
 
-\section{崩溃一致性契约（设计层）}
+\section{崩溃可见点与 POSIX 差集}
+\label{sec:semantics}
 
-提交以 \texttt{seal} 为显式边界：批量 \texttt{put} 进入内存表后，\texttt{seal} 将 run 持久化并原子翻转活动超级块槽位（epoch + 校验）。设计保证：
+设计层先写死「哪些写在 remount/掉电后可见」，再谈实现：
 
-\begin{itemize}[leftmargin=2em]
-  \item 半写活动槽在挂载时可检测并回退；
-  \item 未提交数据对 \texttt{get} 不可见；
-  \item 索引可自 run 重建，避免单独持久索引与数据不一致。
-\end{itemize}
+\begin{table}[htbp]
+  \centering
+  \caption{崩溃一致可见点（设计契约）}
+  \label{tab:visibility}
+  \begin{tabular}{p{3.6cm}p{2.2cm}p{6.5cm}}
+    \toprule
+    操作 & remount 后可见？ & 机制要点 \\
+    \midrule
+    \texttt{write}（未 \texttt{fsync}） & \textbf{否} & chunk 可在 memtable/stream；inode extent 未落页 \\
+    \texttt{fsync}/\texttt{fclose}(dirty) & \textbf{是} & stream flush$\to$\texttt{pm\_seal} + meta 页 + SB commit \\
+    KV \texttt{put} 未 \texttt{seal} & \textbf{否} & 与文件 nosync 同模型 \\
+    活动 SB / inode 半页撕坏 & 检测/拒绝 & 回退另一槽；magic+chk 拒绝垃圾真相 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-契约的机器判定形式在第~\ref{chap:impl}~章展开：串口阶段码与宿主脚本。
+与 POSIX 的差集（主动不实现）包括：多层完整 \texttt{namei}、\texttt{O\_APPEND}/\texttt{lseek}、多进程共享 fd、\texttt{rename}/硬链接、\texttt{mmap}、权限模型、根挂载替换。用户态 \texttt{pmfs\_posix} 走真实 \texttt{mkdir/readdir/fsync/reopen}，用于证明文件 API 深化，而非仅 path-hash 到 KV 的薄 shim。
+
+\section{刷写协议与双槽提交}
+
+持久化协议固定为：
+\[
+  \mathrm{store}\ \rightarrow\ \mathrm{flush}(64\mathrm{B\ lines})\ \rightarrow\ \mathrm{fence}
+  \ \rightarrow\ \mathrm{store\ SB}\ \rightarrow\ \mathrm{flush}\ \rightarrow\ \mathrm{fence}.
+\]
+文件路径上，\texttt{fsync} $=$ 刷 stream 窗 + 写 inode/dentry 页 + \texttt{pmfs\_commit}。提交以 \texttt{seal}/commit 为显式边界：批量 \texttt{put} 进入内存表后，\texttt{seal} 将 run 持久化并原子翻转活动超级块槽位（epoch + 校验）。设计保证：半写活动槽可检测并回退；未提交数据对读路径不可见；索引可自 run 重建。
+
+\section{CDC、stream 与公平消融}
+
+文件写流经 Rabin 式 CDC 切分为 chunk（定长 Fixed 仅作对照），再经 stream 窗口聚合后 \texttt{pm\_put}；flush/seal 边界由策略开关控制。公平消融 A0--A4 在\textbf{同一 payload、同一页设备与 KV 核}上只切换「CDC 开/关」与「批量 seal / 每 chunk 立即 seal」，输出 \texttt{cycles} 与 \texttt{wa\_x100} 作为公平面效应量。架构面（相对 xv6 日志栈的量级差）与公平面（策略效应）\textbf{分表陈述、禁止混读}。
 
 \section{写放大与可观测性}
 
@@ -71,8 +95,8 @@ EMUL 用于算法与契约快速回归，\textbf{不}代表真 NVDIMM 延迟；M
 \[
   \mathrm{wa\_x100} = \frac{\mathrm{phys}\times 100}{\mathrm{logical}},
 \]
-其中 logical 为用户 payload 字节，phys 为整页写入（对齐、run、B3 重写）。小 value（如 8\,B）相对 4\,KiB 页必然放大；该放大与 xv6 日志放大\textbf{不同源}，论文中分开叙述。
+其中 logical 为用户 payload 字节，phys 为整页写入（对齐、run、B3 重写）。小 value（如 8\,B）相对 4\,KiB 页必然放大；该放大与 xv6 日志放大\textbf{不同源}，论文中分开叙述。\texttt{fuse\_puts}/\texttt{fuse\_seals} 用于证明文件路径未旁路 KV 核。
 
 \section{性能对比的设计意图}
 
-实验故意对比异构路径：PMFS-KV 为 $N$ 次 \texttt{put} + 一次 \texttt{seal} + $N$ 次 \texttt{get}；xv6 为每键一次小文件 \texttt{create/write} + \texttt{sync}。目的是说明「避免 virtio 日志与目录更新」的\textbf{量级}差异，而非宣称同等 POSIX 文件 API 下的绝对加速比。
+实验对比三条路径：PMFS-KV、PMFS-File、xv6 \texttt{fs+log}。File 路径为 $N$ 次小文件 \texttt{create/write/fsync}；KV 为 $N$ 次 \texttt{put} + 一次 \texttt{seal} + $N$ 次 \texttt{get}；xv6 为每键一次小文件 + \texttt{sync}。目的是说明「避免 virtio 日志与块栈」的\textbf{量级}差异，而非宣称同等完整 POSIX 下的绝对加速比。公平面效应量只引用 A0--A4。
