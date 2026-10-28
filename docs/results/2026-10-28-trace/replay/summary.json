@@ -1,0 +1,30 @@
+{
+  "candidate_images": 92,
+  "selected_images": 92,
+  "unselected_images": 0,
+  "normal_passes": 92,
+  "negative_controls": [
+    {
+      "negative": "omit-data-page-flush",
+      "state": "invalid",
+      "detected": true,
+      "patch_sha256": "4c5bbe0492610b860944c2d3c1c4379952a47c18289b59456a4440ff9e878317"
+    },
+    {
+      "negative": "publish-final-checkpoint-before-body",
+      "state": "invalid",
+      "detected": true,
+      "patch_sha256": "131ca083a5e87bfd35f2edfe6c8eba4aaa154b73697294f6a5f2bf8028a02c7a"
+    }
+  ],
+  "failures": [],
+  "event_counts": {
+    "W": 134,
+    "F": 134,
+    "D": 8,
+    "ACK": 1,
+    "END": 1
+  },
+  "all_generated_candidates_rebooted": true,
+  "physical_power_loss_test": false
+}

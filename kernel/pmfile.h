@@ -47,6 +47,24 @@ int pmfile_shared_read(int fd, void *dst, int cap, uint32 *len);
 int pmfile_shared_ino(int fd);
 int pmfile_shared_sync(int fd, const void *data, uint32 len);
 int pmfile_shared_close(int fd, int discard);
+
+// VFS namespace helpers. Except pin/unpin, callers hold pmfs_lock.
+struct vfs_dirent;
+void pmfile_ref_init(void);
+void pmfile_pin(int ino);
+void pmfile_unpin(int ino);
+int pmfile_lookup_ino(int parent, const char *name); // returns a pinned inode
+int pmfile_type_ino(int ino);
+int pmfile_nlink_ino(int ino);
+int pmfile_path_ino(int ino, char *path);
+// Used under pmfs_lock by explicit compaction; max is at least
+// PMFILE_MAX_INO * PMFILE_MAX_EXT. Each durable extent must survive.
+int pmfile_live_chunks(uint64 *keys, uint32 *lens, int max);
+int pmfile_any_open(void);
+int pmfile_child_path(int parent, const char *name, char *path);
+int pmfile_dirent(int ino, int slot, struct vfs_dirent *entry);
+int pmfile_rename(const char *oldpath, const char *newpath);
+int pmfile_link_ino(int ino, const char *newpath);
 int pmfile_selftest(void);
 int pmfile_chaos_selftest(void);
 int pmfile_edge_selftest(void);

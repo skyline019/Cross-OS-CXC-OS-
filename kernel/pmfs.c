@@ -8,6 +8,7 @@
 #include "sleeplock.h"
 #include "pmem.h"
 #include "pmdev.h"
+#include "pmtrace.h"
 #include "pmfs.h"
 #include "pmalgo.h"
 #include "pmindex.h"
@@ -16,8 +17,10 @@
 #include "pmstream.h"
 #include "pmcontract.h"
 
+#ifndef PMFS_EMUL_BYTES
 #define PMFS_EMUL_BYTES                                                        \
   (8u * 1024u * 1024u) // headroom for contract + N-sweep seals
+#endif
 static uint8 pmfs_emul_buf[PMFS_EMUL_BYTES];
 static struct pmfs g_fs;
 static struct sleeplock pmfs_api_lock;
@@ -34,7 +37,7 @@ static int fault_stage, fault_skip, fault_active;
 int
 pmfs_fault_arm(int stage, int skip)
 {
-  if (!g_fs.mounted || stage < 1 || stage > 7 || skip < 0 || skip > 16)
+  if (!g_fs.mounted || stage < 1 || stage > 8 || skip < 0 || skip > 16)
     return -1;
   fault_stage = stage;
   fault_skip = skip;
@@ -132,22 +135,29 @@ pmfs_sb_epoch(const struct pmfs_sb *s)
 
 // Reject out-of-range roots and allocator tails instead of silently resetting.
 static int
+pmfs_validate_sb(struct pmfs *fs, const struct pmfs_sb *s)
+{
+  if (!pmfs_sb_ok(s) || s->tail < PMFS_DATA0 || s->tail > fs->npages)
+    return -1;
+  if ((s->inode_page == PMFS_NIL) != (s->dent_page == PMFS_NIL))
+    return -1;
+  if (s->inode_page != PMFS_NIL &&
+      (s->inode_page < PMFS_DATA0 || s->inode_page >= s->tail ||
+       s->dent_page < PMFS_DATA0 || s->dent_page >= s->tail ||
+       s->inode_page == s->dent_page))
+    return -1;
+  if (s->run_head != PMFS_NIL &&
+      (s->run_head < PMFS_DATA0 || s->run_head >= s->tail))
+    return -1;
+  return 0;
+}
+
+static int
 pmfs_read_sb(struct pmfs *fs, uint32 slot, struct pmfs_sb *out)
 {
   struct pmfs_sb s;
-  if (slot > 1 || pmdev_read(&fs->dev, slot, 0, &s, PMFS_SB_HDR) != 0)
-    return -1;
-  if (!pmfs_sb_ok(&s) || s.tail < PMFS_DATA0 || s.tail > fs->npages)
-    return -1;
-  if ((s.inode_page == PMFS_NIL) != (s.dent_page == PMFS_NIL))
-    return -1;
-  if (s.inode_page != PMFS_NIL &&
-      (s.inode_page < PMFS_DATA0 || s.inode_page >= s.tail ||
-       s.dent_page < PMFS_DATA0 || s.dent_page >= s.tail ||
-       s.inode_page == s.dent_page))
-    return -1;
-  if (s.run_head != PMFS_NIL &&
-      (s.run_head < PMFS_DATA0 || s.run_head >= s.tail))
+  if (slot > 1 || pmdev_read(&fs->dev, slot, 0, &s, PMFS_SB_HDR) != 0 ||
+      pmfs_validate_sb(fs, &s) != 0)
     return -1;
   *out = s;
   return 0;
@@ -169,6 +179,9 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
     return -1;
   word = (volatile uint64 *)(raw + 8);
   *word = 0;
+  pmtrace_store((void *)word, sizeof(*word), 1);
+  fs->dev.write_bytes += sizeof(*word);
+  fs->dev.checkpoint_word_stores++;
   pmem_persist((void *)word, sizeof(*word));
   fault_point(2);
 
@@ -181,6 +194,9 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
 
   commit = ((uint64)s->chk << 32) | s->state;
   *word = commit;
+  pmtrace_store((void *)word, sizeof(*word), 1);
+  fs->dev.write_bytes += sizeof(*word);
+  fs->dev.checkpoint_word_stores++;
   fault_point(4);
   pmem_persist((void *)word, sizeof(*word));
   fault_point(5);
@@ -212,6 +228,8 @@ pmfs_format(struct pmfs *fs)
   fs->inode_page = PMFS_NIL;
   fs->dent_page = PMFS_NIL;
   fs->run_head = PMFS_NIL;
+  memset(fs->gc_run_valid, 0, sizeof(fs->gc_run_valid));
+  fs->gc_cursor = PMFS_DATA0;
   fs->epoch = 1;
   fs->sb_slot = PMFS_SLOT_A;
   pmfs_sb_pack(&sb, fs, fs->epoch);
@@ -253,6 +271,8 @@ pmfs_mount(struct pmfs *fs)
   fs->inode_page = best->inode_page;
   fs->dent_page = best->dent_page;
   fs->run_head = best->run_head;
+  memset(fs->gc_run_valid, 0, sizeof(fs->gc_run_valid));
+  fs->gc_cursor = PMFS_DATA0;
   fs->mounted = 1;
   printk("pmfs: mount ok epoch=%d slot=%d tail=%d pages=%d%s\n", (int)fs->epoch,
          fs->sb_slot, fs->tail, fs->npages, fs->emul ? " [EMUL]" : "");
@@ -275,9 +295,60 @@ pmfs_commit(struct pmfs *fs)
   fault_point(1);
   if (pmfs_write_sb_slot(fs, &sb, slot) != 0)
     return -1;
+  // A metadata-only publication retains the exact same immutable run graph.
+  // Copy its already validated hint; headers/roots are still checked at every
+  // allocation. A changed head is invalidated unless the seal path later
+  // installs a separately read-back-verified one-run extension.
+#ifdef PMFS_GC_NO_HINTS
+  fs->gc_run_valid[slot] = 0; // benchmark ablation: retrace after publication
+#else
+  if (fs->gc_run_valid[fs->sb_slot] &&
+      fs->gc_run_head[fs->sb_slot] == fs->run_head &&
+      fs->gc_run_tail[fs->sb_slot] <= fs->tail) {
+    memmove(fs->gc_run_bits[slot], fs->gc_run_bits[fs->sb_slot],
+            sizeof(fs->gc_run_bits[slot]));
+    fs->gc_run_head[slot] = fs->run_head;
+    fs->gc_run_tail[slot] = fs->gc_run_tail[fs->sb_slot];
+    fs->gc_run_valid[slot] = 1;
+  } else {
+    fs->gc_run_valid[slot] = 0;
+  }
+#endif
   fs->epoch = next_epoch;
   fs->sb_slot = slot;
   return 0;
+}
+
+// Called only after a successful single-run commit AND read-back verification.
+// The old slot's chain was traced during allocation; the new run is disjoint
+// from both slots and points to that old head. A stale/missing hint is simply
+// ignored and the next allocation falls back to a complete independent scan.
+void
+pmfs_gc_note_seal(struct pmfs *fs, uint32 old_head, uint32 page, uint32 n)
+{
+  uint32 active, old, i;
+#ifdef PMFS_GC_NO_HINTS
+  // Keep all validation/reclamation logic, disabling only cache propagation.
+  return;
+#endif
+  if (!fs || !fs->mounted || !n || page < PMFS_DATA0 || page >= fs->tail ||
+      n > fs->tail - page || fs->run_head != page)
+    return;
+  active = fs->sb_slot;
+  old = active ^ 1u;
+  if (!fs->gc_run_valid[old] || fs->gc_run_head[old] != old_head ||
+      fs->gc_run_tail[old] > fs->tail)
+    return;
+  for (i = 0; i < n; i++)
+    if (fs->gc_run_bits[old][(page + i) >> 6] & (1ULL << ((page + i) & 63)))
+      return;
+  memmove(fs->gc_run_bits[active], fs->gc_run_bits[old],
+          sizeof(fs->gc_run_bits[active]));
+  for (i = 0; i < n; i++)
+    fs->gc_run_bits[active][(page + i) >> 6] |= 1ULL << ((page + i) & 63);
+  fs->gc_run_head[active] = page;
+  fs->gc_run_tail[active] = fs->tail;
+  fs->gc_run_valid[active] = 1;
 }
 
 int
@@ -293,6 +364,162 @@ pmfs_alloc_pages(struct pmfs *fs, uint32 n, uint32 *out_pid)
   return 0;
 }
 
+// Rebuild metadata-allocation protection from BOTH committed checkpoints.
+// Run-page bitmaps are cached per unchanged head: a reachable run is
+// immutable, and invalidated slots lose their cache. Header/root validation is
+// never cached. A suspicious committed slot or chain disables reclamation.
+static int
+pmfs_gc_live(struct pmfs *fs, uint64 *live)
+{
+  uint64 roots[PMDEV_DIRTY_WORDS];
+  uint32 slot, i;
+  int active_seen = 0;
+  memset(live, 0, PMDEV_DIRTY_WORDS * sizeof(*live));
+  memset(roots, 0, sizeof(roots));
+  fs->gc_scans++;
+  for (slot = 0; slot < 2; slot++) {
+    struct pmfs_sb raw, sb;
+    if (pmdev_read(&fs->dev, slot, 0, &raw, PMFS_SB_HDR) != 0)
+      goto bad;
+    if (!pmfs_sb_ok(&raw)) {
+      fs->gc_run_valid[slot] = 0;
+      continue; // an invalid/partially staged slot has no committed root
+    }
+    if (pmfs_validate_sb(fs, &raw) != 0 || raw.tail > fs->tail)
+      goto bad;
+    sb = raw;
+    if (slot == fs->sb_slot) {
+      if (pmfs_sb_epoch(&sb) != fs->epoch || sb.tail != fs->tail ||
+          sb.inode_page != fs->inode_page || sb.dent_page != fs->dent_page ||
+          sb.run_head != fs->run_head)
+        goto bad;
+      active_seen = 1;
+    }
+    if (!fs->gc_run_valid[slot] || fs->gc_run_head[slot] != sb.run_head ||
+        fs->gc_run_tail[slot] > sb.tail) {
+      memset(fs->gc_run_bits[slot], 0, sizeof(fs->gc_run_bits[slot]));
+      fs->gc_run_valid[slot] = 0;
+      if (pm_algo_trace_runs(fs, sb.run_head, sb.tail, fs->gc_run_bits[slot],
+                             &fs->gc_trace_runs) != 0)
+        goto bad;
+      fs->gc_run_head[slot] = sb.run_head;
+      fs->gc_run_tail[slot] = sb.tail;
+      fs->gc_run_valid[slot] = 1;
+    }
+    for (i = 0; i < PMDEV_DIRTY_WORDS; i++)
+      live[i] |= fs->gc_run_bits[slot][i];
+    if (sb.inode_page != PMFS_NIL) {
+      roots[sb.inode_page >> 6] |= 1ULL << (sb.inode_page & 63);
+      roots[sb.dent_page >> 6] |= 1ULL << (sb.dent_page & 63);
+    }
+  }
+  if (!active_seen)
+    goto bad;
+  for (i = 0; i < PMDEV_DIRTY_WORDS; i++) {
+    if (live[i] & roots[i])
+      goto bad; // a metadata root cannot also be a run page
+    live[i] |= roots[i];
+  }
+  return 0;
+
+bad:
+  fs->gc_failed_scans++;
+  return -1;
+}
+
+// Reserve a batch of disjoint contiguous runs before writing any of them.
+// Reusable pages must be unreachable from BOTH valid checkpoint object graphs;
+// pages reserved earlier in this same batch are protected by the local bitmap.
+// The frontier is changed only after the entire plan succeeds. This function,
+// like the rest of PMFS's global scratch, requires pmfs_lock.
+int
+pmfs_alloc_runs(struct pmfs *fs, const uint32 *sizes, uint32 count, uint32 *out)
+{
+  static uint64 live[PMDEV_DIRTY_WORDS];
+  uint32 frontier, cursor, reused = 0, i;
+
+  if (!fs || !fs->mounted || !sizes || !out || count == 0 ||
+      count > PM_MAX_RUNS || fs->tail < PMFS_DATA0 || fs->tail > fs->npages ||
+      pmfs_gc_live(fs, live) != 0)
+    return -1;
+  frontier = fs->tail;
+  cursor = fs->gc_cursor;
+  if (cursor < PMFS_DATA0 || cursor >= fs->tail)
+    cursor = PMFS_DATA0;
+  for (i = 0; i < count; i++) {
+    uint32 n = sizes[i], scanned = 0, span = fs->tail - PMFS_DATA0,
+           pid = cursor;
+    uint32 j;
+    int found = 0;
+    if (n == 0 || n > PMFS_MAX_RUN_PAGES)
+      return -1;
+    while (scanned < span) {
+      if (n <= fs->tail - pid) {
+        for (j = 0; j < n; j++)
+          if (live[(pid + j) >> 6] & (1ULL << ((pid + j) & 63)))
+            break;
+        if (j == n) {
+          found = 1;
+          break;
+        }
+      }
+      scanned++;
+      if (++pid >= fs->tail)
+        pid = PMFS_DATA0;
+    }
+    if (found) {
+      reused += n;
+      cursor = pid + n;
+      if (cursor >= fs->tail)
+        cursor = PMFS_DATA0;
+    } else {
+      if (n > fs->npages - frontier)
+        return -2; // a valid plan cannot fit; no state or page was changed
+      pid = frontier;
+      frontier += n;
+    }
+    for (j = 0; j < n; j++)
+      live[(pid + j) >> 6] |= 1ULL << ((pid + j) & 63);
+    out[i] = pid;
+  }
+  fs->tail = frontier;
+  fs->gc_cursor = cursor;
+  fs->gc_reused_run_pages += reused;
+  return 0;
+}
+
+int
+pmfs_alloc_meta(struct pmfs *fs, uint32 n, uint32 out[2])
+{
+  static uint64 live[PMDEV_DIRTY_WORDS];
+  uint32 found = 0, scanned = 0, span, pid, append, i;
+  if (!fs || !fs->mounted || !out || n == 0 || n > 2 || fs->tail < PMFS_DATA0 ||
+      fs->tail > fs->npages || pmfs_gc_live(fs, live) != 0)
+    return -1;
+  span = fs->tail - PMFS_DATA0;
+  pid = fs->gc_cursor;
+  if (pid < PMFS_DATA0 || pid >= fs->tail)
+    pid = PMFS_DATA0;
+  while (scanned < span && found < n) {
+    uint64 mask = 1ULL << (pid & 63);
+    if (!(live[pid >> 6] & mask)) {
+      live[pid >> 6] |= mask; // reserve both pages of this COW transaction
+      out[found++] = pid;
+    }
+    scanned++;
+    if (++pid >= fs->tail)
+      pid = PMFS_DATA0;
+  }
+  append = n - found;
+  if (append > fs->npages - fs->tail)
+    return -1;
+  fs->gc_cursor = pid;
+  fs->gc_reused_pages += found; // allocation attempts, including rollback
+  for (i = 0; i < append; i++)
+    out[found + i] = fs->tail++;
+  return 0;
+}
+
 int
 pmfs_write_data_page(struct pmfs *fs, uint32 pid, const void *src)
 {
@@ -305,6 +532,14 @@ pmfs_write_data_page(struct pmfs *fs, uint32 pid, const void *src)
     } else {
       int rc;
       fault_active = 1;
+      if (fault_stage == 8) {
+        // Exercise ordinary COW rollback after a page reached the device.
+        // No checkpoint has been touched; the caller must restore its roots.
+        fault_stage = 0;
+        if (pmdev_write_page(&fs->dev, pid, src) != 0)
+          return -1;
+        return -1;
+      }
       if (fault_stage == 6) {
         // Model a partially written new page before it can become reachable.
         if (pmdev_write(&fs->dev, pid, 0, src, PMDEV_PAGE / 2) != 0)
@@ -544,6 +779,7 @@ pmfs_init(void)
 #endif
 
   initsleeplock(&pmfs_api_lock, "pmfs");
+  pmfile_ref_init();
   memset(&g_fs, 0, sizeof(g_fs));
 #ifdef PMEM_MAP
   if (!pmem_ready()) {
@@ -606,6 +842,11 @@ pmfs_init(void)
   }
   printk("ONBOX_PMFS_MOUNT_PASS epoch=%d slot=%d emul=%d\n", (int)g_fs.epoch,
          g_fs.sb_slot, emul);
+#ifdef PMFS_GC_NO_HINTS
+  printk("ONBOX_PMFS_GC_HINTS mode=disabled\n");
+#else
+  printk("ONBOX_PMFS_GC_HINTS mode=enabled\n");
+#endif
 #ifdef PMFS_SELFTEST
   pmcontract_mark("MOUNT", 1);
   rc = pmfs_storage_selftest();

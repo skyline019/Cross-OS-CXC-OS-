@@ -53,15 +53,28 @@ THESIS PMFS PROTOTYPE (v3)
 Current status, test evidence and limits: THESIS.md and
   docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
   docs/SEMANTICS.md                   exact supported subset and error semantics
+  docs/PERFORMANCE-ENDURANCE.md       software I/O counters and wear limitations
+  docs/MAINTENANCE.md                two-slot GC and explicit COW compaction
+  docs/TRACE-REPLAY.md                actual PMFS operation trace and replay limits
+  docs/results/2026-10-28-gc/        earlier recovery and software-work evidence
+  docs/results/2026-10-28-perf/      matched timing/throughput and PMFS ablation
+  docs/results/2026-10-28-trace/     captured-operation replay, logs and controls
   docs/QEMU-NVDIMM.md                 device and persistence-domain limits
   docs/XV6-LOG-RECOVERY.md            native xv6 log CI diagnosis and tests
+  docs/results/2026-10-28-vfs/        VFS implementation and validation evidence
   docs/EXCELLENCE-ROADMAP.md          original planning/baseline audit
   docs/LOCAL-SANDBOX-TESTS.md         historical pre-repair evidence
 
-The kernel has an absolute /pm path adapter for ordinary file descriptors,
-plus dedicated file/KV calls. v3 uses checksummed append-only data and COW
-metadata, two checkpoints, explicit formatting, and a serialized writer.
-It is a bounded teaching prototype, not a general VFS or full POSIX FS.
+A small VFS walks native and PMFS paths component by component across a
+fixed synthetic /pm mount. It provides cwd, directory descriptors/getdents,
+seek/append, coherent independent opens, PMFS subtree rename and same-backend
+regular-file hard links, a limited same-directory native file rename, and the
+dedicated file/KV calls. v3 uses checksummed immutable runs, COW metadata, two
+checkpoints, explicit formatting, and coarse-grained PMFS serialization. Pages
+unreachable from either checkpoint may be recycled for metadata or new runs;
+explicit COW compaction still needs disjoint scratch space and can fail near
+full. It remains a bounded teaching prototype, not a complete VFS, POSIX FS,
+full-device GC or hardware wear leveling.
 
 Unpatched MAP is ordinary guest RAM, NOT an NVDIMM. An experimental QEMU
 9.2.0 patch supports one separately backed cold-plugged NVDIMM on virt and
@@ -69,11 +82,25 @@ advertises a private FDT node. See docs/QEMU-NVDIMM.md for build and limits.
 The default cache-line touch is instrumentation, NOT hardware writeback.
 Optional Zicbom emits CBO.CLEAN under explicit platform assumptions; QEMU
 TCG does not simulate cache persistence. Process kills are not physical
-power failures. v3 is incompatible with v2; there is no automatic migration.
+power failures. Filesystem format v3 is incompatible with v2; additionally,
+a reused run may use run-header version 2, which older v3 kernels reject.
+There is no automatic migration or downgrade.
 
   make qemu                 # volatile EMUL, a new empty PMFS each boot
   make kernel-pmem          # rebuild MAP with ordinary 160 MiB guest RAM
-  make test-model           # bounded specification + mutation controls
+  make test-model           # bounded specifications + mutation controls
+  CPUS=3 make test-vfs      # VFS, hard links and repeated metadata-page reuse
+  ./test-xv6.py efficiency  # CDC/fallback, write avoidance, query counters
+  make test-pmfs-gc         # COW compaction, busy checks, data verification
+  # In the guest: pmstats   # volatile software requests, NOT physical wear
+  # In the guest: pmcompact # explicit bounded maintenance, needs spare pages
+  make test-vfs-recovery    # VFS/hard-link restart/fault oracle, MAP
+  make test-pmfs-gc-recovery # compaction and delayed-reuse restart oracle, MAP
+  make test-pmfs-gc-nospace # rebuilds a tiny disposable EMUL device
+  python3 tools/bench_perf.py --runs 10 --warmup 1 --samples 32 --output /tmp/pmfs-perf
+                            # matched file latency and timed batches; prebuilt EMUL
+  make test-trace-replay   # sampled actual-operation trace; rebuilds test kernel
+  make test-native-rename-recovery # native log cuts; rebuilds test kernel
   make test-xv6-crash      # test-only native log + orphan process-restart tests
   CPUS=3 ./test-xv6.py stress # concurrent native block-log writers and readback
   make test-recovery        # MAP restart/fault oracle; software boundaries

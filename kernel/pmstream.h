@@ -35,6 +35,7 @@ struct pmstream {
 void pmstream_init_global(void);
 struct pmstream *pmstream_alloc(int ino, int mode_cdc, int batch_seal);
 void pmstream_free(struct pmstream *s);
+int pmstream_any_active(void);
 
 // Write bytes into window; may emit chunks via pm_put; optional mid-seal.
 int pmstream_write(struct pmstream *s, const void *src, uint32 len);

@@ -1,0 +1,25 @@
+PASS format-and-baseline
+PASS prepare
+PASS baseline-reboot
+PASS move
+PASS normal-reboot-1
+PASS normal-reboot-2
+PASS checkpoint-1
+PASS checkpoint-1-old
+PASS checkpoint-2
+PASS checkpoint-2-old
+PASS checkpoint-3
+PASS checkpoint-3-old
+PASS checkpoint-4
+PASS checkpoint-4-new
+PASS checkpoint-5
+PASS checkpoint-5-new
+PASS page-6-0
+PASS page-6-0-old
+PASS page-6-1
+PASS page-6-1-old
+PASS page-7-0
+PASS page-7-0-old
+PASS page-7-1
+PASS page-7-1-old
+VFS_RECOVERY_PASS boots=24 cpus=3 nvdimm=1 zicbom=1

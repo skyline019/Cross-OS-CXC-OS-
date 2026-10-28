@@ -8,6 +8,7 @@
 # make test-xv6-crash  (rebuilds a test-only kernel; use a disposable checkout)
 # ./test-xv6.py log (requires XV6_LOG_FAULT_INJECT in the built kernel)
 # ./test-xv6.py stress (concurrent block-log writers and readback)
+# ./test-xv6.py vfs (ordinary VFS namespace/descriptor tests)
 
 import argparse, os, inspect, re, signal, subprocess, sys, time
 from subprocess import run
@@ -182,6 +183,74 @@ def test_log():
     result = run([sys.executable, "tools/xv6_log_recovery.py"])
     if result.returncode:
         sys.exit(result.returncode)
+    print("OK")
+
+def test_vfs():
+    print("Test VFS path, directory, descriptor and rename semantics")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("vfstest basic\n")
+    q.monitor(r'^VFS_TEST_PASS mode=basic$', failure=r'^VFS_TEST_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_vfscapacity():
+    print("Test bounded PMFS metadata reuse across repeated COW renames")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("vfstest capacity\n")
+    q.monitor(r'^VFS_TEST_PASS mode=capacity$', progress=r'^VFS_CAPACITY_PASS',
+              failure=r'^VFS_TEST_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_pmfs_gc():
+    print("Test PMFS COW compaction, GC, busy checks and live data")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc basic\n")
+    q.monitor(r'^PMFS_GC_PASS mode=basic$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_pmfs_nospace():
+    print("Test compaction preflight on a tiny disposable PMFS device")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc nospace\n")
+    q.monitor(r'^PMFS_GC_PASS mode=nospace$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_pmfs_soak():
+    print("Test repeated run-page reuse near the tiny device high-water mark")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc soak\n")
+    q.monitor(r'^PMFS_GC_PASS mode=soak$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=180)
+    q.stop()
+    print("OK")
+
+def test_efficiency():
+    print("Test PMFS software write avoidance and exact/fallback queries")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_eff\n")
+    q.monitor(r'^PMFS_EFFICIENCY_PASS', progress=r'^PMFS_METRIC',
+              failure=r'^PMFS_EFFICIENCY_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_efficiency_metrics():
+    print("Test PMFS software metrics utility")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmstats\n")
+    q.monitor(r'^PMFS_SOFTWARE_METRICS version=1', failure=r'^pmstats:', timeout=30)
+    q.stop()
     print("OK")
 
 def test_stress():

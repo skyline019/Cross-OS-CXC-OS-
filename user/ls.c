@@ -3,6 +3,7 @@
 #include "user/user.h"
 #include "kernel/fs.h"
 #include "kernel/fcntl.h"
+#include "kernel/vfs.h"
 
 char *
 fmtname(char *path)
@@ -29,7 +30,7 @@ ls(char *path)
 {
   char buf[512], *p;
   int fd;
-  struct dirent de;
+  struct vfs_dirent de;
   struct stat st;
 
   if ((fd = open(path, O_RDONLY)) < 0) {
@@ -50,18 +51,18 @@ ls(char *path)
     break;
 
   case T_DIR:
-    if (strlen(path) + 1 + DIRSIZ + 1 > sizeof buf) {
+    if (strlen(path) + 1 + VFS_NAME_MAX + 1 > sizeof buf) {
       printf("ls: path too long\n");
       break;
     }
     strcpy(buf, path);
     p = buf + strlen(buf);
     *p++ = '/';
-    while (read(fd, &de, sizeof(de)) == sizeof(de)) {
-      if (de.inum == 0)
+    while (getdents(fd, &de, sizeof(de)) == sizeof(de)) {
+      if (de.ino == 0)
         continue;
-      memmove(p, de.name, DIRSIZ);
-      p[DIRSIZ] = 0;
+      memmove(p, de.name, VFS_NAME_MAX + 1);
+      p[VFS_NAME_MAX] = 0;
       if (stat(buf, &st) < 0) {
         printf("ls: cannot stat %s\n", buf);
         continue;

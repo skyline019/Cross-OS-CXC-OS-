@@ -26,12 +26,18 @@ int pause(int);
 int uptime(void);
 int sync(void);
 int fsync(int fd);
+long lseek(int fd, long offset, int whence);
+int getdents(int fd, void *entries, int bytes);
+int rename(const char *oldpath, const char *newpath);
 // Test-only: returns -1 unless the kernel was built with XV6_LOG_FAULT_INJECT.
 int xv6_log_fault(int stage);
 int pmfs_put(unsigned long key, const void *val, int len);
 int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
 int pmfs_seal(void);
+int pmfs_compact(void);
 int pmfs_stat(void *wa);
+struct pmfs_metrics;
+int pmfs_metrics(struct pmfs_metrics *metrics, int bytes);
 unsigned long cycles(void);
 int pmfs_create(const char *);
 int pmfs_fopen(const char *);
@@ -44,6 +50,8 @@ int pmfs_mkdir(const char *);
 int pmfs_readdir(const char *, char *dst, int cap);
 int pmfs_format(void);
 int pmfs_fault(int stage, int skip);
+// Test-only; returns -1 unless the kernel is built with PMFS_TRACE.
+int pmfs_trace(int mode);
 int pmfs_fstat(const char *path, unsigned int *size, unsigned int *type);
 
 // ulib.c

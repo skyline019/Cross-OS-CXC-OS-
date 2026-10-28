@@ -1,0 +1,20 @@
+Source sha256 (local tested state):
+5914e9ebfecb23977f0baa0f2ce16fd3ea1ba71e4515a58143cee8404736b298  kernel/file.c
+a206f7bb554b86a93976392255b7d05a8fb2689d1bf882dfd0159415fb1e5903  kernel/pmalgo.c
+c711a655005a0ae50cd1781bb167d378dff2938a67afde2c5cb853c181142c88  kernel/pmfile.c
+e36379143f31870dd30f876fed48c0cf5d6f69887acf0a41ce86e023d6c26bc5  kernel/pmindex.c
+4f7926b7014dcff0954d13c90c70806583a51fcdd8dc80df44d91d4d75d8c878  kernel/pmstats.h
+793338de9918903806ef7ad68a0e75ec361bec2e0374c9395900e1c89baa7082  kernel/syspmfs.c
+14ff3a84e33ee1c3678c913e8bb2e5391cd0634727d5e18211e951a2dd9f554d  user/pmfs_eff.c
+57ea5a3af89dadabdfb50b80ac864f4c243096f8d8e13ce77f9dfdab94455fd0  user/pmstats.c
+0a8c2afc8c2baf09521376d4787195976b2590df95d78f16d96d114a3b84d7b3  user/pmfs_regress.c
+2cee7e8cd3dd2a5417e0c5f083adae345da2ff4c281382bca8e7278d4461e4e0  user/vfstest.c
+0c8651c64126915a266f1cc9d57b9d46bab2ae5d4e041d9186edb452c5201ccc  tools/pmfs_recovery.py
+46db1476216481b3b618a66705bddd735141256f3dd50ef0e853b1a931e724ac  tools/vfs_recovery.py
+
+Toolchain:
+clang version 18.1.6 (https://github.com/ziglang/zig-bootstrap 98bc6bf4fc4009888d33941daf6b600d20a42a56)
+Target: riscv64-freestanding-
+Thread model: posix
+GNU objdump (GNU Binutils) 2.42
+QEMU emulator version 9.2.0

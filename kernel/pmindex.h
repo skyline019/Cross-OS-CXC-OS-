@@ -64,6 +64,8 @@ int pmindex_upsert(struct pm_index *ix, uint64 key, uint32 rid, uint32 page);
 // Lookups
 int pmindex_lower_bound(struct pm_index *ix,
                         uint64 key); // index in keys[] or -1
+int pmindex_lookup_exact(struct pm_index *ix, uint64 key, uint32 *rid,
+                         uint32 *page);
 int pmindex_hint_runs(struct pm_index *ix, uint64 key, uint32 *out_rids,
                       uint32 maxn);
 int pmindex_cache_get(struct pm_index *ix, uint64 key, void *dst, uint32 dstcap,

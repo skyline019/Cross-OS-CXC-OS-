@@ -111,7 +111,7 @@ class Runner:
         self.count = 0
 
     def boot(self, ram, label, command=None, marker=None, expect_shell=True,
-             ram_mb=160, expect_map=True):
+             ram_mb=160, expect_map=True, failure_marker=b"PMFS_REGRESS_FAIL"):
         self.count += 1
         disk = self.directory / f"disk-{self.count}.img"
         shutil.copyfile(self.root / "fs.img", disk)
@@ -154,8 +154,22 @@ class Runner:
                     raise RuntimeError(f"{label}: kernel panic")
             raise RuntimeError(f"{label}: timeout waiting for {description}")
 
+        def complete_line_with(needle, start):
+            end = output.rfind(b"\n")
+            if end < start:
+                return None
+            for match in re.finditer(re.escape(needle), output[start:end + 1]):
+                line_start = max(start, output.rfind(b"\n", start, start + match.start()) + 1)
+                line_end = output.find(b"\n", start + match.end(), end + 1)
+                if line_end >= 0:
+                    return line_start, line_end + 1
+            return None
+
+        def prompt_after(start):
+            return re.search(rb"(?:^|\n)\$ $", bytes(output[start:])) is not None
+
         try:
-            wait_for(lambda: b"init: starting sh" in output and b"$ " in output, "shell")
+            wait_for(lambda: b"init: starting sh" in output and prompt_after(0), "shell")
             expected_backend = b"nvdimm" if self.nvdimm else b"map"
             if expect_map and (b"ONBOX_PMFS_PMEM0_PASS mode=MAP backend=" + expected_backend) not in output:
                 raise RuntimeError(f"{label}: expected PMFS backend {expected_backend.decode()}")
@@ -169,12 +183,15 @@ class Runner:
                 proc.stdin.write((command + "\n").encode())
                 proc.stdin.flush()
                 needle = marker.encode()
-                wait_for(lambda: needle in output[offset:] or b"PMFS_REGRESS_FAIL" in output[offset:], marker)
-                if b"PMFS_REGRESS_FAIL" in output[offset:]:
-                    raise RuntimeError(f"{label}: guest oracle reported failure")
+                wait_for(lambda: complete_line_with(needle, offset) is not None or
+                         complete_line_with(failure_marker, offset) is not None, marker)
+                failed = complete_line_with(failure_marker, offset)
+                if failed is not None:
+                    line = bytes(output[failed[0]:failed[1]]).decode("utf-8", "replace").strip()
+                    raise RuntimeError(f"{label}: guest oracle reported failure: {line}")
                 if expect_shell:
-                    start = output.index(needle, offset) + len(needle)
-                    wait_for(lambda: b"$ " in output[start:], "completed shell prompt")
+                    start = complete_line_with(needle, offset)[1]
+                    wait_for(lambda: prompt_after(start), "completed shell prompt")
         except Exception:
             sys.stderr.write(output[-6000:].decode("utf-8", "replace") + "\n")
             raise
@@ -311,10 +328,11 @@ def main():
                 run.regress(ram, expected, f"recover-{skip}-{stage}-{expected}")
                 ram.unlink()
 
-        # Tear or interrupt after the new run, inode and dentry page writes.
-        # None is reachable before its following checkpoint is published.
+        # Tear/interruption after the new run or inode snapshot. The dentry
+        # snapshot is immutable and reused on file-content updates. The VFS
+        # replacement-rename oracle separately tests two changed meta pages.
         for stage in (6, 7):
-            for skip in range(3):
+            for skip in range(2):
                 ram = copy_base(f"page-{stage}-{skip}")
                 run.boot(ram, f"page-{stage}-{skip}", f"pmfs_regress fault {stage} {skip}",
                          f"PMFS_FAULT_POINT stage={stage}", False)

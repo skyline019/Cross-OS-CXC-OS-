@@ -1,0 +1,53 @@
+--- a/kernel/pmfile.c
++++ b/kernel/pmfile.c
+@@ -788,7 +788,7 @@
+   old = inodes[ino];
+   inodes[ino] = ofile[fd].work;
+   // A file-content commit changes the inode/extent graph, not its dentry.
+-  if (pmfile_store_meta_mask(PM_META_INODES) != 0) {
++  if (pmfile_store_meta() != 0) {
+     inodes[ino] = old;
+     return -3;
+   }
+@@ -943,7 +943,7 @@
+   dents[src].parent = parent;
+   // A non-replacing move changes only names/parent links. Reuse the
+   // immutable inode snapshot instead of rewriting an unchanged 4 KiB page.
+-  if (pmfile_store_meta_mask(target < 0 ? PM_META_DENTS : PM_META_ALL) != 0) {
++  if (pmfile_store_meta() != 0) {
+     memmove(dents, saved, sizeof(dents));
+     if (target >= 0)
+       inodes[target - 1] = replaced;
+--- a/user/pmfs_eff.c
++++ b/user/pmfs_eff.c
+@@ -32,8 +32,8 @@
+          write(fd, "same", 4) == 4 && fsync(fd) == 0 &&
+          pmfs_metrics(&b, sizeof(b)) == 0 &&
+          b.file_cdc_attempts == a.file_cdc_attempts + 1 &&
+-         b.dev_page_writes - a.dev_page_writes == 2 &&
+-         b.dev_write_bytes - a.dev_write_bytes == 8192 + 2 * (48 + 16) &&
++         b.dev_page_writes - a.dev_page_writes == 3 &&
++         b.dev_write_bytes - a.dev_write_bytes == 12288 + 2 * (48 + 16) &&
+          b.checkpoint_word_stores - a.checkpoint_word_stores == 4,
+        15);
+   printf("PMFS_METRIC case=file_sync page_writes=%lu dev_bytes=%lu "
+@@ -113,8 +113,8 @@
+   TEST(pmfs_metrics(&a, sizeof(a)) == 0 &&
+          rename("/pm/wa/f", "/pm/wa/g") == 0 &&
+          pmfs_metrics(&b, sizeof(b)) == 0 &&
+-         b.dev_page_writes - a.dev_page_writes == 1 &&
+-         b.dev_write_bytes - a.dev_write_bytes == 4096 + 48 + 16 &&
++         b.dev_page_writes - a.dev_page_writes == 2 &&
++         b.dev_write_bytes - a.dev_write_bytes == 8192 + 48 + 16 &&
+          b.checkpoint_word_stores - a.checkpoint_word_stores == 2,
+        7);
+   printf("PMFS_METRIC case=rename page_writes=%lu dev_bytes=%lu "
+@@ -239,7 +239,7 @@
+     b.kv_posting_skips - a.kv_posting_skips,
+     b.kv_fallback_run_probes - a.kv_fallback_run_probes,
+     b.kv_page_reads - a.kv_page_reads);
+-  printf("PMFS_EFFICIENCY_PASS rename_pages=1 replace_pages=2 "
++  printf("PMFS_EFFICIENCY_PASS rename_pages=2 replace_pages=2 "
+          "identical_overwrite=skipped cdc=adaptive index_overflow=fallback\n");
+   exit(0);
+ }

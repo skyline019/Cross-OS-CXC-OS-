@@ -1,0 +1,11 @@
+--- a/kernel/pmalgo.c
++++ b/kernel/pmalgo.c
+@@ -475,7 +475,7 @@
+ static int
+ compact_before(const struct compact_record *a, const struct compact_record *b)
+ {
+-  return a->key < b->key || (a->key == b->key && a->rid >= b->rid);
++  return a->key < b->key || (a->key == b->key && a->rid <= b->rid);
+ }
+ 
+ static void

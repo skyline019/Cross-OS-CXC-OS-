@@ -1,0 +1,531 @@
+{
+  "same_pmfs_sync_contract": true,
+  "frequency_hz": 10000000,
+  "failures": [],
+  "arms": {
+    "enabled": {
+      "latency": {
+        "overwrite:64": {
+          "mode": "overwrite",
+          "size": 64,
+          "measured_boots": 10,
+          "operations": 320,
+          "pmfs": {
+            "p50_us_pooled": 1474.8,
+            "p95_us_pooled": 2134.9550000000004,
+            "median_boot_p50_us": 1474.925,
+            "median_boot_p50_us_bootstrap95": [
+              1461.75,
+              1495.05
+            ],
+            "service_transactions_per_guest_second": 633.7084161032437,
+            "throughput_bootstrap95": [
+              615.6869236135492,
+              650.076646328698
+            ],
+            "sum_ticks": 5049641
+          },
+          "xv6": {
+            "p50_us_pooled": 7519.65,
+            "p95_us_pooled": 9909.855,
+            "median_boot_p50_us": 7483.175,
+            "median_boot_p50_us_bootstrap95": [
+              7375.7,
+              7660.0
+            ],
+            "service_transactions_per_guest_second": 127.1377063062567,
+            "throughput_bootstrap95": [
+              124.50546841516443,
+              129.626052676294
+            ],
+            "sum_ticks": 25169559
+          },
+          "pmfs_software_requests_per_transaction": {
+            "pm_write_bytes": 8320.0,
+            "pm_read_bytes": 12480.0,
+            "pm_flush_lines": 138.0
+          }
+        },
+        "overwrite:1024": {
+          "mode": "overwrite",
+          "size": 1024,
+          "measured_boots": 10,
+          "operations": 320,
+          "pmfs": {
+            "p50_us_pooled": 1788.25,
+            "p95_us_pooled": 2824.9500000000003,
+            "median_boot_p50_us": 1793.25,
+            "median_boot_p50_us_bootstrap95": [
+              1761.1,
+              1835.65
+            ],
+            "service_transactions_per_guest_second": 521.1343596748839,
+            "throughput_bootstrap95": [
+              499.4413222178812,
+              542.8323500796275
+            ],
+            "sum_ticks": 6140451
+          },
+          "xv6": {
+            "p50_us_pooled": 7428.2,
+            "p95_us_pooled": 10237.83,
+            "median_boot_p50_us": 7388.925,
+            "median_boot_p50_us_bootstrap95": [
+              7282.5,
+              7644.2
+            ],
+            "service_transactions_per_guest_second": 129.0131349885396,
+            "throughput_bootstrap95": [
+              124.32339022495955,
+              133.30114842464505
+            ],
+            "sum_ticks": 24803676
+          },
+          "pmfs_software_requests_per_transaction": {
+            "pm_write_bytes": 8320.0,
+            "pm_read_bytes": 41152.0,
+            "pm_flush_lines": 138.0
+          }
+        }
+      },
+      "batch_throughput": {
+        "overwrite:64": {
+          "measured_boots": 10,
+          "transactions": 320,
+          "pmfs": {
+            "transactions_per_guest_second": 678.8029564414264,
+            "median_boot_transactions_per_guest_second": 715.9067256448142,
+            "bootstrap95": [
+              624.2391131052963,
+              730.5302631660782
+            ],
+            "per_boot_transactions_per_guest_second": [
+              717.1720114657875,
+              516.5664473949715,
+              627.7057550809839,
+              763.7796591155909,
+              589.8563146883439,
+              759.909095874406,
+              714.6414398238409,
+              756.5995578621333,
+              697.3060018435027,
+              750.2790100068463
+            ]
+          },
+          "xv6": {
+            "transactions_per_guest_second": 125.13667270972515,
+            "median_boot_transactions_per_guest_second": 132.63710827619926,
+            "bootstrap95": [
+              113.90358235181556,
+              133.21166502693802
+            ],
+            "per_boot_transactions_per_guest_second": [
+              135.95465232571675,
+              125.83320258477127,
+              132.08921801119044,
+              133.18499854120807,
+              128.82214291609048,
+              123.28936012822093,
+              134.48316438885806,
+              133.4583393111548,
+              135.19142683566722,
+              88.24723344923137
+            ]
+          }
+        },
+        "overwrite:1024": {
+          "measured_boots": 10,
+          "transactions": 320,
+          "pmfs": {
+            "transactions_per_guest_second": 569.8950449228673,
+            "median_boot_transactions_per_guest_second": 588.1619452163351,
+            "bootstrap95": [
+              545.6037957998348,
+              593.201646045344
+            ],
+            "per_boot_transactions_per_guest_second": [
+              591.5715838589693,
+              612.7474446516723,
+              596.5296885369364,
+              520.7934939872764,
+              504.50586803387756,
+              576.163399940223,
+              534.6476755356919,
+              609.9315923598444,
+              585.3815590174371,
+              590.9423314152331
+            ]
+          },
+          "xv6": {
+            "transactions_per_guest_second": 132.95935191623096,
+            "median_boot_transactions_per_guest_second": 134.664391157512,
+            "bootstrap95": [
+              129.95251668067138,
+              136.09699781632955
+            ],
+            "per_boot_transactions_per_guest_second": [
+              140.55153299996266,
+              136.95810066506,
+              135.1627042171186,
+              135.10312801739116,
+              127.04033729209551,
+              125.10648712321934,
+              128.82229849575813,
+              139.0023712935778,
+              134.22565429763281,
+              129.48702904151273
+            ]
+          }
+        }
+      }
+    },
+    "disabled": {
+      "latency": {
+        "overwrite:64": {
+          "mode": "overwrite",
+          "size": 64,
+          "measured_boots": 10,
+          "operations": 320,
+          "pmfs": {
+            "p50_us_pooled": 3525.55,
+            "p95_us_pooled": 5408.005,
+            "median_boot_p50_us": 3464.0,
+            "median_boot_p50_us_bootstrap95": [
+              3327.8,
+              3732.6
+            ],
+            "service_transactions_per_guest_second": 276.08679409567685,
+            "throughput_bootstrap95": [
+              263.5385579643661,
+              288.8468628235909
+            ],
+            "sum_ticks": 11590558
+          },
+          "xv6": {
+            "p50_us_pooled": 7604.15,
+            "p95_us_pooled": 10418.105,
+            "median_boot_p50_us": 7589.175,
+            "median_boot_p50_us_bootstrap95": [
+              7452.8,
+              8130.2
+            ],
+            "service_transactions_per_guest_second": 124.8198936698332,
+            "throughput_bootstrap95": [
+              118.71348494175916,
+              131.07857926692876
+            ],
+            "sum_ticks": 25636939
+          },
+          "pmfs_software_requests_per_transaction": {
+            "pm_write_bytes": 8320.0,
+            "pm_read_bytes": 356544.0,
+            "pm_flush_lines": 138.0
+          }
+        },
+        "overwrite:1024": {
+          "mode": "overwrite",
+          "size": 1024,
+          "measured_boots": 10,
+          "operations": 320,
+          "pmfs": {
+            "p50_us_pooled": 3847.55,
+            "p95_us_pooled": 5124.545000000001,
+            "median_boot_p50_us": 3807.625,
+            "median_boot_p50_us_bootstrap95": [
+              3693.175,
+              3991.325
+            ],
+            "service_transactions_per_guest_second": 259.8724107673261,
+            "throughput_bootstrap95": [
+              254.8408903590383,
+              265.48175303597355
+            ],
+            "sum_ticks": 12313735
+          },
+          "xv6": {
+            "p50_us_pooled": 7540.95,
+            "p95_us_pooled": 9219.98,
+            "median_boot_p50_us": 7497.25,
+            "median_boot_p50_us_bootstrap95": [
+              7451.825,
+              7730.55
+            ],
+            "service_transactions_per_guest_second": 128.77941940684119,
+            "throughput_bootstrap95": [
+              125.85208391722945,
+              131.98386949200903
+            ],
+            "sum_ticks": 24848691
+          },
+          "pmfs_software_requests_per_transaction": {
+            "pm_write_bytes": 8320.0,
+            "pm_read_bytes": 385216.0,
+            "pm_flush_lines": 138.0
+          }
+        }
+      },
+      "batch_throughput": {
+        "overwrite:64": {
+          "measured_boots": 10,
+          "transactions": 320,
+          "pmfs": {
+            "transactions_per_guest_second": 160.2984757618686,
+            "median_boot_transactions_per_guest_second": 163.60095285019105,
+            "bootstrap95": [
+              155.5775362382117,
+              164.7294668189492
+            ],
+            "per_boot_transactions_per_guest_second": [
+              165.33067426498891,
+              166.32881126877697,
+              161.87123143539316,
+              154.8771291975332,
+              149.28053778313736,
+              167.33863587635767,
+              167.6186006361126,
+              166.9351540394134,
+              147.30950694127,
+              159.5134043599998
+            ]
+          },
+          "xv6": {
+            "transactions_per_guest_second": 125.1631961845877,
+            "median_boot_transactions_per_guest_second": 126.90090299743547,
+            "bootstrap95": [
+              119.4456091499106,
+              130.0801684465286
+            ],
+            "per_boot_transactions_per_guest_second": [
+              136.2525440904717,
+              123.12844759653271,
+              131.20852068133306,
+              126.74436888631703,
+              123.21729601184119,
+              133.37940480274227,
+              105.98209300061139,
+              121.34527927047218,
+              127.0574371085539,
+              128.81099401833947
+            ]
+          }
+        },
+        "overwrite:1024": {
+          "measured_boots": 10,
+          "transactions": 320,
+          "pmfs": {
+            "transactions_per_guest_second": 150.49168690975807,
+            "median_boot_transactions_per_guest_second": 153.85103361046527,
+            "bootstrap95": [
+              144.10933625805617,
+              155.02257995932888
+            ],
+            "per_boot_transactions_per_guest_second": [
+              153.44520447772288,
+              154.25686274320765,
+              126.90284873101118,
+              157.4083502178384,
+              148.70731519166048,
+              154.88507527414657,
+              148.58992801746675,
+              158.61434508136915,
+              154.77397920514855,
+              152.91352835542455
+            ]
+          },
+          "xv6": {
+            "transactions_per_guest_second": 125.66994352353466,
+            "median_boot_transactions_per_guest_second": 126.34586734693428,
+            "bootstrap95": [
+              120.91427055069677,
+              130.76466312182734
+            ],
+            "per_boot_transactions_per_guest_second": [
+              140.52536285185684,
+              137.61564552273947,
+              130.77729117727353,
+              118.28964995135338,
+              125.85166179253669,
+              119.0644510756729,
+              126.8400729013319,
+              117.37864148894806,
+              128.81923883127135,
+              116.55733345960378
+            ]
+          }
+        }
+      }
+    }
+  },
+  "paired": {
+    "overwrite:64": {
+      "complete_pairs": 10,
+      "batch_throughput_enabled_over_disabled": 4.234618908353328,
+      "batch_throughput_ratio_bootstrap95": [
+        3.883316776068018,
+        4.554516109501926
+      ],
+      "median_per_boot_p50_latency_enabled_over_disabled": 0.4255285751225032,
+      "median_latency_ratio_bootstrap95": [
+        0.39650245143021945,
+        0.43669296022545
+      ],
+      "pairs": [
+        {
+          "run": 1,
+          "enabled_ticks": 446197,
+          "disabled_ticks": 1935515,
+          "count": 32,
+          "latency_ratio": 0.42178843490304707
+        },
+        {
+          "run": 2,
+          "enabled_ticks": 619475,
+          "disabled_ticks": 1923900,
+          "count": 32,
+          "latency_ratio": 0.4358699009988379
+        },
+        {
+          "run": 3,
+          "enabled_ticks": 509793,
+          "disabled_ticks": 1976880,
+          "count": 32,
+          "latency_ratio": 0.3890368279498309
+        },
+        {
+          "run": 4,
+          "enabled_ticks": 418969,
+          "disabled_ticks": 2066154,
+          "count": 32,
+          "latency_ratio": 0.44411720510894065
+        },
+        {
+          "run": 5,
+          "enabled_ticks": 542505,
+          "disabled_ticks": 2143615,
+          "count": 32,
+          "latency_ratio": 0.4197323955271039
+        },
+        {
+          "run": 6,
+          "enabled_ticks": 421103,
+          "disabled_ticks": 1912290,
+          "count": 32,
+          "latency_ratio": 0.4292687153419593
+        },
+        {
+          "run": 7,
+          "enabled_ticks": 447777,
+          "disabled_ticks": 1909096,
+          "count": 32,
+          "latency_ratio": 0.39437657396988696
+        },
+        {
+          "run": 8,
+          "enabled_ticks": 422945,
+          "disabled_ticks": 1916912,
+          "count": 32,
+          "latency_ratio": 0.4611559583943099
+        },
+        {
+          "run": 9,
+          "enabled_ticks": 458909,
+          "disabled_ticks": 2172297,
+          "count": 32,
+          "latency_ratio": 0.4356181260893083
+        },
+        {
+          "run": 10,
+          "enabled_ticks": 426508,
+          "disabled_ticks": 2006101,
+          "count": 32,
+          "latency_ratio": 0.39650245143021945
+        }
+      ]
+    },
+    "overwrite:1024": {
+      "complete_pairs": 10,
+      "batch_throughput_enabled_over_disabled": 3.7868872136744893,
+      "batch_throughput_ratio_bootstrap95": [
+        3.58518803095819,
+        4.0369379397383
+      ],
+      "median_per_boot_p50_latency_enabled_over_disabled": 0.4610002274432749,
+      "median_latency_ratio_bootstrap95": [
+        0.4477570539094418,
+        0.4987043418332185
+      ],
+      "pairs": [
+        {
+          "run": 1,
+          "enabled_ticks": 540932,
+          "disabled_ticks": 2085435,
+          "count": 32,
+          "latency_ratio": 0.4573321655687141
+        },
+        {
+          "run": 2,
+          "enabled_ticks": 522238,
+          "disabled_ticks": 2074462,
+          "count": 32,
+          "latency_ratio": 0.47630852517889205
+        },
+        {
+          "run": 3,
+          "enabled_ticks": 536436,
+          "disabled_ticks": 2521614,
+          "count": 32,
+          "latency_ratio": 0.4646682893178357
+        },
+        {
+          "run": 4,
+          "enabled_ticks": 614447,
+          "disabled_ticks": 2032929,
+          "count": 32,
+          "latency_ratio": 0.43826163729510575
+        },
+        {
+          "run": 5,
+          "enabled_ticks": 634284,
+          "disabled_ticks": 2151878,
+          "count": 32,
+          "latency_ratio": 0.448938219046171
+        },
+        {
+          "run": 6,
+          "enabled_ticks": 555398,
+          "disabled_ticks": 2066048,
+          "count": 32,
+          "latency_ratio": 0.5046220844799487
+        },
+        {
+          "run": 7,
+          "enabled_ticks": 598525,
+          "disabled_ticks": 2153578,
+          "count": 32,
+          "latency_ratio": 0.4315444540620749
+        },
+        {
+          "run": 8,
+          "enabled_ticks": 524649,
+          "disabled_ticks": 2017472,
+          "count": 32,
+          "latency_ratio": 0.49966378020831903
+        },
+        {
+          "run": 9,
+          "enabled_ticks": 546652,
+          "disabled_ticks": 2067531,
+          "count": 32,
+          "latency_ratio": 0.45414436377126505
+        },
+        {
+          "run": 10,
+          "enabled_ticks": 541508,
+          "disabled_ticks": 2092686,
+          "count": 32,
+          "latency_ratio": 0.4987043418332185
+        }
+      ]
+    }
+  }
+}

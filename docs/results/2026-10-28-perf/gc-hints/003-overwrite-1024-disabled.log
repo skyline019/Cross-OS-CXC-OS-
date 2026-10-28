@@ -1,0 +1,47 @@
+
+xv6 kernel is booting
+
+pmem: instrumentation only; no hardware cache writeback
+pmem: stub (no PMEM_MAP) base=0x88000000 — EMUL path
+ONBOX_PMFS_PMEM0_PASS mode=EMUL backend=emul size=8388608
+pmfs: explicitly formatted v3
+ONBOX_PMFS_MOUNT_PASS epoch=4 slot=1 emul=1
+ONBOX_PMFS_GC_HINTS mode=disabled
+pmfs: ready (v3, boot selftests disabled)
+init: starting sh
+$ pmfs_perf overwrite 32 1024 1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=0 pm_ticks=21464 xv_ticks=72239 pm_write=8320 pm_read=131264 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=1 pm_ticks=23493 xv_ticks=73795 pm_write=8320 pm_read=147648 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=2 pm_ticks=23941 xv_ticks=74051 pm_write=8320 pm_read=164032 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=3 pm_ticks=25421 xv_ticks=74573 pm_write=8320 pm_read=180416 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=4 pm_ticks=26776 xv_ticks=74687 pm_write=8320 pm_read=196800 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=5 pm_ticks=27160 xv_ticks=74765 pm_write=8320 pm_read=213184 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=6 pm_ticks=26866 xv_ticks=76033 pm_write=8320 pm_read=229568 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=7 pm_ticks=29072 xv_ticks=79545 pm_write=8320 pm_read=245952 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=8 pm_ticks=29462 xv_ticks=87448 pm_write=8320 pm_read=262336 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=9 pm_ticks=30583 xv_ticks=92156 pm_write=8320 pm_read=278720 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=10 pm_ticks=38490 xv_ticks=81444 pm_write=8320 pm_read=295104 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=11 pm_ticks=38512 xv_ticks=93410 pm_write=8320 pm_read=311488 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=12 pm_ticks=44180 xv_ticks=85813 pm_write=8320 pm_read=327872 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=13 pm_ticks=33940 xv_ticks=75157 pm_write=8320 pm_read=344256 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=14 pm_ticks=34506 xv_ticks=73973 pm_write=8320 pm_read=360640 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=15 pm_ticks=34676 xv_ticks=73009 pm_write=8320 pm_read=377024 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=16 pm_ticks=35468 xv_ticks=75549 pm_write=8320 pm_read=393408 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=17 pm_ticks=37784 xv_ticks=74547 pm_write=8320 pm_read=409792 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=18 pm_ticks=38339 xv_ticks=74907 pm_write=8320 pm_read=426176 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=19 pm_ticks=40895 xv_ticks=91417 pm_write=8320 pm_read=442560 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=20 pm_ticks=40181 xv_ticks=78004 pm_write=8320 pm_read=458944 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=21 pm_ticks=41084 xv_ticks=76008 pm_write=8320 pm_read=475328 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=22 pm_ticks=40906 xv_ticks=74445 pm_write=8320 pm_read=491712 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=23 pm_ticks=48002 xv_ticks=73637 pm_write=8320 pm_read=508096 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=24 pm_ticks=42386 xv_ticks=76266 pm_write=8320 pm_read=524480 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=25 pm_ticks=43803 xv_ticks=73512 pm_write=8320 pm_read=540864 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=26 pm_ticks=44371 xv_ticks=75020 pm_write=8320 pm_read=557248 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=27 pm_ticks=45007 xv_ticks=73911 pm_write=8320 pm_read=573632 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=28 pm_ticks=45920 xv_ticks=71324 pm_write=8320 pm_read=590016 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=29 pm_ticks=50455 xv_ticks=77459 pm_write=8320 pm_read=606400 pm_flush=138 order=1
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=30 pm_ticks=50665 xv_ticks=75386 pm_write=8320 pm_read=622784 pm_flush=138 order=0
+PMFS_PERF_SAMPLE mode=overwrite size=1024 i=31 pm_ticks=50523 xv_ticks=71922 pm_write=8320 pm_read=639168 pm_flush=138 order=1
+PMFS_PERF_BATCH mode=overwrite size=1024 count=32 pm_ticks=2521614 xv_ticks=2446908 pm_write=266240 pm_read=29091840 pm_flush=4416 order=1
+PMFS_PERF_PASS mode=overwrite size=1024 samples=32 warmup=4
+$ 

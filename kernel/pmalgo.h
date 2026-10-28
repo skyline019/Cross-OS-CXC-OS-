@@ -86,10 +86,27 @@ struct pm_algo {
   uint64 fuse_puts;
   uint64 fuse_seals;
   uint64 fuse_gets;
+  // Volatile software counters; reset on mount, not physical device telemetry.
+  uint64 exact_hits;
+  uint64 fallback_run_probes;
+  uint64 posting_skips;
+  uint64 file_write_bytes;
+  uint64 file_identical_bytes;
+  uint64 file_identical_ops;
+  uint64 file_cdc_attempts;
+  uint64 file_cdc_planned_chunks;
+  uint64 file_fixed_attempts;
+  uint64 compact_calls;
+  uint64 compact_input_records;
+  uint64 compact_output_records;
+  uint64 compact_output_pages;
 };
 
 void pm_algo_init(struct pm_algo *a, struct pmfs *fs);
 int pm_algo_recover(struct pm_algo *a);
+// Validate and mark an immutable run chain under its own checkpoint tail.
+int pm_algo_trace_runs(struct pmfs *fs, uint32 head, uint32 tail, uint64 *bits,
+                       uint64 *run_count);
 uint64 pm_algo_new_chunk_key(struct pm_algo *a);
 int pm_algo_is_internal_key(uint64 key);
 struct pm_algo *pm_algo_global(void);
@@ -97,6 +114,8 @@ struct pm_algo *pm_algo_global(void);
 // Write path: put into memtable; seal flushes one immutable run + commit.
 int pm_put(struct pm_algo *a, uint64 key, const void *val, uint32 len);
 int pm_seal(struct pm_algo *a); // mem → run → pmfs_commit; then maintain
+// Explicit full-chain COW merge; requires no pending memtable or file stream.
+int pm_compact(struct pm_algo *a);
 
 // Fast read: cells → segs new-to-old → bloom → fences → page.
 int pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 dstcap,

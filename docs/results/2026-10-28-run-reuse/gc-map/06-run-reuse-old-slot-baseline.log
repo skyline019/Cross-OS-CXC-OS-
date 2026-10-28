@@ -1,0 +1,15 @@
+
+xv6 kernel is booting
+
+pmem: instrumentation only; no hardware cache writeback
+pmem: MAP ready base=0x88000000 usable=0x1e00000 fdt=0x89e00000 backend=ordinary-ram
+ONBOX_PMFS_PMEM0_PASS mode=MAP backend=map size=31453184
+pmfs: mount ok epoch=530 slot=1 tail=24 pages=7679
+ONBOX_PMFS_MOUNT_PASS epoch=530 slot=1 emul=0
+pmfs: ready (v3, boot selftests disabled)
+hart 2 starting
+hart 1 starting
+init: starting sh
+$ pmfs_regress old
+PMFS_REGRESS_PASS mode=old
+$ 

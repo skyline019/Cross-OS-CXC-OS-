@@ -80,12 +80,16 @@ pmfile_trial(int n, const char *payload)
   char path[12], buf[VAL_LEN];
   for (i = 0; i < n; i++) {
     mkpath(path, i);
+    if ((fd = open(path, O_RDONLY)) >= 0) {
+      close(fd);
+      return -2; // refuse to measure or overwrite a preexisting file
+    }
     if ((fd = open(path, O_CREATE | O_RDWR)) < 0 ||
         write(fd, payload, VAL_LEN) != VAL_LEN || fsync(fd) != 0 ||
         close(fd) != 0 || (fd = open(path, O_RDONLY)) < 0 ||
         read(fd, buf, sizeof(buf)) != VAL_LEN ||
-        memcmp(buf, payload, VAL_LEN) != 0 || close(fd) != 0 ||
-        unlink(path) != 0)
+        memcmp(buf, payload, VAL_LEN) != 0 || read(fd, buf, 1) != 0 ||
+        close(fd) != 0 || unlink(path) != 0)
       return -1;
   }
   return 0;
@@ -98,12 +102,16 @@ xv6_trial(int n, const char *payload)
   char path[8], buf[VAL_LEN];
   for (i = 0; i < n; i++) {
     mkname(path, i);
+    if ((fd = open(path, O_RDONLY)) >= 0) {
+      close(fd);
+      return -2; // identical namespace precondition on both backends
+    }
     if ((fd = open(path, O_CREATE | O_RDWR)) < 0 ||
         write(fd, payload, VAL_LEN) != VAL_LEN || fsync(fd) != 0 ||
         close(fd) != 0 || (fd = open(path, O_RDONLY)) < 0 ||
         read(fd, buf, sizeof(buf)) != VAL_LEN ||
-        memcmp(buf, payload, VAL_LEN) != 0 || close(fd) != 0 ||
-        unlink(path) != 0)
+        memcmp(buf, payload, VAL_LEN) != 0 || read(fd, buf, 1) != 0 ||
+        close(fd) != 0 || unlink(path) != 0)
       return -1;
   }
   return 0;
@@ -160,9 +168,9 @@ main(int argc, char *argv[])
       printf("ONBOX_PMFS_BENCH_FAIL stage=FILE code=%d\n", t);
       exit(1);
     }
-    printf(
-      "BENCH_TRIAL N=%d t=%d kv=%d file=%d xv6=%d count_pmfs=%d count_xv6=%d\n",
-      n, t, (int)kv[t], (int)file[t], (int)xv6[t], n, n);
+    printf("BENCH_TRIAL N=%d t=%d kv=%lu file=%lu xv6=%lu count_pmfs=%d "
+           "count_xv6=%d\n",
+           n, t, kv[t], file[t], xv6[t], n, n);
   }
   if (pmfs_stat(&after) != 0) {
     printf("ONBOX_PMFS_BENCH_FAIL stage=STAT code=2\n");
@@ -176,11 +184,9 @@ main(int argc, char *argv[])
   wa = logical ? phys * 100 / logical : 0;
   // Rates are operations per million r_time ticks, not ops/s or CPU cycles.
   printf(
-    "ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%d median_file=%d median_xv6=%d ratio=%d fratio=%d thr_file=%d thr_xv6=%d logical=%d phys=%d wa_x100=%d count_pmfs=%d count_xv6=%d units=r_time_ticks\n",
-    TRIALS, n, (int)med_kv, (int)med_file, (int)med_xv6,
-    (int)(med_xv6 * 100 / med_kv), (int)(med_xv6 * 100 / med_file),
-    (int)((unsigned long)n * 1000000UL / med_file),
-    (int)((unsigned long)n * 1000000UL / med_xv6), (int)logical, (int)phys,
-    (int)wa, n, n);
+    "ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%lu median_file=%lu median_xv6=%lu ratio=%lu fratio=%lu thr_file=%lu thr_xv6=%lu logical=%lu phys=%lu wa_x100=%lu count_pmfs=%d count_xv6=%d units=r_time_ticks\n",
+    TRIALS, n, med_kv, med_file, med_xv6, med_xv6 * 100 / med_kv,
+    med_xv6 * 100 / med_file, (unsigned long)n * 1000000UL / med_file,
+    (unsigned long)n * 1000000UL / med_xv6, logical, phys, wa, n, n);
   exit(0);
 }

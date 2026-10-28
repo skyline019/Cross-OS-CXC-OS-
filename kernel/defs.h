@@ -34,8 +34,11 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filefsync(struct file*);
-void            filepm_init(struct file*, int, int, char*, uint, int, int);
+int             filepm_open_locked(struct file*, const char*, int, uint, int, int, int, int);
+void            filepm_init_dir(struct file*, int);
 int             filepm_sync_all(void);
+long            fileseek(struct file*, long, int);
+int             filegetdents(struct file*, uint64, int);
 int             filewrite(struct file*, uint64, int n);
 
 // fs.c

@@ -169,6 +169,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->cwd_pm = 0;
   p->state = UNUSED;
 }
 
@@ -288,6 +289,9 @@ kfork(void)
     if (p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+  np->cwd_pm = p->cwd_pm;
+  if (np->cwd_pm)
+    pmfile_pin(np->cwd_pm);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -348,6 +352,10 @@ kexit(int status)
     }
   }
 
+  if (p->cwd_pm) {
+    pmfile_unpin(p->cwd_pm);
+    p->cwd_pm = 0;
+  }
   begin_op();
   iput(p->cwd);
   end_op();

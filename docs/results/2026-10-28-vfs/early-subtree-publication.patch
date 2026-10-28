@@ -1,0 +1,12 @@
+--- a/kernel/pmfile.c
++++ b/kernel/pmfile.c
+@@ -922,6 +922,9 @@
+     memmove(renamed, newpath, newlen);
+     memmove(renamed + newlen, saved[i].name + oldlen, n - oldlen + 1);
+     name_copy(dents[i].name, renamed);
++    // Deliberately wrong: publish the root before all descendants.
++    if (i == src && pmfile_store_meta() != 0)
++      return -1;
+   }
+   dents[src].parent = parent;
+   if (pmfile_store_meta() != 0) {

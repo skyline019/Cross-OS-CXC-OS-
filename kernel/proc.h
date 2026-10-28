@@ -99,6 +99,7 @@ struct proc {
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
-  struct inode *cwd;           // Current directory
+  struct inode *cwd;           // Native cwd, or native root when cwd_pm != 0
+  int cwd_pm;                  // Pinned PMFS directory inode, 0 for native cwd
   char name[16];               // Process name (debugging)
 };

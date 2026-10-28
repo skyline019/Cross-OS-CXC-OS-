@@ -107,6 +107,8 @@ extern uint64 sys_pmfs_put(void);
 extern uint64 sys_pmfs_get(void);
 extern uint64 sys_pmfs_seal(void);
 extern uint64 sys_pmfs_stat(void);
+extern uint64 sys_pmfs_metrics(void);
+extern uint64 sys_pmfs_compact(void);
 extern uint64 sys_cycles(void);
 extern uint64 sys_pmfs_create(void);
 extern uint64 sys_pmfs_fopen(void);
@@ -120,8 +122,12 @@ extern uint64 sys_pmfs_readdir(void);
 extern uint64 sys_pmfs_format(void);
 extern uint64 sys_pmfs_fstat(void);
 extern uint64 sys_pmfs_fault(void);
+extern uint64 sys_pmfs_trace(void);
 extern uint64 sys_fsync(void);
 extern uint64 sys_xv6_log_fault(void);
+extern uint64 sys_lseek(void);
+extern uint64 sys_getdents(void);
+extern uint64 sys_rename(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -153,6 +159,9 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_get]     = sys_pmfs_get,
   [SYS_pmfs_seal]    = sys_pmfs_seal,
   [SYS_pmfs_stat]    = sys_pmfs_stat,
+  [SYS_pmfs_metrics] = sys_pmfs_metrics,
+  [SYS_pmfs_compact] = sys_pmfs_compact,
+  [SYS_pmfs_trace]   = sys_pmfs_trace,
   [SYS_cycles]       = sys_cycles,
   [SYS_pmfs_create]  = sys_pmfs_create,
   [SYS_pmfs_fopen]   = sys_pmfs_fopen,
@@ -168,6 +177,9 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_fault]   = sys_pmfs_fault,
   [SYS_fsync]        = sys_fsync,
   [SYS_xv6_log_fault] = sys_xv6_log_fault,
+  [SYS_lseek]        = sys_lseek,
+  [SYS_getdents]     = sys_getdents,
+  [SYS_rename]       = sys_rename,
   // clang-format on
 };
 

@@ -19,6 +19,10 @@ struct pmdev {
   uint32 npages;
   uint32 writes;
   uint32 syncs;
+  uint64 read_bytes;
+  uint64 write_bytes;
+  uint64 page_writes;
+  uint64 checkpoint_word_stores;
   uint64 dirty[PMDEV_DIRTY_WORDS];
 };
 

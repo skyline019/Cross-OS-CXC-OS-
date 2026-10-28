@@ -23,6 +23,7 @@ OBJS = \
   $K/log.o \
   $K/sleeplock.o \
   $K/file.o \
+  $K/vfs.o \
   $K/pipe.o \
   $K/exec.o \
   $K/sysfile.o \
@@ -35,6 +36,7 @@ OBJS = \
   $K/pmcdc.o \
   $K/pmstream.o \
   $K/pmdev.o \
+  $K/pmtrace.o \
   $K/pmfs.o \
   $K/pmalgo.o \
   $K/pmindex.o \
@@ -167,10 +169,16 @@ UPROGS=\
 	$U/_sync\
 	$U/_pmfs_probe\
 	$U/_pmfs_bench\
+	$U/_pmfs_perf\
 	$U/_pmformat\
 	$U/_pmfs_regress\
 	$U/_pmfs_posix\
 	$U/_pmfs_file\
+	$U/_pmfs_eff\
+	$U/_pmstats\
+	$U/_pmcompact\
+	$U/_pmfs_gc\
+	$U/_vfstest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -275,6 +283,8 @@ bench-sweep: kernel-emul
 # Independent protocol specification model with three mutation controls.
 test-model:
 	python3 tools/check_persist_model.py
+	python3 tools/check_vfs_model.py
+	python3 tools/check_gc_model.py
 
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.
@@ -287,6 +297,10 @@ native-log-build:
 test-xv6-crash: native-log-build
 	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py crash
 
+.PHONY: test-native-rename-recovery
+test-native-rename-recovery: native-log-build
+	python3 tools/native_rename_recovery.py --cpus $(CPUS) --qemu $(QEMU)
+
 # Software-boundary fault injection is test-only and can hang the guest.
 # The harness uses temporary copies of fs.img and the shared guest-RAM file.
 recovery-build:
@@ -295,6 +309,40 @@ recovery-build:
 
 test-recovery: recovery-build
 	python3 tools/pmfs_recovery.py --cpus $(CPUS) $(RECOVERY_ARGS)
+
+# Disposable build: first rebuild a MAP/fault-injection kernel, then test
+# checkpoint/page boundaries of an atomic directory-subtree rename.
+.PHONY: test-vfs test-vfs-recovery
+test-vfs:
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py vfs
+
+test-vfs-recovery: recovery-build
+	python3 tools/vfs_recovery.py --cpus $(CPUS) --qemu $(QEMU) $(RECOVERY_ARGS)
+
+# Test-only source-level tracing; the replayer uses private MAP images and a
+# single hart. This rebuilds the checkout, so use a disposable copy.
+.PHONY: trace-build test-trace-replay
+trace-build:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMFS_TRACE" $K/kernel fs.img
+
+test-trace-replay: trace-build
+	python3 tools/pmfs_trace_replay.py --qemu $(QEMU) --output .ci-logs/trace-replay --max-images 32
+
+# Explicit compaction/GC checks. The space-limit target intentionally rebuilds
+# a tiny volatile device and must only run in a disposable checkout.
+.PHONY: test-pmfs-gc test-pmfs-gc-recovery test-pmfs-gc-nospace
+test-pmfs-gc:
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py 'test_pmfs_gc$$'
+
+test-pmfs-gc-recovery: recovery-build
+	python3 tools/pmfs_gc_recovery.py --cpus $(CPUS) --qemu $(QEMU) $(RECOVERY_ARGS)
+
+test-pmfs-gc-nospace:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMFS_EMUL_BYTES=131072" $K/kernel fs.img
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py 'test_pmfs_nospace$$'
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py 'test_pmfs_soak$$'
 
 test-recovery-zicbom:
 	$(MAKE) clean

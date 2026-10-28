@@ -34,6 +34,16 @@ pattern(char *p, int n, int seed)
     p[i] = (char)((i * 37 + seed) & 255);
 }
 
+// With default CDC parameters this 1024 B pattern yields four chunks, all
+// within the ordinary-fd extent bound, and must survive multiple reboots.
+static void
+cdc_pattern(char *p)
+{
+  int i;
+  for (i = 0; i < 1024; i++)
+    p[i] = (char)(i * 17 + i % 7);
+}
+
 static int
 write_file(const char *path, const char *p, int n)
 {
@@ -76,6 +86,9 @@ check_common(int a_new, int updated)
   if (check_file("/t/a", s, strlen(s)) != 0 ||
       check_file("/t/abandon", ABANDON, strlen(ABANDON)) != 0)
     return -1;
+  cdc_pattern(data);
+  if (check_file("/t/cdc", data, sizeof(data)) != 0)
+    return -6;
   pattern(data, 512, updated ? 29 : 11);
   for (i = 0; i < 2; i++) {
     if (pmfs_get(KEY_LONG, result, sizeof(result) / 2, &len) != 1 ||
@@ -100,9 +113,15 @@ check_common(int a_new, int updated)
 static void
 init_image(const char *mode)
 {
+  int fd;
   CHECK(pmfs_format() == 0, 1);
   CHECK(pmfs_format() < 0, 2); // already mounted: never format implicitly
   CHECK(pmfs_mkdir("/t") == 0, 3);
+  cdc_pattern(data);
+  fd = open("/pm/t/cdc", O_CREATE | O_RDWR);
+  CHECK(fd >= 0 && write(fd, data, sizeof(data)) == sizeof(data) &&
+          fsync(fd) == 0 && close(fd) == 0,
+        9);
   CHECK(pmfs_create("/t/a") == 0 && write_file("/t/a", OLD, strlen(OLD)) == 0,
         4);
   CHECK(pmfs_create("/t/delete") == 0 &&
@@ -226,16 +245,28 @@ index_test(const char *mode, int populate)
       val[2] = 'k';
       val[3] = '!';
       CHECK(pmfs_put(0x10000UL + i, val, sizeof(val)) == 0, 50);
-      if (i % 32 == 31)
+      // Build more than 128 runs to exercise multiple posting words after
+      // restart, as well as the 512-key exact-index overflow.
+      if (i % 4 == 3)
         CHECK(pmfs_seal() == 0, 51);
     }
+    // Refresh both tracked and untracked keys after the exact table fills.
+    CHECK(pmfs_put(0x10000UL, "new!", 4) == 0 &&
+            pmfs_put(0x10000UL + 520, "end!", 4) == 0 && pmfs_seal() == 0,
+          53);
   }
   for (i = 0; i < 576; i++) {
-    CHECK(pmfs_get(0x10000UL + i, result, 512, &len) == 1 && len == 4 &&
-            (unsigned char)result[0] == (i & 255) &&
-            (unsigned char)result[1] == (i >> 8) && result[2] == 'k' &&
-            result[3] == '!',
-          52);
+    CHECK(pmfs_get(0x10000UL + i, result, 512, &len) == 1 && len == 4, 52);
+    if (i == 0) {
+      CHECK(memcmp(result, "new!", 4) == 0, 54);
+    } else if (i == 520) {
+      CHECK(memcmp(result, "end!", 4) == 0, 56);
+    } else {
+      CHECK((unsigned char)result[0] == (i & 255) &&
+              (unsigned char)result[1] == (i >> 8) && result[2] == 'k' &&
+              result[3] == '!',
+            55);
+    }
   }
 }
 
@@ -301,7 +332,10 @@ fd_write_test(const char *mode)
   unsigned int len;
   struct stat st;
   CHECK(mkdir("/pm/t/sub") == 0, 85);
-  CHECK(open("/pm/t/sub", O_RDONLY) < 0 && chdir("/pm/t") < 0, 86);
+  fd = open("/pm/t/sub", O_RDONLY);
+  CHECK(fd >= 0 && fstat(fd, &st) == 0 && st.type == T_DIR && close(fd) == 0 &&
+          chdir("/pm/t") == 0 && chdir("/") == 0,
+        86);
   CHECK(link("/pm/t/a", "block-link") < 0 && link("README", "/pm/t/link") < 0,
         87);
   fd = open("/pm/t/native", O_CREATE | O_RDWR);
@@ -416,6 +450,20 @@ main(int argc, char **argv)
     printf("PMFS_REGRESS_DIRTY_READY\n");
     for (;;)
       pause(100);
+  } else if (strcmp(mode, "trace") == 0) {
+    int fd = pmfs_fopen("/t/a");
+    CHECK(fd >= 0 && pmfs_trace(1) == 0, 120);
+    CHECK(pmfs_fwrite(fd, NEW, strlen(NEW)) == (int)strlen(NEW), 121);
+    CHECK(pmfs_fsync(fd) == 0 && pmfs_trace(2) == 0, 122);
+    CHECK(pmfs_trace(0) == 0 && pmfs_fclose(fd) == 0, 123);
+  } else if (strcmp(mode, "traceprobe") == 0) {
+    // The host decides whether old/new/invalid is expected at the replay cut.
+    if (check_common(1, 0) == 0)
+      printf("PMFS_TRACE_ORACLE state=new\n");
+    else if (check_common(0, 0) == 0)
+      printf("PMFS_TRACE_ORACLE state=old\n");
+    else
+      printf("PMFS_TRACE_ORACLE state=invalid\n");
   } else if (strcmp(mode, "fault") == 0 && argc == 4) {
     int fd = pmfs_fopen("/t/a");
     CHECK(fd >= 0 && pmfs_fwrite(fd, NEW, strlen(NEW)) == (int)strlen(NEW), 74);
