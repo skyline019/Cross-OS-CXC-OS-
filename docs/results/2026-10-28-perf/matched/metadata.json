@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-28T12:59:33.384074+00:00",
+  "git_commit": null,
+  "git_status_porcelain": null,
+  "kernel_sha256": "37e555f91969bca2444ffcbae13fd29c1d64bfed11de2642c0611c85163e5ffc",
+  "image_sha256": "9ebf7dfb5e49f0b93837dae85475c569a652e2f73729dadc9c9f4a0a4fe57207",
+  "source_sha256": "7baab2da7d315846f6de4a26f82e2d0d92b2b3a972bbd2548882def39ed86632",
+  "qemu_sha256": "d10a02554a5d6efa7d925391c096617403f3f49bcbed21b33bbd995ccd7ac164",
+  "qemu_path": "/home/user/.cache/pmfs-tools/qemu-build/qemu-system-riscv64",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "host": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "cpus": 1,
+  "backend": "volatile EMUL",
+  "runs": 10,
+  "warmup_boots": 1,
+  "guest_warmup_transactions_per_backend": 4,
+  "samples": 32,
+  "batch_transactions_per_backend": 32,
+  "batch_order": "alternates by boot; batch after interleaved latency samples",
+  "sizes": [
+    8,
+    64,
+    512,
+    1024
+  ],
+  "modes": [
+    "roundtrip",
+    "overwrite"
+  ],
+  "seed": 20261028,
+  "build_notes": "Zig 0.13.0 wrappers, base 7b7d8d1 + uncommitted worktree sources, default EMUL, QEMU 9.2.0 TCG, one hart",
+  "durability": "NOT equivalent: PMFS touch+fence, native xv6 global log sync without virtio flush",
+  "warning": "QEMU TCG guest time and software requests, not physical PMEM performance",
+  "timebase_frequency_hz": 10000000,
+  "timebase_source": "QEMU virt generated DTB /cpus/timebase-frequency",
+  "dtb_sha256": "9d9d77235aaf7404a4663b7e64167ac83b2822512e6d1a2aca4c73d6815f8afb",
+  "dtb_command": [
+    "/home/user/.cache/pmfs-tools/qemu-build/qemu-system-riscv64",
+    "-machine",
+    "virt,dumpdtb=/tmp/pmfs-perf-1wqfs8r2/qemu-virt.dtb",
+    "-bios",
+    "none",
+    "-m",
+    "128M",
+    "-smp",
+    "1",
+    "-nographic"
+  ]
+}

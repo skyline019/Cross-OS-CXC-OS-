@@ -62,6 +62,7 @@ entry("pmfs_readdir");
 entry("pmfs_format");
 entry("pmfs_fstat");
 entry("pmfs_fault");
+entry("pmfs_trace");
 entry("fsync");
 entry("xv6_log_fault");
 entry("lseek");

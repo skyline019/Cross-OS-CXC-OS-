@@ -8,6 +8,7 @@
 #include "sleeplock.h"
 #include "pmem.h"
 #include "pmdev.h"
+#include "pmtrace.h"
 #include "pmfs.h"
 #include "pmalgo.h"
 #include "pmindex.h"
@@ -178,6 +179,7 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
     return -1;
   word = (volatile uint64 *)(raw + 8);
   *word = 0;
+  pmtrace_store((void *)word, sizeof(*word), 1);
   fs->dev.write_bytes += sizeof(*word);
   fs->dev.checkpoint_word_stores++;
   pmem_persist((void *)word, sizeof(*word));
@@ -192,6 +194,7 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
 
   commit = ((uint64)s->chk << 32) | s->state;
   *word = commit;
+  pmtrace_store((void *)word, sizeof(*word), 1);
   fs->dev.write_bytes += sizeof(*word);
   fs->dev.checkpoint_word_stores++;
   fault_point(4);
@@ -292,9 +295,60 @@ pmfs_commit(struct pmfs *fs)
   fault_point(1);
   if (pmfs_write_sb_slot(fs, &sb, slot) != 0)
     return -1;
+  // A metadata-only publication retains the exact same immutable run graph.
+  // Copy its already validated hint; headers/roots are still checked at every
+  // allocation. A changed head is invalidated unless the seal path later
+  // installs a separately read-back-verified one-run extension.
+#ifdef PMFS_GC_NO_HINTS
+  fs->gc_run_valid[slot] = 0; // benchmark ablation: retrace after publication
+#else
+  if (fs->gc_run_valid[fs->sb_slot] &&
+      fs->gc_run_head[fs->sb_slot] == fs->run_head &&
+      fs->gc_run_tail[fs->sb_slot] <= fs->tail) {
+    memmove(fs->gc_run_bits[slot], fs->gc_run_bits[fs->sb_slot],
+            sizeof(fs->gc_run_bits[slot]));
+    fs->gc_run_head[slot] = fs->run_head;
+    fs->gc_run_tail[slot] = fs->gc_run_tail[fs->sb_slot];
+    fs->gc_run_valid[slot] = 1;
+  } else {
+    fs->gc_run_valid[slot] = 0;
+  }
+#endif
   fs->epoch = next_epoch;
   fs->sb_slot = slot;
   return 0;
+}
+
+// Called only after a successful single-run commit AND read-back verification.
+// The old slot's chain was traced during allocation; the new run is disjoint
+// from both slots and points to that old head. A stale/missing hint is simply
+// ignored and the next allocation falls back to a complete independent scan.
+void
+pmfs_gc_note_seal(struct pmfs *fs, uint32 old_head, uint32 page, uint32 n)
+{
+  uint32 active, old, i;
+#ifdef PMFS_GC_NO_HINTS
+  // Keep all validation/reclamation logic, disabling only cache propagation.
+  return;
+#endif
+  if (!fs || !fs->mounted || !n || page < PMFS_DATA0 || page >= fs->tail ||
+      n > fs->tail - page || fs->run_head != page)
+    return;
+  active = fs->sb_slot;
+  old = active ^ 1u;
+  if (!fs->gc_run_valid[old] || fs->gc_run_head[old] != old_head ||
+      fs->gc_run_tail[old] > fs->tail)
+    return;
+  for (i = 0; i < n; i++)
+    if (fs->gc_run_bits[old][(page + i) >> 6] & (1ULL << ((page + i) & 63)))
+      return;
+  memmove(fs->gc_run_bits[active], fs->gc_run_bits[old],
+          sizeof(fs->gc_run_bits[active]));
+  for (i = 0; i < n; i++)
+    fs->gc_run_bits[active][(page + i) >> 6] |= 1ULL << ((page + i) & 63);
+  fs->gc_run_head[active] = page;
+  fs->gc_run_tail[active] = fs->tail;
+  fs->gc_run_valid[active] = 1;
 }
 
 int
@@ -341,13 +395,15 @@ pmfs_gc_live(struct pmfs *fs, uint64 *live)
         goto bad;
       active_seen = 1;
     }
-    if (!fs->gc_run_valid[slot] || fs->gc_run_head[slot] != sb.run_head) {
+    if (!fs->gc_run_valid[slot] || fs->gc_run_head[slot] != sb.run_head ||
+        fs->gc_run_tail[slot] > sb.tail) {
       memset(fs->gc_run_bits[slot], 0, sizeof(fs->gc_run_bits[slot]));
       fs->gc_run_valid[slot] = 0;
       if (pm_algo_trace_runs(fs, sb.run_head, sb.tail, fs->gc_run_bits[slot],
                              &fs->gc_trace_runs) != 0)
         goto bad;
       fs->gc_run_head[slot] = sb.run_head;
+      fs->gc_run_tail[slot] = sb.tail;
       fs->gc_run_valid[slot] = 1;
     }
     for (i = 0; i < PMDEV_DIRTY_WORDS; i++)
@@ -369,6 +425,67 @@ pmfs_gc_live(struct pmfs *fs, uint64 *live)
 bad:
   fs->gc_failed_scans++;
   return -1;
+}
+
+// Reserve a batch of disjoint contiguous runs before writing any of them.
+// Reusable pages must be unreachable from BOTH valid checkpoint object graphs;
+// pages reserved earlier in this same batch are protected by the local bitmap.
+// The frontier is changed only after the entire plan succeeds. This function,
+// like the rest of PMFS's global scratch, requires pmfs_lock.
+int
+pmfs_alloc_runs(struct pmfs *fs, const uint32 *sizes, uint32 count, uint32 *out)
+{
+  static uint64 live[PMDEV_DIRTY_WORDS];
+  uint32 frontier, cursor, reused = 0, i;
+
+  if (!fs || !fs->mounted || !sizes || !out || count == 0 ||
+      count > PM_MAX_RUNS || fs->tail < PMFS_DATA0 || fs->tail > fs->npages ||
+      pmfs_gc_live(fs, live) != 0)
+    return -1;
+  frontier = fs->tail;
+  cursor = fs->gc_cursor;
+  if (cursor < PMFS_DATA0 || cursor >= fs->tail)
+    cursor = PMFS_DATA0;
+  for (i = 0; i < count; i++) {
+    uint32 n = sizes[i], scanned = 0, span = fs->tail - PMFS_DATA0,
+           pid = cursor;
+    uint32 j;
+    int found = 0;
+    if (n == 0 || n > PMFS_MAX_RUN_PAGES)
+      return -1;
+    while (scanned < span) {
+      if (n <= fs->tail - pid) {
+        for (j = 0; j < n; j++)
+          if (live[(pid + j) >> 6] & (1ULL << ((pid + j) & 63)))
+            break;
+        if (j == n) {
+          found = 1;
+          break;
+        }
+      }
+      scanned++;
+      if (++pid >= fs->tail)
+        pid = PMFS_DATA0;
+    }
+    if (found) {
+      reused += n;
+      cursor = pid + n;
+      if (cursor >= fs->tail)
+        cursor = PMFS_DATA0;
+    } else {
+      if (n > fs->npages - frontier)
+        return -2; // a valid plan cannot fit; no state or page was changed
+      pid = frontier;
+      frontier += n;
+    }
+    for (j = 0; j < n; j++)
+      live[(pid + j) >> 6] |= 1ULL << ((pid + j) & 63);
+    out[i] = pid;
+  }
+  fs->tail = frontier;
+  fs->gc_cursor = cursor;
+  fs->gc_reused_run_pages += reused;
+  return 0;
 }
 
 int
@@ -725,6 +842,11 @@ pmfs_init(void)
   }
   printk("ONBOX_PMFS_MOUNT_PASS epoch=%d slot=%d emul=%d\n", (int)g_fs.epoch,
          g_fs.sb_slot, emul);
+#ifdef PMFS_GC_NO_HINTS
+  printk("ONBOX_PMFS_GC_HINTS mode=disabled\n");
+#else
+  printk("ONBOX_PMFS_GC_HINTS mode=enabled\n");
+#endif
 #ifdef PMFS_SELFTEST
   pmcontract_mark("MOUNT", 1);
   rc = pmfs_storage_selftest();

@@ -50,6 +50,8 @@ int pmfs_mkdir(const char *);
 int pmfs_readdir(const char *, char *dst, int cap);
 int pmfs_format(void);
 int pmfs_fault(int stage, int skip);
+// Test-only; returns -1 unless the kernel is built with PMFS_TRACE.
+int pmfs_trace(int mode);
 int pmfs_fstat(const char *path, unsigned int *size, unsigned int *type);
 
 // ulib.c

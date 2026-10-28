@@ -40,6 +40,7 @@ struct pmfs_metrics {
   uint64 compact_input_records;
   uint64 compact_output_records;
   uint64 compact_output_pages;
+  uint64 gc_reused_run_pages; // attempts, including transactions rolled back
 };
 
 #endif

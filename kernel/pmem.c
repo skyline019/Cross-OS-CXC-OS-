@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "pmem.h"
+#include "pmtrace.h"
 #include "pmcontract.h"
 
 // Word 0: MAP probe. Word 1: PMEM1 selftest. Word 2: durable across power-loss (PMEM2).
@@ -282,6 +283,7 @@ pmem_flush(void *p, uint64 n)
     (void)*v; // instrumentation-only stand-in, NOT a persistence operation
 #endif
     flush_lines_total++;
+    pmtrace_flush((void *)a);
   }
   __sync_synchronize();
 }
@@ -291,6 +293,7 @@ pmem_fence(void)
 {
   __sync_synchronize();
   asm volatile("fence rw, rw" ::: "memory");
+  pmtrace_drain();
 }
 
 void

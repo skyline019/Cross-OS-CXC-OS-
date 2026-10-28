@@ -6,6 +6,7 @@
 #include "defs.h"
 #include "pmem.h"
 #include "pmdev.h"
+#include "pmtrace.h"
 
 static void
 pmdev_memcpy(void *dst, const void *src, uint32 n)
@@ -25,6 +26,7 @@ pmdev_open(struct pmdev *d, void *base, uint64 nbytes)
   d->npages = (uint32)(nbytes / PMDEV_PAGE);
   d->writes = 0;
   d->syncs = 0;
+  pmtrace_bind(base, nbytes);
   return 0;
 }
 
@@ -64,6 +66,7 @@ pmdev_write(struct pmdev *d, pm_page_t pid, uint32 off, const void *src,
   if (!pmdev_valid(d, pid, off, len) || src == 0)
     return -1;
   pmdev_memcpy(d->base + (uint64)pid * PMDEV_PAGE + off, src, len);
+  pmtrace_store(d->base + (uint64)pid * PMDEV_PAGE + off, len, 0);
   d->writes++;
   d->write_bytes += len;
   if (len)

@@ -697,6 +697,57 @@ sys_getdents(void)
 
 // Atomic rename is implemented for PMFS; native and cross-backend rename
 // return -1 instead of pretending to provide an atomic operation.
+// Limited native rename: move an existing regular file to an unused name in
+// the same directory by replacing one dirent within one xv6 log transaction.
+// Cross-directory moves, directory moves and replacement remain unsupported.
+static int
+native_rename_same_dir(struct vnode *op, struct vnode *np, const char *oname,
+                       const char *nname, int oslash, int nslash)
+{
+  struct inode *dp = op->ip, *src = 0, *target = 0;
+  struct dirent de;
+  char olddisk[DIRSIZ], newdisk[DIRSIZ];
+  uint off;
+  int rc = -1, isfile = 0;
+
+  if (op->kind != VFS_XV6 || np->kind != VFS_XV6 || dp->dev != np->ip->dev ||
+      dp->inum != np->ip->inum || oslash || nslash ||
+      namecmp(oname, ".") == 0 || namecmp(oname, "..") == 0 ||
+      namecmp(nname, ".") == 0 || namecmp(nname, "..") == 0 ||
+      vfs_ismount(op, oname) || vfs_ismount(np, nname))
+    return -1;
+  native_name(olddisk, oname);
+  native_name(newdisk, nname);
+  ilock(dp);
+  if (dp->type != T_DIR || dp->nlink == 0 ||
+      (src = dirlookup(dp, olddisk, &off)) == 0 || src->inum == dp->inum)
+    goto done;
+  ilock(src);
+  isfile = src->type == T_FILE && src->nlink > 0;
+  iunlock(src);
+  if (!isfile)
+    goto done;
+  target = dirlookup(dp, newdisk, 0);
+  if (target) {
+    // POSIX specifies no change for two names of the same inode.
+    if (target->inum == src->inum && target->dev == src->dev)
+      rc = 0;
+    goto done;
+  }
+  memset(&de, 0, sizeof(de));
+  de.inum = src->inum;
+  memmove(de.name, newdisk, DIRSIZ);
+  if (writei(dp, 0, (uint64)&de, off, sizeof(de)) == sizeof(de))
+    rc = 0;
+done:
+  iunlock(dp);
+  if (target)
+    iput(target);
+  if (src)
+    iput(src);
+  return rc;
+}
+
 uint64
 sys_rename(void)
 {
@@ -709,8 +760,13 @@ sys_rename(void)
     return -1;
   begin_op();
   if (vfs_walk(old, 1, &op, oname, &oslash) != 0 ||
-      vfs_walk(new, 1, &np, nname, &nslash) != 0 || op.kind != VFS_PMFS ||
-      np.kind != VFS_PMFS)
+      vfs_walk(new, 1, &np, nname, &nslash) != 0)
+    goto out;
+  if (op.kind == VFS_XV6 && np.kind == VFS_XV6) {
+    rc = native_rename_same_dir(&op, &np, oname, nname, oslash, nslash);
+    goto out;
+  }
+  if (op.kind != VFS_PMFS || np.kind != VFS_PMFS)
     goto out;
   pmfs_lock();
   if (pmfile_child_path(op.pmino, oname, opath) == 0 &&

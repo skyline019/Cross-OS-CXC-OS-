@@ -6,9 +6,11 @@
 #include "kernel/pmstats.h"
 #include "user/user.h"
 
-#define BASE    0x2200000000000000UL
-#define PENDING 0x2300000000000001UL
-#define NKEYS   600
+#define BASE        0x2200000000000000UL
+#define PENDING     0x2300000000000001UL
+#define SOAKKEY     0x2400000000000001UL
+#define NKEYS       600
+#define SOAK_WRITES 400
 #define CHECK(c, code)                                                         \
   do {                                                                         \
     if (!(c)) {                                                                \
@@ -222,12 +224,18 @@ rollback(const char *mode)
   attempts = 2 * before.fs_tail_pages;
   for (i = 0; i < attempts; i++)
     CHECK(pmfs_fault(8, 0) == 0 && rename("/pm/g/f", "/pm/g/fm") < 0, 26);
+  // Reclaimed run output can consume every hole below tail, so rollback may
+  // repeatedly reserve the append frontier instead of a reused page. Both
+  // cases must write the injected page and leave the checkpoint unchanged.
   CHECK(pmfs_metrics(&after, sizeof(after)) == 0 &&
           after.fs_tail_pages == before.fs_tail_pages &&
-          after.gc_reused_pages > before.gc_reused_pages,
+          after.dev_page_writes - before.dev_page_writes == (uint64)attempts &&
+          after.checkpoint_word_stores == before.checkpoint_word_stores &&
+          after.gc_reused_pages >= before.gc_reused_pages,
         27);
-  printf("PMFS_GC_ROLLBACK attempts=%d reused=%lu\n", attempts,
-         after.gc_reused_pages - before.gc_reused_pages);
+  printf("PMFS_GC_ROLLBACK attempts=%d reused=%lu append_attempts=%lu\n",
+         attempts, after.gc_reused_pages - before.gc_reused_pages,
+         (uint64)attempts - (after.gc_reused_pages - before.gc_reused_pages));
   verify(mode);
 }
 
@@ -276,6 +284,64 @@ nospace(const char *mode)
          after.fs_tail_pages, after.fs_capacity_pages);
 }
 
+// Explicit maintenance on a tiny device: bring the high-water mark close to
+// full, then retire old checkpoint chains and keep writing well beyond the
+// device's page count. On persistent test backends, soak-check verifies the
+// final value in a fresh boot. This is not automatic or full-device GC.
+static void
+soak(const char *mode)
+{
+  struct pmfs_metrics before, m, after;
+  uint len;
+  int i, warmup = 0;
+
+  CHECK(pmfs_metrics(&before, sizeof(before)) == 0, 40);
+  // The 32-page EMUL target intentionally tests near-full reuse. For a normal
+  // MAP/NVDIMM image, use a small fixed warmup rather than fill 32 MiB.
+  while ((before.fs_capacity_pages <= 64 &&
+          before.fs_tail_pages + 5 < before.fs_capacity_pages) ||
+         (before.fs_capacity_pages > 64 && warmup < 12)) {
+    make_value(warmup++, 0);
+    CHECK(pmfs_put(SOAKKEY, value, sizeof(value)) == 0 && pmfs_seal() == 0 &&
+            pmfs_metrics(&before, sizeof(before)) == 0 && warmup < 200,
+          41);
+  }
+  CHECK(pmfs_compact() == 0 && pmfs_seal() == 0 &&
+          pmfs_metrics(&before, sizeof(before)) == 0,
+        42);
+  for (i = 0; i < SOAK_WRITES; i++) {
+    make_value(i, 1);
+    CHECK(pmfs_put(SOAKKEY, value, sizeof(value)) == 0 && pmfs_seal() == 0, 43);
+    CHECK(pmfs_get(SOAKKEY, got, sizeof(value), &len) == 1 &&
+            len == sizeof(value) && memcmp(got, value, sizeof(value)) == 0,
+          44);
+    if (i % 8 == 7 && i + 1 < SOAK_WRITES)
+      CHECK(pmfs_compact() == 0 && pmfs_seal() == 0, 45);
+  }
+  CHECK(pmfs_metrics(&after, sizeof(after)) == 0 &&
+          after.gc_reused_run_pages - before.gc_reused_run_pages >=
+            SOAK_WRITES &&
+          after.gc_failed_scans == before.gc_failed_scans &&
+          after.fs_tail_pages <= after.fs_capacity_pages,
+        46);
+  m = after;
+  printf("PMFS_GC_SOAK_PASS writes=%d compactions=%lu warmup=%d "
+         "reused_run_pages=%lu tail_before=%lu tail_after=%lu capacity=%lu\n",
+         SOAK_WRITES, m.compact_calls - before.compact_calls, warmup,
+         m.gc_reused_run_pages - before.gc_reused_run_pages,
+         before.fs_tail_pages, m.fs_tail_pages, m.fs_capacity_pages);
+}
+
+static void
+soak_check(const char *mode, int previous)
+{
+  uint len;
+  make_value(SOAK_WRITES - 1 - previous, 1);
+  CHECK(pmfs_get(SOAKKEY, got, sizeof(value), &len) == 1 &&
+          len == sizeof(value) && memcmp(got, value, sizeof(value)) == 0,
+        47);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -300,6 +366,12 @@ main(int argc, char **argv)
     rollback(mode);
   else if (strcmp(mode, "nospace") == 0)
     nospace(mode);
+  else if (strcmp(mode, "soak") == 0)
+    soak(mode);
+  else if (strcmp(mode, "soak-check") == 0)
+    soak_check(mode, 0);
+  else if (strcmp(mode, "soak-previous") == 0)
+    soak_check(mode, 1);
   else if (strcmp(mode, "fault") == 0 && argc == 4) {
     CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 22);
     pmfs_compact();

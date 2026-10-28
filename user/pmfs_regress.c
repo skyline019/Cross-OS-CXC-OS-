@@ -450,6 +450,20 @@ main(int argc, char **argv)
     printf("PMFS_REGRESS_DIRTY_READY\n");
     for (;;)
       pause(100);
+  } else if (strcmp(mode, "trace") == 0) {
+    int fd = pmfs_fopen("/t/a");
+    CHECK(fd >= 0 && pmfs_trace(1) == 0, 120);
+    CHECK(pmfs_fwrite(fd, NEW, strlen(NEW)) == (int)strlen(NEW), 121);
+    CHECK(pmfs_fsync(fd) == 0 && pmfs_trace(2) == 0, 122);
+    CHECK(pmfs_trace(0) == 0 && pmfs_fclose(fd) == 0, 123);
+  } else if (strcmp(mode, "traceprobe") == 0) {
+    // The host decides whether old/new/invalid is expected at the replay cut.
+    if (check_common(1, 0) == 0)
+      printf("PMFS_TRACE_ORACLE state=new\n");
+    else if (check_common(0, 0) == 0)
+      printf("PMFS_TRACE_ORACLE state=old\n");
+    else
+      printf("PMFS_TRACE_ORACLE state=invalid\n");
   } else if (strcmp(mode, "fault") == 0 && argc == 4) {
     int fd = pmfs_fopen("/t/a");
     CHECK(fd >= 0 && pmfs_fwrite(fd, NEW, strlen(NEW)) == (int)strlen(NEW), 74);

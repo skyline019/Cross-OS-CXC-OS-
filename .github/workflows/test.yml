@@ -33,7 +33,11 @@ jobs:
       - name: Repeated-boot benchmark validation and smoke
         run: |
           python3 -m unittest discover -s tools -p test_bench_repro.py
+          python3 -m unittest discover -s tools -p test_bench_perf.py
+          python3 -m unittest discover -s tools -p test_bench_gc_hints.py
+          python3 -m unittest discover -s tools -p test_pmfs_trace_replay.py
           python3 tools/bench_repro.py --runs 2 --warmup 0 --n 4 --output .ci-logs/bench-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
+          python3 tools/bench_perf.py --runs 2 --warmup 0 --samples 4 --sizes 64 --modes roundtrip,overwrite --output .ci-logs/perf-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
       - name: xv6 usertests, three harts
         run: ./test-xv6.py usertests
       - name: VFS namespace, descriptors and atomic rename, three harts
@@ -48,6 +52,8 @@ jobs:
         run: CPUS=1 XV6_LOG_DIR=.ci-logs/xv6-default python3 tools/xv6_log_recovery.py --expect-disabled
       - name: xv6 deterministic block-log and orphan recovery, one hart
         run: CPUS=1 XV6_LOG_DIR=.ci-logs/xv6-crash-cpu1 make test-xv6-crash
+      - name: Native same-directory rename log recovery and negative control
+        run: python3 tools/native_rename_recovery.py --cpus 1 --log-dir .ci-logs/native-rename
       - name: xv6 deterministic block-log recovery, three harts
         run: CPUS=3 XV6_LOG_DIR=.ci-logs/xv6-crash-cpu3 ./test-xv6.py log
       - name: xv6 concurrent block-log writes and readback
@@ -70,6 +76,8 @@ jobs:
         run: python3 tools/pmfs_gc_recovery.py --log-dir .ci-logs/gc-recovery
       - name: Zicbom instruction-path oracle on QEMU TCG
         run: make test-recovery-zicbom RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
+      - name: Actual PMFS operation trace replay and negative controls (sampled model)
+        run: make test-trace-replay
       - name: Compaction low-space preflight (tiny disposable EMUL device)
         run: make test-pmfs-gc-nospace
       - name: Upload test serial logs

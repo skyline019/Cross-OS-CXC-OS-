@@ -19,56 +19,73 @@ RUN_MAGIC = 0x33554E52534D5055
 NIL = 0xFFFFFFFF
 
 
-def run_pages(ram, head, tail):
-    """Follow on-media immutable run headers to inspect physical page sets."""
-    pages, seen = set(), set()
+def inspect_runs(ram, head, tail):
+    """Independently validate v1/v2 run chains and return pages and latest KV.
+
+    v2 permits a higher-address predecessor after safe page reuse. Sequence
+    order, bounds, checksums and an explicit page set prevent cycles/overlap.
+    """
+    pages, seen, records = set(), set(), {}
+    newer_seq = 1 << 64
     with ram.open("rb") as f:
         while head != NIL:
             if head in seen or not 4 <= head < tail or len(seen) >= 256:
                 raise RuntimeError("invalid run chain in inspection")
             seen.add(head)
             f.seek(recovery.FS_START + head * recovery.PAGE)
-            hdr = struct.unpack("<QQIIIIIIII", f.read(48))
-            magic, _, version, page0, page_index, count, previous = hdr[:7]
-            if (magic != RUN_MAGIC or version != 1 or page0 != head or
-                    page_index != 0 or not 1 <= count <= 8 or head + count > tail or
-                    (previous != NIL and not 4 <= previous < head)):
-                raise RuntimeError("invalid run header in inspection")
-            pages.update(range(head, head + count))
-            head = previous
-    return pages
-
-
-def latest_records(ram, head, tail):
-    """Extract latest values for an independent old/new logical comparison."""
-    records, seen = {}, set()
-    with ram.open("rb") as f:
-        while head != NIL:
-            if head in seen or not 4 <= head < tail or len(seen) >= 256:
-                raise RuntimeError("invalid chain while inspecting records")
-            seen.add(head)
-            f.seek(recovery.FS_START + head * recovery.PAGE)
             first = struct.unpack("<QQIIIIIIII", f.read(48))
-            count, previous = first[5], first[6]
-            if first[0] != RUN_MAGIC or not 1 <= count <= 8 or head + count > tail:
-                raise RuntimeError("invalid run while inspecting records")
+            magic, seq, version, page0, index, count, previous = first[:7]
+            if (magic != RUN_MAGIC or version not in (1, 2) or page0 != head or
+                    index != 0 or not 1 <= count <= 8 or head + count > tail or
+                    not 0 < seq < newer_seq or
+                    (previous != NIL and
+                     (not 4 <= previous < tail or previous == head or
+                      (version == 1 and previous >= head)))):
+                raise RuntimeError("invalid run header in inspection")
+            last_key, nrecords = None, 0
             for index in range(count):
-                f.seek(recovery.FS_START + (head + index) * recovery.PAGE)
-                data = f.read(recovery.PAGE)
+                pid = head + index
+                if pid in pages:
+                    raise RuntimeError("overlapping run pages")
+                pages.add(pid)
+                f.seek(recovery.FS_START + pid * recovery.PAGE)
+                data = bytearray(f.read(recovery.PAGE))
+                if len(data) != recovery.PAGE:
+                    raise RuntimeError("short run page")
                 hdr = struct.unpack_from("<QQIIIIIIII", data)
-                if hdr[0] != RUN_MAGIC or hdr[3] != head or hdr[4] != index:
-                    raise RuntimeError("inconsistent page while inspecting records")
+                saved = hdr[8]
+                struct.pack_into("<I", data, 40, 0)
+                checksum = 2166136261
+                for byte in data:
+                    checksum = ((checksum ^ byte) * 16777619) & 0xFFFFFFFF
+                struct.pack_into("<I", data, 40, saved)
+                if (hdr[:7] != (magic, seq, version, head, index, count, previous) or
+                        saved != checksum or not 1 <= hdr[7] <= 32 or
+                        nrecords + hdr[7] > 32):
+                    raise RuntimeError("inconsistent or corrupt run page")
                 offset = 48
                 for _ in range(hdr[7]):
                     if offset + 16 > len(data):
                         raise RuntimeError("short record header")
                     key, length, _ = struct.unpack_from("<QII", data, offset)
-                    if length > 512 or offset + 16 + length > len(data):
-                        raise RuntimeError("bad record length")
-                    records.setdefault(key, data[offset + 16:offset + 16 + length])
+                    if (length > 512 or offset + 16 + length > len(data) or
+                            (last_key is not None and key <= last_key)):
+                        raise RuntimeError("bad record length or key order")
+                    records.setdefault(key, bytes(data[offset + 16:offset + 16 + length]))
+                    last_key = key
                     offset += 16 + length
+                    nrecords += 1
+            newer_seq = seq
             head = previous
-    return records
+    return pages, records
+
+
+def run_pages(ram, head, tail):
+    return inspect_runs(ram, head, tail)[0]
+
+
+def latest_records(ram, head, tail):
+    return inspect_runs(ram, head, tail)[1]
 
 
 def page_bytes(ram, pid):
@@ -128,6 +145,30 @@ def main():
                 raise RuntimeError(f"{label}: unexpected recovered run count")
 
         run.regress(base, "init", "format-and-baseline")
+
+        # Repeatedly overwrite one key with explicit compaction and slot
+        # retirement; both latest and previous views must survive a reboot even
+        # when newer runs occupy lower physical pages than older runs.
+        soaked = clone("reused-run-soak")
+        guest(soaked, "soak", "run-reuse-soak")
+        _, soak_slot, soak_sb = recovery.newest_sb(soaked)
+        run_pages(soaked, soak_sb[7], soak_sb[4])
+        head, saw_v2 = soak_sb[7], False
+        while head != NIL:
+            with soaked.open("rb") as f:
+                f.seek(recovery.FS_START + head * recovery.PAGE)
+                hdr = struct.unpack("<QQIIIIIIII", f.read(48))
+            saw_v2 |= hdr[2] == 2
+            head = hdr[6]
+        if not saw_v2:
+            raise RuntimeError("soak did not exercise a non-monotonic v2 run chain")
+        guest(soaked, "soak-check", "run-reuse-reboot")
+        run.regress(soaked, "old", "run-reuse-baseline")
+        recovery.flip_byte(soaked, recovery.FS_START + soak_slot * recovery.PAGE + 8)
+        guest(soaked, "soak-previous", "run-reuse-old-slot-fallback")
+        run.regress(soaked, "old", "run-reuse-old-slot-baseline")
+        soaked.unlink()
+
         guest(base, "prepare", "prepare-compaction")
         output = guest(base, "check", "old-view-reboot")
         match = re.search(r"PMFS_GC_VIEW runs=(\d+)", output)

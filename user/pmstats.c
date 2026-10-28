@@ -28,9 +28,10 @@ main(void)
          m.kv_exact_hits, m.kv_fallback_run_probes, m.kv_posting_skips,
          m.kv_page_reads);
   printf("gc_scans=%lu gc_trace_runs=%lu gc_reused_pages=%lu "
-         "gc_failed_scans=%lu tail_pages=%lu capacity_pages=%lu runs=%lu\n",
-         m.gc_scans, m.gc_trace_runs, m.gc_reused_pages, m.gc_failed_scans,
-         m.fs_tail_pages, m.fs_capacity_pages, m.kv_runs);
+         "gc_reused_run_pages=%lu gc_failed_scans=%lu tail_pages=%lu "
+         "capacity_pages=%lu runs=%lu\n",
+         m.gc_scans, m.gc_trace_runs, m.gc_reused_pages, m.gc_reused_run_pages,
+         m.gc_failed_scans, m.fs_tail_pages, m.fs_capacity_pages, m.kv_runs);
   printf(
     "compact_calls=%lu compact_input_records=%lu compact_output_records=%lu "
     "compact_output_pages=%lu\n",

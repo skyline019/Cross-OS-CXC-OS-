@@ -154,8 +154,22 @@ class Runner:
                     raise RuntimeError(f"{label}: kernel panic")
             raise RuntimeError(f"{label}: timeout waiting for {description}")
 
+        def complete_line_with(needle, start):
+            end = output.rfind(b"\n")
+            if end < start:
+                return None
+            for match in re.finditer(re.escape(needle), output[start:end + 1]):
+                line_start = max(start, output.rfind(b"\n", start, start + match.start()) + 1)
+                line_end = output.find(b"\n", start + match.end(), end + 1)
+                if line_end >= 0:
+                    return line_start, line_end + 1
+            return None
+
+        def prompt_after(start):
+            return re.search(rb"(?:^|\n)\$ $", bytes(output[start:])) is not None
+
         try:
-            wait_for(lambda: b"init: starting sh" in output and b"$ " in output, "shell")
+            wait_for(lambda: b"init: starting sh" in output and prompt_after(0), "shell")
             expected_backend = b"nvdimm" if self.nvdimm else b"map"
             if expect_map and (b"ONBOX_PMFS_PMEM0_PASS mode=MAP backend=" + expected_backend) not in output:
                 raise RuntimeError(f"{label}: expected PMFS backend {expected_backend.decode()}")
@@ -169,12 +183,15 @@ class Runner:
                 proc.stdin.write((command + "\n").encode())
                 proc.stdin.flush()
                 needle = marker.encode()
-                wait_for(lambda: needle in output[offset:] or failure_marker in output[offset:], marker)
-                if failure_marker in output[offset:]:
-                    raise RuntimeError(f"{label}: guest oracle reported failure")
+                wait_for(lambda: complete_line_with(needle, offset) is not None or
+                         complete_line_with(failure_marker, offset) is not None, marker)
+                failed = complete_line_with(failure_marker, offset)
+                if failed is not None:
+                    line = bytes(output[failed[0]:failed[1]]).decode("utf-8", "replace").strip()
+                    raise RuntimeError(f"{label}: guest oracle reported failure: {line}")
                 if expect_shell:
-                    start = output.index(needle, offset) + len(needle)
-                    wait_for(lambda: b"$ " in output[start:], "completed shell prompt")
+                    start = complete_line_with(needle, offset)[1]
+                    wait_for(lambda: prompt_after(start), "completed shell prompt")
         except Exception:
             sys.stderr.write(output[-6000:].decode("utf-8", "replace") + "\n")
             raise

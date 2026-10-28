@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-28T13:02:34.508809+00:00",
+  "arms": {
+    "enabled": {
+      "source_sha256": "7baab2da7d315846f6de4a26f82e2d0d92b2b3a972bbd2548882def39ed86632",
+      "kernel_sha256": "37e555f91969bca2444ffcbae13fd29c1d64bfed11de2642c0611c85163e5ffc",
+      "image_sha256": "9ebf7dfb5e49f0b93837dae85475c569a652e2f73729dadc9c9f4a0a4fe57207"
+    },
+    "disabled": {
+      "source_sha256": "7baab2da7d315846f6de4a26f82e2d0d92b2b3a972bbd2548882def39ed86632",
+      "kernel_sha256": "2bdc460fba40b479919b842b5761dc1e372360c9bb32f317548dc430d101e270",
+      "image_sha256": "9ebf7dfb5e49f0b93837dae85475c569a652e2f73729dadc9c9f4a0a4fe57207"
+    }
+  },
+  "qemu_sha256": "d10a02554a5d6efa7d925391c096617403f3f49bcbed21b33bbd995ccd7ac164",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "host": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "backend": "volatile EMUL",
+  "same_pmfs_sync_contract": true,
+  "control_flag": "PMFS_GC_NO_HINTS",
+  "build_notes": "Zig 0.13.0 wrappers; identical source + fs image; control -DPMFS_GC_NO_HINTS; default EMUL; QEMU 9.2.0 TCG; one hart",
+  "runs": 10,
+  "warmup_boots": 1,
+  "samples": 32,
+  "sizes": [
+    64,
+    1024
+  ],
+  "modes": [
+    "overwrite"
+  ],
+  "seed": 20261028,
+  "warning": "same PMFS semantics, QEMU guest time and software requests only; not physical persistent memory or physical endurance",
+  "timebase_frequency_hz": 10000000,
+  "timebase_source": "QEMU virt generated DTB /cpus/timebase-frequency",
+  "dtb_sha256": "3e6bf02a90b7b6ab8a136209ea5f6b324de7d8f29907c731692cd1aa42b5b323",
+  "dtb_command": [
+    "/home/user/.cache/pmfs-tools/qemu-build/qemu-system-riscv64",
+    "-machine",
+    "virt,dumpdtb=/tmp/pmfs-gc-ablation-d5xfkc2o/qemu-virt.dtb",
+    "-bios",
+    "none",
+    "-m",
+    "128M",
+    "-smp",
+    "1",
+    "-nographic"
+  ]
+}

@@ -10,6 +10,7 @@
 #include "pmfs.h"
 #include "pmem.h"
 #include "pmstats.h"
+#include "pmtrace.h"
 
 uint64
 sys_pmfs_put(void)
@@ -146,6 +147,7 @@ sys_pmfs_metrics(void)
   m.compact_input_records = a->compact_input_records;
   m.compact_output_records = a->compact_output_records;
   m.compact_output_pages = a->compact_output_pages;
+  m.gc_reused_run_pages = fs->gc_reused_run_pages;
   pmfs_unlock();
   if (capacity > (int)sizeof(m))
     capacity = sizeof(m);
@@ -173,6 +175,18 @@ sys_pmfs_fault(void)
   argint(1, &skip);
   pmfs_lock();
   rc = pmfs_fault_arm(stage, skip);
+  pmfs_unlock();
+  return rc;
+}
+
+// In ordinary builds this test-only control always returns -1.
+uint64
+sys_pmfs_trace(void)
+{
+  int mode, rc;
+  argint(0, &mode);
+  pmfs_lock();
+  rc = pmtrace_control(mode);
   pmfs_unlock();
   return rc;
 }

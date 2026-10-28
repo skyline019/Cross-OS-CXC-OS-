@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "kernel_sha256": "b44b8a787a626fc709da7ceec54b50bbacec6230bed70e62482a45175a0e3aa9",
+  "fs_img_sha256": "02e17b32608d5d5ddc63eab9abf5977265e5b2dcce6989fccf2bea00f6c7a278",
+  "source_sha256": "7baab2da7d315846f6de4a26f82e2d0d92b2b3a972bbd2548882def39ed86632",
+  "qemu_sha256": "d10a02554a5d6efa7d925391c096617403f3f49bcbed21b33bbd995ccd7ac164",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "build_notes": "Zig 0.13.0, base 7b7d8d1 + uncommitted sources, PMEM_MAP PMFS_TRACE, QEMU 9.2.0 TCG, one hart",
+  "backend": "QEMU ordinary RAM MAP, single hart",
+  "line_bytes": 64,
+  "seed": 20261028,
+  "max_images": 0,
+  "limitations": "sampled source-level operations, 8-byte atomic commit assumption, assumed flush/drain model; no instruction trace or physical power loss",
+  "device_bytes": 31453184,
+  "baseline_sha256": "f806eb9ce84349a5a5e25fa2ef047d1334e966b71eabf873786b3e9955266a66",
+  "observed_final_sha256": "679f02b34227ef2c67c5df4427fbb11ed5d8d770f0d134662feb4e3374ecf998",
+  "event_counts": {
+    "W": 134,
+    "F": 134,
+    "D": 8,
+    "ACK": 1,
+    "END": 1
+  },
+  "final_reconstruction": "exact full-device byte match"
+}

@@ -224,6 +224,16 @@ def test_pmfs_nospace():
     q.stop()
     print("OK")
 
+def test_pmfs_soak():
+    print("Test repeated run-page reuse near the tiny device high-water mark")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc soak\n")
+    q.monitor(r'^PMFS_GC_PASS mode=soak$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=180)
+    q.stop()
+    print("OK")
+
 def test_efficiency():
     print("Test PMFS software write avoidance and exact/fallback queries")
     q = QEMU(True)

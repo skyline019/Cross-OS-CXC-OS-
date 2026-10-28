@@ -56,6 +56,28 @@ basic(const char *mode)
   struct vfs_dirent ent;
   struct dirent de;
 
+  // Native same-directory, non-replacing regular-file rename shares one log
+  // transaction and preserves open descriptors. Unsupported cases fail closed.
+  CHECK(mkdir("/vn") == 0 && mkdir("/vn/sub") == 0 &&
+          writefile("/vn/a", "native") == 0 &&
+          writefile("/vn/occupied", "other") == 0,
+        101);
+  fd = open("/vn/a", O_RDONLY);
+  CHECK(fd >= 0 && fstat(fd, &st) == 0 && rename("/vn/a", "/vn/b") == 0 &&
+          open("/vn/a", O_RDONLY) < 0 && checkfile("/vn/b", "native") == 0 &&
+          fstat(fd, &st2) == 0 && st.ino == st2.ino && read(fd, buf, 6) == 6 &&
+          memcmp(buf, "native", 6) == 0 && close(fd) == 0,
+        102);
+  CHECK(rename("/vn/b", "/vn/b") == 0 && link("/vn/b", "/vn/alias") == 0 &&
+          rename("/vn/b", "/vn/alias") == 0 &&
+          checkfile("/vn/b", "native") == 0 &&
+          checkfile("/vn/alias", "native") == 0 &&
+          rename("/vn/b", "/vn/occupied") < 0 &&
+          rename("/vn/b", "/vn/sub/moved") < 0 &&
+          rename("/vn/sub", "/vn/dir2") < 0 && rename("/vn/b/", "/vn/c") < 0 &&
+          checkfile("/vn/occupied", "other") == 0,
+        103);
+
   fd = open("/", O_RDONLY);
   CHECK(fd >= 0, 1);
   mounts = 0;
@@ -551,7 +573,25 @@ main(int argc, char **argv)
     basic(mode);
   else if (strcmp(mode, "capacity") == 0)
     capacity(mode);
-  else if (strcmp(mode, "prepare") == 0 || strcmp(mode, "prepare-replace") == 0)
+  else if (strcmp(mode, "native-init") == 0) {
+    CHECK(mkdir("/rn") == 0 && writefile("/rn/a", "rename-data") == 0 &&
+            writefile("/rn/guard", "guard") == 0,
+          104);
+  } else if (strcmp(mode, "native-old") == 0 ||
+             strcmp(mode, "native-new") == 0) {
+    int is_new = strcmp(mode, "native-new") == 0;
+    CHECK(checkfile(is_new ? "/rn/b" : "/rn/a", "rename-data") == 0 &&
+            open(is_new ? "/rn/a" : "/rn/b", O_RDONLY) < 0 &&
+            checkfile("/rn/guard", "guard") == 0,
+          105);
+  } else if (strcmp(mode, "native-move") == 0) {
+    CHECK(rename("/rn/a", "/rn/b") == 0, 106);
+  } else if (strcmp(mode, "native-fault") == 0 && argc == 3) {
+    CHECK(xv6_log_fault(atoi(argv[2])) == 0, 107);
+    rename("/rn/a", "/rn/b");
+    fail(mode, 108);
+  } else if (strcmp(mode, "prepare") == 0 ||
+             strcmp(mode, "prepare-replace") == 0)
     prepare(mode, strcmp(mode, "prepare-replace") == 0);
   else if (strcmp(mode, "old") == 0 || strcmp(mode, "old-replace") == 0)
     verify(mode, 0, strcmp(mode, "old-replace") == 0);
