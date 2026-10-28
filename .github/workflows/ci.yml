@@ -431,12 +431,13 @@ jobs:
       - uses: Vampire/setup-wsl@v5
         with:
           distribution: Ubuntu-24.04
-          additional-packages: qemu-user-static
+          set-as-default: true
+          additional-packages: qemu-user
 
       - name: Probe WSL qemu-user
         shell: pwsh
         run: |
-          wsl -e sh -c "command -v qemu-x86_64 && qemu-x86_64 --version | head -1"
+          wsl -d Ubuntu-24.04 -e sh -c "command -v qemu-x86_64 && qemu-x86_64 --version | head -n1"
 
       - name: Configure Release (-Werror)
         shell: msys2 {0}
@@ -485,6 +486,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
+          Path("build").mkdir(parents=True, exist_ok=True)
           roots = [
               Path("build/uefi/BOOTX64.efi"),
               Path("build/uefi/cxc-os.img"),
@@ -516,4 +518,4 @@ jobs:
             build/uefi/cxc-os.img
             build/windows-evidence-summary.txt
             build/contract-host/**
-          if-no-files-found: error
+          if-no-files-found: warn

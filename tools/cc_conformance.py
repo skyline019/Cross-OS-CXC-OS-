@@ -216,7 +216,7 @@ def patch_int80_to_syscall(blob: bytes) -> bytes:
 
 
 def _which_qemu_user() -> str | None:
-    for name in ("qemu-x86_64", "qemu-x86_64.exe"):
+    for name in ("qemu-x86_64", "qemu-x86_64.exe", "qemu-x86_64-static"):
         p = shutil.which(name)
         if p:
             return p
@@ -225,6 +225,34 @@ def _which_qemu_user() -> str | None:
 
 def _wsl_bin() -> str | None:
     return shutil.which("wsl")
+
+
+def _wsl_qemu_name() -> str | None:
+    """Return qemu-user binary name available inside default WSL distro."""
+    wsl = _wsl_bin()
+    if not wsl:
+        return None
+    probe = subprocess.run(
+        [
+            wsl,
+            "-e",
+            "sh",
+            "-c",
+            "command -v qemu-x86_64 || command -v qemu-x86_64-static",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        return None
+    line = (probe.stdout or "").strip().splitlines()
+    if not line:
+        return None
+    base = line[0].rsplit("/", 1)[-1]
+    if base in ("qemu-x86_64", "qemu-x86_64-static"):
+        return base
+    return None
 
 
 def _wsl_has(cmd: str) -> bool:
@@ -254,7 +282,7 @@ def elf_run_mode() -> str:
     if _which_qemu_user():
         return "qemu"
     # M301: MSYS2 host gcc + WSL qemu-user → semantic exit/stdout parity
-    if _wsl_has("qemu-x86_64"):
+    if _wsl_qemu_name():
         return "qemu"
     if _wsl_bin() and _wsl_has("sh"):
         return "run"
@@ -277,10 +305,11 @@ def run_elf(elf: bytes, work: Path) -> tuple[int, bytes]:
         if q:
             cmd = [q, str(path)]
         else:
+            qname = _wsl_qemu_name() or "qemu-x86_64"
             cmd = [
                 _wsl_bin() or "wsl",
                 "-e",
-                "qemu-x86_64",
+                qname,
                 to_build_path(path, True),
             ]
     elif mode == "run" and not sys.platform.startswith("linux"):
