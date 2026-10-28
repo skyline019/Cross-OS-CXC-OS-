@@ -77,7 +77,9 @@ def to_build_path(path: Path, use_wsl: bool) -> str:
 def build_compiler(work: Path) -> Path:
     prefix, cc = find_cc()
     use_wsl = bool(prefix)
-    out = work / ("cc_conf_compile" if use_wsl else "cc_conf_compile.exe")
+    # .exe only for native Windows PE host tools (not WSL/Linux).
+    win_native = sys.platform.startswith("win") and not use_wsl
+    out = work / ("cc_conf_compile.exe" if win_native else "cc_conf_compile")
     cmd = [
         *prefix,
         cc,

@@ -437,7 +437,8 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           set-as-default: true
-          additional-packages: python3 gcc
+          # libc6-dev/build-essential required: plain `gcc` lacks stdint.h.
+          additional-packages: python3 build-essential
 
       - name: Probe WSL guest ELF exec
         shell: pwsh
