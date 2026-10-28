@@ -29,7 +29,7 @@
 | **M298** | planted 二批 | ≥8 浅叶；`planted≤22`；`inputs_s=35` |
 | **M299** | asm_mode 深 CF | S-for/do/switch/break/continue/ternary/nested |
 | **M300** | planted 三批 | +9 叶（40 总）；`planted:13`；`inputs_s:44`；`__strchrnul` 别名 |
-| **M301** | Win CC_CONF 真跑 | WSL qemu-user；`--require-exec` 禁 `compile-elf` |
+| **M301** | Win CC_CONF 真跑 | WSL `mode=run`（或 qemu）；`--require-exec` 禁 `compile-elf` |
 | **M302** | 中场锁版 | midpoint-32；**v2.92.0** |
 
 **未宣称 A2**。`ONBOX_CCDRV_PASS` 是合同加深标签，不是 A2。
