@@ -1,27 +1,39 @@
-# 本科毕业论文 LaTeX（PMFS-KV）
+# 本科毕业论文 LaTeX（PMFS v3）
 
-> **旧草稿，不能直接提交。** 现有正文源码将普通 RAM/file-backed RAM 称为 NVDIMM，并对缓存刷写、掉电一致性及历史性能结果作了未经充分验证的完成式表述。`main.pdf` 为旧制品，本次未重编或验证。请根据[当前语义](../../docs/SEMANTICS.md)和[验证记录](../../docs/results/2026-10-28-efficiency/README.md)整体重写论文和重生成 PDF。
->
-> 新增 [`chapters/current-evidence.tex`](chapters/current-evidence.tex) 作为可供重写时使用的当前证据章节，包含明确限制及消融数据；**尚未接入旧 `main.tex`，也尚未编译校验**。不可只把该章拼进旧正文就当作完整论文。
+> **正文已按 v3 证据重写**（chap01–06、摘要、附录、图数据）。提交前仍须：换学校封面模板、填姓名、导师最终审阅措辞。  
+> 写作依据与文档索引见 [docs/README.md](../../docs/README.md)。
 
-## 产出
+## 章节与证据
 
-- PDF：`main.pdf`（A4，约 21 页，xelatex）
-- 精修图：`figures/plots.tex`（pgfplots 嵌入第 5 章）
+| 章 | 内容 | 主要证据 |
+|----|------|----------|
+| 1 绪论 | 题面四要件、贡献、非目标 | THESIS / CONTRIBUTIONS |
+| 2 相关工作 | PMFS/NOVA/崩溃测试/前序 | RELATED-WORK |
+| 3 设计 | `/pm`、后端、可见点、checkpoint | ARCHITECTURE / SEMANTICS |
+| 4 实现 | VFS、COW、刷写、oracle | CORE-WALKTHROUGH |
+| 5 实验 | recovery + matched perf + 消融 | results/2026-10-28-* |
+| 6 结论 | 合题口径与展望 | DEFENSE |
+| 附录 | 复现命令与设备边界 | CONTRACT / QEMU-NVDIMM |
 
-## WSL 编译
+`chapters/current-evidence.tex` 为早期可移植草稿，**默认未 `\include`**；内容已吸收进第 5 章。
+
+## 编译
 
 ```bash
-cd /mnt/e/OS/workspace-study/xv6-pmfs/thesis/latex
+cd thesis/latex
 make          # xelatex → bibtex → xelatex ×2
 ```
 
-依赖：`texlive`（`ctex`、`pgfplots`、`biblatex`/`bibtex`）、字体 **Noto Serif/Sans CJK SC**、TeX Gyre。
+依赖：TeX Live（`ctex`、`pgfplots`）、Noto CJK、TeX Gyre。
 
-## 封面信息
+## 图
 
-编辑 `main.tex` 中宏：`\ThesisAuthor`、`\ThesisAdvisor`、`\ThesisSchool` 等，或替换为学校正式封面模板。
+`figures/plots.tex` 使用 `docs/results/2026-10-28-perf` 与 efficiency 摘录数字。图注已写明契约不等价；勿删限制句。
 
-## 数据来源
+## 定稿检查清单
 
-实验表与图数据来自仓库 `docs/BENCH.md`（`make bench-sweep`）。
+- [ ] 封面宏 / 学校模板  
+- [ ] 摘要与第 1/5/6 章无「无条件掉电」「真机加速」完成式  
+- [ ] 表内数字与 results README 一致  
+- [ ] 参考文献 [BIB-AUDIT.md](BIB-AUDIT.md)  
+- [ ] 附录复现命令在 disposable checkout 抽测  

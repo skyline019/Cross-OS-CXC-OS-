@@ -1,6 +1,6 @@
 # PMFS v3：支持的文件语义与边界
 
-> 本文描述当前软件子集，而非完整 POSIX 或物理掉电保证。执行平台、故障模型和测得覆盖见[修复与验证报告](PMFS-REPAIR-REPORT.md)。
+> 本文描述当前软件子集，而非完整 POSIX 或物理掉电保证。执行平台、故障模型和测得覆盖见[修复与验证报告](PMFS-REPAIR-REPORT.md)；架构与代码直讲见[ARCHITECTURE](ARCHITECTURE.md)、[CORE-WALKTHROUGH](CORE-WALKTHROUGH.md)；总索引见[docs/README](README.md)。
 
 ## 1. 格式、挂载与数据保护
 

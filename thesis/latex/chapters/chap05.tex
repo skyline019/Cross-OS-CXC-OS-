@@ -1,176 +1,102 @@
 \chapter{实验与分析}
 \label{chap:eval}
 
-\section{实验环境}
+\section{实验环境与口径}
 
 \begin{table}[htbp]
   \centering
-  \caption{实验环境}
+  \caption{实验环境（代表性配置）}
   \label{tab:env}
   \begin{tabular}{ll}
     \toprule
     项 & 配置 \\
     \midrule
-    基线 & xv6-riscv（课题分支） \\
-    模拟器 & QEMU \texttt{virt}，\texttt{CPUS=1} \\
-    后端 & EMUL（8\,MiB）/ MAP / PMEM2（见第~\ref{chap:design}~章） \\
-    回归 & \texttt{usertests}、\texttt{contract}/\texttt{contract-strict}/MAP/PMEM2（CI） \\
-    计时 & 内核 \texttt{r\_time()} 相对单位；每 $N$ 取 5 trial 中位数；每 $N$ 独立开机 \\
+    基线 & xv6-riscv + PMFS v3 \\
+    模拟器 & QEMU 9.2.0 \texttt{virt}（TCG） \\
+    后端 & EMUL / MAP / 共享 RAM / 实验性 NVDIMM（补丁） \\
+    刷写 & 默认 touch+fence；可选 Zicbom \\
+    计时 & guest \texttt{r\_time}；设备树 timebase 10\,MHz（perf 记录） \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-数据复现：\texttt{make bench-sweep} 回填 \texttt{docs/BENCH.md}；契约：\texttt{make contract}、\texttt{contract-strict}、\texttt{contract-pmem}、\texttt{contract-pmem2}。公平消融见 \texttt{docs/ABLATION.md}。语义与故障矩阵见第~\ref{sec:semantics}~节与 \texttt{docs/SEMANTICS.md}。
+\textbf{两套结论：}架构面——相对 xv6 的同工作量软件路径量级差（持久契约\textbf{不等价}）；公平面——同 PMFS 内软件请求/策略效应。原始日志见仓库 \texttt{docs/results/}。
 
-\textbf{两套结论：}架构面——相对 xv6 日志路径的量级差；公平面——同载荷消融效应量。禁止把 \texttt{fratio} 读成同等 POSIX API 加速比。
-
-\section{功能、崩溃与掉电（尖刺证据）}
+\section{功能、恢复与模型（尖刺证据）}
 
 \begin{table}[htbp]
   \centering
-  \caption{契约验收用例}
+  \caption{主要验收门}
   \label{tab:contract}
-  \begin{tabular}{llll}
+  \begin{tabular}{p{3.2cm}p{4.2cm}p{5.0cm}}
     \toprule
-    用例 & 命令/阶段 & 期望 & 说明 \\
+    门类 & 命令/产物 & 可证明 / 不可证明 \\
     \midrule
-    总闸 & \texttt{make contract} & \texttt{ONBOX\_PMFS\_PASS} & EMUL 必过子集 \\
-    严格 & \texttt{contract-strict} & 同上 + A0--A4/\texttt{FAULT\_*} & POS/NEG/效应量 \\
-    MAP & \texttt{contract-pmem} & \texttt{mode=MAP}+PMEM1 & 窗口映射 \\
-    掉电 & \texttt{contract-pmem2} & \texttt{PMEM2\_PASS} & 文件后端杀启 \\
-    remount & \texttt{REMOUNT} & \texttt{equal=1} & sync 后字节等价 \\
-    故障 & \texttt{FAULT\_*} & 不可见 / chk 拒绝 & 未 sync；半页撕坏 \\
-    POSIX & \texttt{pmfs\_posix} & \texttt{POSIX\_PASS} & 真实文件 API，不升主线 \\
+    安全挂载 & recovery / repair 记录 & 拒绝空白/v2/损坏；非自动修复任意损坏 \\
+    进程重启 oracle & \texttt{test-recovery*} & 同后端杀进程后读回；非物理掉电 \\
+    VFS/硬链接 & \texttt{test-vfs*} & \texttt{/pm} 语义子集；非完整 POSIX \\
+    规格模型 & \texttt{test-model} & 有界协议+负控；非内核全轨迹证明 \\
+    轨迹重放 & \texttt{test-trace-*} & 源级范围采样；非指令级 \\
+    旧契约 smoke & \texttt{contract-full} 等 & 阶段码；破坏性 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-分析：契约套件使「完好 SB / 未提交不可见 / remount 等价 / 半页拒绝 / 窗口 persist」可机器判定；相对仅演示双槽结构，这是方法学差异，构成本文尖刺。
+分析：相对仅展示双槽结构，可脚本化的切点与负控构成方法学差异。实验性 NVDIMM 路径另以 QMP 核验设备类型/地址/独立后端，并跑通同类 oracle；仍不能外推宿主掉电。
 
-\section{性能：随 $N$ 变化的延迟}
+\section{架构面：对齐工作量的延迟与吞吐}
 
-对比路径故意不对等（表~\ref{tab:unequal}）。ratio$\gg 1$ 主要反映避免 virtio 日志与块栈的架构差，\textbf{不可}解读为同等完整 POSIX 下的千倍加速。
-
-\begin{table}[htbp]
-  \centering
-  \caption{故意不对等的对比维度}
-  \label{tab:unequal}
-  \begin{tabular}{p{2.0cm}p{5.0cm}p{5.2cm}}
-    \toprule
-    维度 & PMFS-KV / File & xv6 fs+log \\
-    \midrule
-    API & KV：put$\times N$+seal+get；
-         File：create/write/fsync$\times N$
-         & open/create+write(8B)$\times N$+sync \\
-    持久语义 & 双槽 SB + inode/dentry 页 & 块日志检查点 \\
-    I/O 栈 & 字节寻址窗口 / EMUL & virtio-blk + bio + log \\
-    元数据 & 有限 inode/dentry（无块位图日志） & 目录+inode+位图+log \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+对比两侧使用普通文件 API、相同成功操作数、内容与 EOF 校验；路径深度对齐。PMFS 样本取自 EMUL（易失），默认 flush 为 touch+fence；xv6 \texttt{fsync} 为全局日志同步且无设备 flush。故结果只支持\textbf{去块日志栈的架构级软件路径}叙事。
 
 \begin{table}[htbp]
   \centering
-  \caption{EMUL 下随 $N$ 变化的中位数与相对吞吐（5 trial，CDC 融合后）}
-  \label{tab:bench-n}
-  \begin{tabular}{rrrrrrr}
+  \caption{同工作量 p50 延迟与短批吞吐（摘录，QEMU TCG / 单 hart）}
+  \label{tab:matched}
+  \begin{tabular}{lrrrrr}
     \toprule
-    $N$ & med\_kv & med\_file & med\_xv6 & fratio$\times$100 & thr\_file & wa\_x100 \\
+    负载 & 字节 & PM p50(ms) & xv6 p50(ms) & PM txn/s & xv6 txn/s \\
     \midrule
-    8  & 33507 & 304451 & 5684939  & 1867 & 26 & 15384 \\
-    16 & 38448 & 486211 & 11208338 & 2305 & 32 & 17889 \\
-    32 & 53065 & 659056 & 25648605 & 3891 & 48 & 17721 \\
+    roundtrip & 8    & 2.140 & 21.812 & 467.3 & 45.2 \\
+    roundtrip & 1024 & 2.362 & 21.989 & 444.0 & 43.0 \\
+    overwrite & 8    & 1.476 & 7.479  & 704.7 & 125.7 \\
+    overwrite & 1024 & 1.791 & 7.437  & 583.6 & 130.5 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \FigNLatency
 
-观察：（1）xv6 随 $N$ 近似线性；（2）PMFS-File 每文件 fsync 仍避开块日志栈，fratio$\gg 1$；（3）File 路径因 CDC/stream/meta 提交高于纯 KV，但仍与 xv6 差一个数量级以上；（4）结论写作\textbf{量级优势 + 边界}。
-
-\section{写放大}
-
 \FigWaN
 
-小 value（8\,B）相对 4\,KiB 页对齐主导放大。CDC 融合后本负载下 $\mathrm{wa\_x100}$ 维持在高位且随 $N$ 近似平台（表~\ref{tab:bench-n}），属页粒度与 run 打包的预期行为；与 xv6 日志放大不同源，不可横向比绝对值。
+观察：roundtrip 上 PM 相对 xv6 约一个数量级延迟优势；短批吞吐同数量级差。PM 大块覆写吞吐低于小块，反映软件写路径成本。\textbf{禁止}写「真实持久内存千倍加速」。
 
-\section{MAP 与 EMUL 对照}
+\section{公平面：软件请求与提示消融}
 
-\begin{table}[htbp]
-  \centering
-  \caption{$N{=}32$ 时 EMUL 与 MAP}
-  \label{tab:map-emul}
-  \begin{tabular}{lrrrr}
-    \toprule
-    mode & med\_kv & med\_file & med\_xv6 & fratio$\times$100 \\
-    \midrule
-    EMUL & 53065  & 659056  & 25648605 & 3891 \\
-    MAP  & 113804 & 4301198 & 24439543 & 568 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+同 PMFS、同一 \texttt{fsync} 契约下，关闭可达性提示显著增加软件读请求并降低短批吞吐（64\,B 覆写吞吐比约 4.2$\times$，样本有限）。页写请求字节在两组相同，故消融\textbf{不}证明降低物理写入。
 
 \FigMapEmul
 
 \FigThr
 
-文件路径相对吞吐在 EMUL 下稳定高于 xv6 一个数量级以上（表中 \texttt{thr\_file}）。MAP 抬升软件路径开销后 fratio 下降但仍 $\gg 1$。EMUL 仍\textbf{不}代表真 NVDIMM 延迟。
+效率表（非替换 rename 页写 2$\rightarrow$1、内容同步 3$\rightarrow$2 等）见仓库 efficiency 结果；均为指定负载内核计数。
 
-\section{公平消融（公平面）}
+\section{维护与空间}
 
-\begin{table}[htbp]
-  \centering
-  \caption{A0--A4 公平消融效应量（EMUL，\texttt{contract-strict} 实测）}
-  \label{tab:ablation}
-  \begin{tabular}{lccrrr}
-    \toprule
-    变体 & CDC & batch seal & cycles & wa\_x100 & 解读 \\
-    \midrule
-    A0 & 开 & 开 & 30029 & 1600 & 默认策略 \\
-    A1 & 关 & 开 & 27490 & 1600 & 定长+批量 \\
-    A2 & 开 & 关 & 52066 & 4800 & 每 chunk seal，WA/时延升 \\
-    A3 & 关 & 关 & 36238 & 3200 & 定长+立即 seal \\
-    A4 & 开 & 开 & 24146 & 1600 & A0 复测（稳定性） \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-同 payload 下，关闭批量 seal（A2/A3）显著抬升 $\mathrm{wa\_x100}$ 与 cycles；A0/A4 同配置复测同量级，说明效应量可重复。公平面只据此表陈述，\textbf{不}与表~\ref{tab:bench-n} 的 fratio 混读。
+双槽保护下的页复用使指定元数据负载尾部高水位可控；显式压缩可归并 run，但需暂存空间，满盘可安全失败。软件写字节计数不是 NAND 擦除或器件寿命。
 
 \section{实现难点与失败史}
 
-下列踩坑用于证明系统是「调出来的」，并可复核。
-
-\paragraph{P0 启动栈溢出}
-\texttt{main()} 跑在原 4\,KiB/hart 的 \texttt{stack0} 上；自测栈上放置多页缓冲导致溢出，污染邻近内存。修复：页缓冲改 \texttt{static}；\texttt{stack0} 扩至 16\,KiB/hart。
-
-\paragraph{P1 \texttt{rdcycle} 非法指令}
-\texttt{timerinit} 未开放 \texttt{CY} 时，S 态 \texttt{rdcycle} 触发 \texttt{kerneltrap}。修复：改用已允许的 \texttt{r\_time()}，并在论文中不作墙钟 $\mu$s 解读。
-
-\paragraph{P2 QEMU NUMA / RAM 尺寸不匹配}
-仅配置 160\,M 文件后端而默认 $-m$ 仍为 128\,M 时，QEMU 立即退出，契约表现为超时。修复：文件后端启动同步 $-m$\,160M。
-
-\paragraph{P3 MAP 在 $-m$\,128M 下写 PMEMBASE}
-无物理后备窗口上的写探测导致 store fault。修复：仅 \texttt{-DPMEM\_MAP} 时映射并探测。
-
-\paragraph{P4 Bench 过早杀进程截断契约行}
-匹配到 \texttt{BENCH\_PASS} 子串即杀 QEMU，导致字段截断。修复：等待 \texttt{median\_xv6=} / \texttt{phys=} / \texttt{wa\_x100=} 齐全。
-
-\paragraph{P5 多 trial 撑爆段数}
-连续 seal 耗尽段视图导致后续 trial 失败。修复：提高 run/段余量、attach 压力阀、\textbf{每 $N$ 独立开机}扫参。
-
-\paragraph{P6 题面「文件系统」与实现漂移}
-早期曾偏并行 KV。修复：升格 dir/extent/CDC + 深化 \texttt{pmfs\_posix}，并以语义清单写死差集，避免题实不符。
+早期基线存在：破坏性 boot 自测改写介质、无条件自动 format、flush 仅遍历、跨进程文件读回失败、旧 bench 工作量不对齐等。v3 改为显式 format、安全挂载、COW 根、重启 oracle 与对齐 bench。细节见仓库踩坑与沙箱记录。这些叙述用于证明系统经故障闭环调出，而非一次性写成。
 
 \section{局限与威胁效度}
 
 \begin{enumerate}[leftmargin=2em]
-  \item QEMU 非真 NVDIMM；附录给出扩展路径但不喧宾夺主。
-  \item 架构面性能对比 API 异构；结论限于量级说明。公平面仅 A0--A4 同载荷可比。
-  \item 文件语义为可测子集：无 \texttt{lseek}/\texttt{mmap}/\texttt{rename}；容量受 extent/chunk 上限约束；默认 \texttt{CPUS=1}。
-  \item 计时为相对单位；外推墙钟或真机延迟需重新校准。
+  \item 设备：补丁 NVDIMM 非上游通用；MAP/共享 RAM 不是 NVDIMM。
+  \item 持久域：默认非硬件写回；TCG 无缓存层级；杀进程 $\neq$ 物理掉电。
+  \item 性能：契约不等价；单环境 TCG 样本；外推真机需重校准。
+  \item 功能：有界资源与粗粒度锁；非完整 POSIX；近满压缩可失败。
 \end{enumerate}
 
 \section{本章小结}
 
-尖刺（契约套件，含 remount/故障）+ 支撑柱（文件子系统/KV 核/PMEM2）+ 两套结论口径 + 可复核踩坑，构成实验章叙事主线；性能图服务于量级与写放大机制说明，消融表服务于公平面效应量，而非绝对公平微基准夺冠。
+实验主线是可复现提交验收与诚实假设；性能服务于架构级软件路径说明；公平面消融不得与架构面 fratio 混读。

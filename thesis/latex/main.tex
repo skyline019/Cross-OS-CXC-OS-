@@ -63,7 +63,7 @@
 % 页眉页脚
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[C]{\small 面向持久内存的文件系统设计与实现——基于xv6的PMFS}
+\fancyhead[C]{\small 面向持久内存的文件系统设计与实现——xv6 PMFS v3}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
@@ -83,7 +83,7 @@
 
 % ---------- 封面信息（可按学校模板替换）----------
 \newcommand{\ThesisTitle}{面向持久内存的文件系统设计与实现}
-\newcommand{\ThesisSubtitle}{基于 xv6 的 PMFS 文件子系统与可机器判定契约}
+\newcommand{\ThesisSubtitle}{基于 xv6 的 PMFS v3：受限\texttt{/pm}、COW 提交与可复现验收}
 \newcommand{\ThesisAuthor}{（姓名）}
 \newcommand{\ThesisAdvisor}{（指导教师）}
 \newcommand{\ThesisSchool}{（学院）}
@@ -122,26 +122,26 @@
 \addcontentsline{toc}{chapter}{摘要}
 \markboth{摘要}{摘要}
 
-持久内存（Persistent Memory, PMEM）以字节寻址方式提供近似 DRAM 的访问延迟，同时具备掉电后数据保留能力，为操作系统存储子系统提出了不同于块设备日志文件系统的一致性模型与工程验收问题。教学操作系统 xv6 以 virtio 块设备与日志型文件系统作为根文件系统，适合讲授经典 UNIX 语义，但难以直接承载「可机器判定的崩溃与掉电语义」这一工程化目标。
+持久内存（Persistent Memory, PMEM）以字节寻址提供近似 DRAM 的访问延迟并在掉电后保留数据，对以块设备与日志为中心的操作系统存储栈提出了新的一致性模型与验收问题。教学操作系统 xv6 以 virtio 与日志型文件系统为根，适合讲授经典 UNIX 语义，但难以直接承载「声明假设下的可复现提交验收」。
 
-本文按原题四要件，在 xv6-riscv 上实现并行于根文件系统的字节寻址 \textbf{PMFS 文件子系统}：映射 QEMU NVDIMM 仿真窗口；以 inode/dentry 页与双槽超级块重构去块设备布局；文件写入经 CDC/stream 切分后融合至 KV/run 核；以缓存行粒度 \texttt{pmem\_flush}+\texttt{fence} 有序协议保障掉电安全。后端含 EMUL、MAP 与 PMEM2（\texttt{memory-backend-file}）。语义上写死崩溃可见点与 POSIX 差集：仅 \texttt{fsync}/提交后写可见。
+本文按原题四要件，在 xv6-riscv 上实现 \textbf{PMFS v3}：保留根文件系统，经固定挂载点 \texttt{/pm} 提供受限文件子系统；以 COW 元数据与不可变 KV run 组织字节寻址布局，使文件数据路径不经 \texttt{bio}/\texttt{log}/\texttt{virtio}；以行级 flush 请求、可选 Zicbom \texttt{CBO.CLEAN} 与双槽 checkpoint 提交词实现轻量提交协议；为 QEMU 9.2.0 提供实验性独立 NVDIMM 补丁路径。语义上写死可见点与 POSIX 差集：仅成功 \texttt{fsync}/checkpoint 后承诺完整版本可读回。
 
-核心贡献是教学 OS 上\textbf{可机器判定的崩溃与掉电契约套件}（含 \texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2}）。实验分两套口径：架构面报告文件 API 相对原生 \texttt{fs+log} 的延迟中位数与相对吞吐；公平面以 A0--A4 公平消融给出切分/刷写效应量，并记录可复核踩坑。
+核心贡献是教学 OS 上\textbf{可复现的提交验收方法学}（进程重启切点 oracle、有界规格负控、轨迹采样）及受限但可测的文件子系统实现。实验分两套口径：架构面报告对齐工作量下相对原生 \texttt{fs+log} 的延迟/短批吞吐；公平面报告同契约软件请求消融；并明确设备模型与持久语义不等价。
 
-\textbf{关键词：}持久内存；NVDIMM；文件系统；崩溃一致性；写放大；xv6；契约测试；消融实验
+\textbf{关键词：}持久内存；NVDIMM；文件系统；崩溃一致性；写放大；xv6；契约测试；COW
 
 % ========== 英文摘要 ==========
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 \markboth{Abstract}{Abstract}
 
-Persistent memory (PMEM) offers byte-addressable access with near-DRAM latency while retaining data across power loss, which challenges the consistency model and acceptance methodology of OS storage stacks built around block devices. The teaching OS xv6 uses a virtio block device and a log-structured file system as its root file system; it is excellent for classic UNIX semantics but does not by itself provide machine-checkable crash and power-loss contracts.
+Persistent memory (PMEM) offers byte-addressable access with near-DRAM latency while retaining data across power loss, challenging OS storage stacks built around block devices and journaling. The teaching OS xv6 provides a virtio-backed log file system as root; it is excellent for classic UNIX semantics but does not by itself provide reproducible acceptance of PM commit protocols under explicit assumptions.
 
-This thesis implements \textbf{PMFS}, a byte-addressable persistent-memory \emph{file subsystem} alongside the xv6 root file system: QEMU NVDIMM-window mapping, inode/dentry layout without the block I/O stack, CDC/stream chunking fused into a KV/run core, and a cache-line flush + fence persist protocol. Backends include EMUL, MAP, and file-backed PMEM2. Crash visibility is stated explicitly: only post-\texttt{fsync}/commit writes survive remount.
+This thesis implements \textbf{PMFS v3}, a bounded persistent-memory file subsystem on a fixed \texttt{/pm} mount beside the xv6 root: COW metadata and immutable KV runs without the block I/O stack; line-granular flush requests with optional Zicbom \texttt{CBO.CLEAN}; dual-slot checkpoints; and an experimental QEMU 9.2.0 NVDIMM patch path. Visibility is stated explicitly: a successful \texttt{fsync} publishes a complete version; unsynchronized updates are not promised after failure.
 
-The distinctive contribution remains a \textbf{machine-checkable crash/power-loss contract suite} (\texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2}). Evaluation separates an architectural plane (latency/throughput magnitude versus xv6 \texttt{fs+log}) from a fairness plane (A0--A4 ablation of split/seal policy).
+The distinctive contribution is a \textbf{reproducible commit-acceptance methodology} (process-kill cut-point oracles, bounded specification negatives, sampled traces) plus a measurable teaching-OS file subset. Evaluation separates an architectural plane (matched-workload latency/throughput versus xv6 \texttt{fs+log}, with unequal persist contracts) from a fairness plane (same-PMFS software-request ablations).
 
-\textbf{Keywords:} persistent memory; NVDIMM; file system; crash consistency; write amplification; xv6; contract testing; ablation study
+\textbf{Keywords:} persistent memory; NVDIMM; file system; crash consistency; write amplification; xv6; contract testing; copy-on-write
 
 \tableofcontents
 \clearpage

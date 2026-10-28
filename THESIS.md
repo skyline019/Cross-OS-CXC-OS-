@@ -21,17 +21,22 @@
 1. **实验性 NVDIMM 的限制：** 独立设备只在本仓 QEMU 9.2.0 补丁、固定单设备布局和私有 FDT 描述下工作，不是上游通用 `virt` 支持，也没有 ACPI/NFIT、热插拔或通用设备发现；普通 MAP/整机共享 RAM 仍不是 NVDIMM。导师是否接受该设备模型需确认。
 2. **物理持久域：** 默认 `pmem_flush` 是遍历与屏障，不是缓存写回。可选 Zicbom 路径发出 `CBO.CLEAN`，假定 64 B 缓存块及正确权限；QEMU TCG 不模拟缓存层级，不能证明硬件断电持久性。必须在实际平台确认持久域与原子性。
 3. **更强验证和功能：** 实际轨迹重放是单 workload 的源级范围事件与采样持久模型，不是指令级或全部路径穷举；校验和碰撞、任意硬件故障、无限并发及完整 POSIX 均不在证明范围。动态挂载、打开后删除最后链接、跨后端及完整原生 rename、符号链接和权限等未实现；压缩没有近满盘预留或增量机制，长期写入仍可耗尽容量。
-4. **正式论文：** 即使采用新的同工作量延迟/吞吐和同 PMFS 契约消融，也应核验原始数据、统计及两后端持久契约差异，并整体重写论文。已提供可移植证据章节草稿，但旧论文正文/PDF、旧图表和历史不等量基准不得作为新结果；新章节尚未编译。
+4. **正式论文定稿：** `thesis/latex` 正文已按 v3 证据重写并生成 PDF（含 matched 性能表与诚实限制句）；仍须更换学校封面模板、作者信息，并由导师审阅措辞。历史不等量基准与旧图不得混用。
 
 ## 文档入口
+
+**总索引：** [docs/README.md](docs/README.md)（按角色导航 + 全量清单）。
 
 | 文档 | 内容 |
 |---|---|
 | [修复与验证报告](docs/PMFS-REPAIR-REPORT.md) | 实际代码、测试命令、通过结果和残余风险 |
 | [语义与限制](docs/SEMANTICS.md) | API、持久边界、失败行为及不支持项 |
+| [架构](docs/ARCHITECTURE.md) / [核心代码直讲](docs/CORE-WALKTHROUGH.md) | 分层、checkpoint、调用链 |
 | [软件读写放大与耐久](docs/PERFORMANCE-ENDURANCE.md)、[维护设计](docs/MAINTENANCE.md) | CDC/索引、双槽保护与 COW 压缩、软件请求计数及硬件磨损限制 |
 | [QEMU 后端](docs/QEMU-NVDIMM.md) | 普通 RAM、共享文件、Zicbom 与真正 NVDIMM 的区别 |
 | [契约与故障矩阵](docs/CONTRACT.md) | 自测、真实进程重启 oracle、协议模型的覆盖与限制 |
+| [里程碑](docs/MILESTONES.md) / [论文大纲](docs/THESIS-OUTLINE.md) / [实验写法](docs/EXPERIMENT.md) / [答辩提纲](docs/DEFENSE.md) | 验收门、章节、答辩 |
+| [结果索引](docs/results/README.md) | 2026-10-28 各轮原始证据 |
 | [旧基准](docs/BENCH.md) | 历史数字，只留档，不能用作性能结论 |
 | [基线审计和计划](docs/EXCELLENCE-ROADMAP.md)、[基线沙箱记录](docs/LOCAL-SANDBOX-TESTS.md) | 修复前的证据和规划，不应误读为当前状态 |
-| [`thesis/latex/`](thesis/latex/README.md) | 旧论文草稿，仍须依据实际证据整体重写 |
+| [`thesis/latex/`](thesis/latex/README.md) | v3 正文 PDF；定稿前换学校模板 |

@@ -1,5 +1,7 @@
 # 原生 xv6 块日志：CI 失败与确定性恢复测试
 
+> 对照基线块日志路径；PMFS 验收见 [CONTRACT.md](CONTRACT.md)。总索引：[README.md](README.md)。
+
 ## 观察到的失败
 
 合并后的 [Linux CI run 40658535773](https://github.com/skyline019/Cross-OS-CXC-OS-/actions/runs/40658535773) 在 `xv6 block-log recovery` 失败。原始输出显示 `log attempt 20` 后为 `FAIL`：旧脚本每次让 `logstress` 跑两秒后杀死 QEMU，重启后只寻找 `recovering`，20 次都没观察到该标记就失败。它不能保证杀进程时日志头正处在已提交、尚未清除的窗口。该次失败没有保存磁盘/完整串口证据，**无法仅据此判断当时是没命中窗口还是有其他日志问题**；不能因为此前偶然通过就宣称内核正确。

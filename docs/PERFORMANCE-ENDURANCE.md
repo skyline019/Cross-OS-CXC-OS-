@@ -1,6 +1,6 @@
 # PMFS 软件读写放大、查询与耐久风险
 
-> 项目保留 KV、CDC、stream、Bloom、fence 和索引核心。现有双 checkpoint 保护下的**元数据页复用**和显式 COW 压缩不是全设备 GC 或硬件磨损均衡；协议及限制见[维护设计](MAINTENANCE.md)。QEMU/TCG、普通文件后端和默认 touch+fence **不能**证明物理写回、NAND 擦除次数或器件寿命。
+> 项目保留 KV、CDC、stream、Bloom、fence 和索引核心。现有双 checkpoint 保护下的**元数据页复用**和显式 COW 压缩不是全设备 GC 或硬件磨损均衡；协议及限制见[维护设计](MAINTENANCE.md)。QEMU/TCG、普通文件后端和默认 touch+fence **不能**证明物理写回、NAND 擦除次数或器件寿命。实测消融见[results/2026-10-28-efficiency](results/2026-10-28-efficiency/README.md)；总索引见[README.md](README.md)。
 
 ## 本轮有界优化
 

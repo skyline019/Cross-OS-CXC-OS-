@@ -1,6 +1,7 @@
 # QEMU 后端、实验性 NVDIMM 与 Zicbom
 
-> **未修改的上游 RISC-V `virt` MAP 仍是普通 RAM。** 本仓另提供 QEMU 9.2.0 实验补丁以冷插拔独立 `nvdimm`。普通文件后端和 QEMU 进程杀启不等于真实 NVDIMM 硬件或物理掉电。
+> **未修改的上游 RISC-V `virt` MAP 仍是普通 RAM。** 本仓另提供 QEMU 9.2.0 实验补丁以冷插拔独立 `nvdimm`。普通文件后端和 QEMU 进程杀启不等于真实 NVDIMM 硬件或物理掉电。  
+> 设备路线备忘：[APPENDIX-NVDIMM.md](APPENDIX-NVDIMM.md)；总索引：[README.md](README.md)。
 
 | 模式 | 构建/运行方式 | 可验证 | 不可据此验证 |
 |---|---|---|---|

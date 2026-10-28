@@ -50,12 +50,19 @@ search path, you can run "make qemu".
 THESIS PMFS PROTOTYPE (v3)
 =========================
 
-Current status, test evidence and limits: THESIS.md and
+Chinese status overview: THESIS.md
+Full documentation index: docs/README.md
+Core code walkthrough: docs/CORE-WALKTHROUGH.md
+
+Key docs (also listed in docs/README.md):
   docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
   docs/SEMANTICS.md                   exact supported subset and error semantics
+  docs/ARCHITECTURE.md                layout and checkpoint publish order
   docs/PERFORMANCE-ENDURANCE.md       software I/O counters and wear limitations
   docs/MAINTENANCE.md                two-slot GC and explicit COW compaction
   docs/TRACE-REPLAY.md                actual PMFS operation trace and replay limits
+  docs/CONTRACT.md                    smoke / recovery oracle / model commands
+  docs/MILESTONES.md                  current acceptance gates
   docs/results/2026-10-28-gc/        earlier recovery and software-work evidence
   docs/results/2026-10-28-perf/      matched timing/throughput and PMFS ablation
   docs/results/2026-10-28-trace/     captured-operation replay, logs and controls

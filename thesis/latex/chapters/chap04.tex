@@ -1,51 +1,37 @@
 \chapter{系统实现}
 \label{chap:impl}
 
-\section{模块与代码组织}
+\section{模块组织}
 
-实现基于 xv6-riscv，主要模块包括：\texttt{pmem}/\texttt{pmfs}（后端与双槽）、\texttt{pmalgo}/\texttt{pmindex}（KV 与索引核）、\texttt{pmcdc}/\texttt{pmstream}（切分与滑窗）、\texttt{pmfile}/\texttt{syspmfile}（目录+extent 文件层）、\texttt{pmcontract}（串口契约），以及用户态 \texttt{\_pmfs\_probe}/\texttt{\_pmfs\_file}/\texttt{\_pmfs\_bench}/\texttt{\_pmfs\_posix}。文件写路径强制经 \texttt{pm\_put}/\texttt{pm\_seal}，由 \texttt{fuse\_puts}/\texttt{fuse\_seals} 计数证明未旁路。
+实现基于 xv6-riscv。主要模块包括：VFS 路径遍历与 \texttt{/pm} 挂载点；\texttt{pmfile}（普通 fd、COW 元数据、硬链接/rename）；\texttt{pmcdc}/\texttt{pmstream}；\texttt{pmalgo}/\texttt{pmindex}；\texttt{pmfs}（checkpoint、可达性、压缩）；\texttt{pmdev}/\texttt{pmem}；以及 \texttt{tools/pmfs\_recovery.py}、\texttt{test-xv6.py}、契约与 bench 脚本。文件内容经 \texttt{pm\_put}/\texttt{seal} 落入 run；元数据经 COW 页与 checkpoint 发布。
 
-\section{双槽超级块、meta 页与 seal}
+\section{VFS 与普通文件路径}
 
-活动槽与镜像槽交替提交。\texttt{seal} 路径将当前 mem 表固化为 run 页，更新超级块字段（epoch、校验、run 元数据），再经 \texttt{pmem\_persist} 落后端。挂载时选择校验合法且 epoch 较新的槽；半写损坏触发 \texttt{CRASH} 相关失败码并回退。
+\texttt{vfs\_walk} 逐组件解析；仅原生根下的 \texttt{pm} 进入 PMFS，\texttt{/pm/..} 返回原生根。PM inode pin 支持 cwd/目录 fd；独立 \texttt{open} 各自维护 offset，共享工作缓冲；\texttt{dup}/\texttt{fork} 共享打开对象。PMFS sleep lock 串行化缓冲、append 取尾与同步。
 
-inode/dentry 页带 magic 与校验和：加载失败则拒绝把损坏页当作真相（契约 \texttt{FAULT\_HALFPAGE}）。B3 路径对需重写的页做真页写入，而非仅更新指针；\texttt{pmfs\_stat} 导出 logical/phys 与 $\mathrm{wa\_x100}$。段数上限（\texttt{PM\_MAX\_RUNS} 等）在扫参与多 trial 下曾成为楔死点，实现侧提高余量并在 attach 压力下淘汰最旧段视图，保证契约与 bench 可重复跑通。
+硬链接维护共享 inode 与链接数；非最后链接可在打开时删除，最后链接的 unlink-open 仍拒绝。子树 rename 检查环与路径长度后，修改内存图并以\textbf{一次} checkpoint 发布；非替换可复用不可变 inode 页。
 
-\section{索引路径}
+\section{COW 元数据、run 与 seal}
 
-索引采用键量化与 posting 结构，查询侧维护 LRU 缓存（qcache）。\texttt{pm\_get} 的 hint 仅为软提示：命中失败时回退完整查找，并在故障注入后使脏 dent 失效，避免「缓存撒谎」。索引可自 run 重建：在挂载或自测阶段扫描已提交 run，避免「索引已更新而数据未提交」的窗口。该约束来自 Aurora 前序设计~\cite{auroraown}，实现为 xv6 C 重写。
+内容同步：CDC/固定切分 $\rightarrow$ \texttt{pm\_put} $\rightarrow$ seal 追加不可变 run $\rightarrow$ 新 inode 快照（可复用未变 dentry）$\rightarrow$ checkpoint。\texttt{pm\_get} 优先 memtable/缓存，再精确索引或 newest-first + Bloom/fence。索引满后未跟踪键走 fallback；更新已跟踪键必须刷新指向。
 
-\section{CDC / stream / 文件层}
+安全挂载：无有效/旧格式/损坏则失败关闭；仅 \texttt{pmformat --force} 显式格式化。v2 与 v3 不兼容，无迁移工具。
 
-\texttt{pmcdc} 实现 Rabin 滑动哈希与 Fixed 定长两种切分；\texttt{pmstream} 维护写窗并在策略要求时 seal。\texttt{pmfile} 将 chunk 记为 extent，读路径按 extent 拼装；若读时空内容而 stream 已有数据，则从 stream 同步 extent，避免「写成功但读空」的假失败。目录项保存路径与 parent，支持有限深度的 \texttt{mkdir}/\texttt{readdir}，非完整 VFS \texttt{namei}。
+\section{刷写、设备与可选 CBO}
 
-\section{ONBOX\_PMFS 契约套件}
+\texttt{pmdev\_write\_page} 后调用 \texttt{pmem\_persist}。默认 flush 逐 64\,B 行 touch 并计数；\texttt{pmem\_fence} 含编译器屏障与内存 fence。可选 \texttt{PMEM\_ZICBOM} 发出 \texttt{CBO.CLEAN}（假定块大小与权限）。实验性 NVDIMM：补丁 QEMU 注册独立设备，内核在 \texttt{kalloc} 前解析私有 FDT 并校验地址/大小。
 
-所有契约行必须可被 \texttt{grep} / \texttt{tools/contract\_pmfs.py} 匹配。
+\section{维护：页复用与显式压缩}
+
+可达性扫描覆盖两槽根与 run 链；不可达页可分配给新元数据或新 run。\texttt{pmcompact} 要求 memtable/stream 空，预留不相交暂存后写出新链并一次发布；忙或空间不足返回明确错误。这不是在线全设备 GC。
+
+\section{验收脚手架}
 
 \begin{description}[leftmargin=1.5em,style=nextline]
-  \item[成功行] \texttt{ONBOX\_PMFS\_$\langle$STAGE$\rangle$\_PASS} + 空格分隔 \texttt{key=value}
-  \item[失败行] \texttt{ONBOX\_PMFS\_$\langle$STAGE$\rangle$\_FAIL stage=$\ldots$ code=$\ldots$}
-  \item[总闸] 必过子集全部成功后打印 \texttt{ONBOX\_PMFS\_PASS}
+  \item[旧自测] \texttt{ONBOX\_PMFS\_*} 阶段码；\texttt{contract-full} 等破坏性，仅 disposable。
+  \item[重启 oracle] \texttt{make test-recovery*}：临时后端、guest 步骤、\texttt{SIGKILL}、同后端读回；覆盖挂载拒绝、文件/KV、目录/链接、插桩切点。
+  \item[模型] \texttt{make test-model}：有界协议枚举 + 负控反例。
+  \item[轨迹] 测试构建记录写范围/flush/fence，采样重放提前逐出等。
 \end{description}
 
-必过子集（平级）：\texttt{PMEM0}、\texttt{MOUNT}、\texttt{STORE}、\texttt{INDEX}、\texttt{ALGO}、\texttt{CRASH}、\texttt{PERSIST}、\texttt{FILE}、\texttt{CDC}、\texttt{STREAM}、\texttt{POS\_FILE}、\texttt{NEG\_FILE}、\texttt{CHAOS\_FILE}、\texttt{ABLATION}、\texttt{REMOUNT}、\texttt{FAULT}，然后总闸。\texttt{make contract-strict} 另检 POS/NEG CDC/STREAM、\texttt{EDGE\_FILE}、A0--A4（含 \texttt{wa\_x100=}）、\texttt{FAULT\_SEALMID}/\texttt{FAULT\_HALFPAGE}。
-
-语义证明行（尖刺证据的核心子集）：
-\begin{lstlisting}
-ONBOX_PMFS_REMOUNT_PASS bytes=... equal=1
-ONBOX_PMFS_FAULT_SEALMID_PASS invisible=1
-ONBOX_PMFS_FAULT_HALFPAGE_PASS chk_reject=1
-ONBOX_PMFS_PMEM2_PASS persist=ok
-\end{lstlisting}
-MAP 模式额外要求 \texttt{PMEM0 mode=MAP} 与 \texttt{PMEM1}。PMEM2 脚本成功时再印 \texttt{ONBOX\_PMFS\_PMEM2\_CONTRACT\_PASS boots=2}。
-
-用户态：\texttt{\_pmfs\_probe} $\to$ \texttt{SYSCALL\_PASS}；\texttt{\_pmfs\_file} $\to$ \texttt{FILEUSER\_PASS}；\texttt{\_pmfs\_bench [N]} $\to$ \texttt{BENCH\_PASS}；\texttt{\_pmfs\_posix} $\to$ \texttt{POSIX\_PASS}（真实 \texttt{mkdir}/\texttt{readdir}/\texttt{fsync}/\texttt{reopen}，不升主线为根 FS）。
-
-\section{计时与评测脚手架}
-
-用户态原调用 \texttt{cycles()} 依赖 \texttt{rdcycle}；在未开放 \texttt{mcounteren.CY} 时会触发非法指令（计数器与特权态约束见 RISC-V 特权规范~\cite{riscvpriv}）。实现将 \texttt{sys\_cycles} 改为已允许的 \texttt{r\_time()}，文档明确其为\textbf{相对时间单位}，不作墙钟微秒解读。评测脚本对每个 $N$ 执行 5 次 trial 取中位数，\textbf{每 $N$ 独立开机}，并等待契约行字段齐全后再杀 QEMU，避免截断解析与段数楔死。
-
-\section{与 CI 的衔接}
-
-持续集成挂接 \texttt{usertests} 与契约目标（含 strict），使回归不以人工读完整串口日志为前提。尖刺价值正在于此：正确性与掉电语义「grep 一行即可判过」。
+尖刺价值：正确性依赖「可脚本判定 + 诚实假设」，而非口头演示。
