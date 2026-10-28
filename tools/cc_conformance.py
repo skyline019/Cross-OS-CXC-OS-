@@ -215,6 +215,23 @@ def patch_int80_to_syscall(blob: bytes) -> bytes:
     return bytes(data)
 
 
+def elf_run_mode() -> str:
+    """How this host executes guest Linux ELF: run | qemu | compile-elf.
+
+    Windows/MSYS2 UCRT cannot natively exec Linux ET_EXEC; Linux CI keeps full
+    exit/stdout. Host-only Windows gate still requires compile + optional
+    PT_LOAD congruence (--elf-check).
+    """
+    if sys.platform.startswith("linux"):
+        return "run"
+    prefix, _ = find_cc()
+    if prefix:  # WSL path via find_cc
+        return "run"
+    if shutil.which("qemu-x86_64"):
+        return "qemu"
+    return "compile-elf"
+
+
 def run_elf(elf: bytes, work: Path) -> tuple[int, bytes]:
     path = work / "a.out"
     fixed = patch_int80_to_syscall(repack_elf(elf))
@@ -223,8 +240,11 @@ def run_elf(elf: bytes, work: Path) -> tuple[int, bytes]:
     # Prefer direct exec on Linux; under WSL path from Windows needs /mnt.
     prefix, _ = find_cc()
     use_wsl = bool(prefix)
+    mode = elf_run_mode()
     if use_wsl:
         cmd = [*prefix, to_build_path(path, True)]
+    elif mode == "qemu":
+        cmd = ["qemu-x86_64", str(path)]
     else:
         cmd = [str(path)]
     result = subprocess.run(cmd, check=False, capture_output=True, cwd=str(work))
@@ -479,7 +499,15 @@ def cases() -> list[Case]:
     return out
 
 
-def classify(case: Case, elf: bytes | None, err: str, work: Path) -> str:
+def classify(
+    case: Case,
+    elf: bytes | None,
+    err: str,
+    work: Path,
+    *,
+    run_mode: str,
+    require_elf_check: bool,
+) -> str:
     """Return pass|xfail|bug|xpass|reject."""
     if case.kind == "xfail_compile":
         if elf is None:
@@ -493,6 +521,18 @@ def classify(case: Case, elf: bytes | None, err: str, work: Path) -> str:
             # compile failed instead of wrong/crash — still a known gap form
             return "xfail"
         return "reject"
+
+    # Windows host: no Linux ELF runner — compile (+ optional congruence) only.
+    if run_mode == "compile-elf":
+        if case.kind == "ok":
+            if require_elf_check and not elf_load_congruent(elf):
+                return "bug"
+            return "pass"
+        if case.kind == "xfail_crash":
+            return "xfail"
+        if case.kind == "xfail_wrong":
+            return "xfail"
+        return "bug"
 
     try:
         code, out = run_elf(elf, work)
@@ -576,15 +616,24 @@ def main() -> int:
 
     work = Path(tempfile.mkdtemp(prefix="cxc-cc-conf-"))
     counts = {"pass": 0, "xfail": 0, "bug": 0, "xpass": 0, "reject": 0}
+    run_mode = elf_run_mode()
     try:
         compiler = build_compiler(work)
         for case in suite:
             case_dir = work / case.name
             case_dir.mkdir(parents=True, exist_ok=True)
             elf, err = compile_src(compiler, case.src, case_dir)
-            status = classify(case, elf, err, case_dir)
+            status = classify(
+                case,
+                elf,
+                err,
+                case_dir,
+                run_mode=run_mode,
+                require_elf_check=args.elf_check,
+            )
             if (
                 args.elf_check
+                and run_mode != "compile-elf"
                 and status == "pass"
                 and elf is not None
                 and not elf_load_congruent(elf)
@@ -604,7 +653,8 @@ def main() -> int:
         total = len(suite)
         line = (
             f"CC_CONF: total={total} pass={counts['pass']} xfail={counts['xfail']} "
-            f"bug={counts['bug']} xpass={counts['xpass']} reject={counts['reject']}"
+            f"bug={counts['bug']} xpass={counts['xpass']} reject={counts['reject']} "
+            f"mode={run_mode}"
         )
         print(line)
         if args.strict:

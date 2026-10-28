@@ -4238,8 +4238,9 @@ int main(void) {
             ".rodata\ns42:\n.asciz \"42\"\n";
         unsigned char* main_o = 0;
         size_t main_n = 0;
-        const char* main_path = "/tmp/cxc_m252_main.o";
-        const char* trunc_path = "/tmp/cxc_m252_trunc.o";
+        /* Relative to host cwd (run_cc_host_test sets disk/); avoid /tmp — UCRT fopen fails on Windows. */
+        const char* main_path = "disk/cxc_m252_main.o";
+        const char* trunc_path = "disk/cxc_m252_trunc.o";
         const char* paths[8];
         unsigned char* elf = 0;
         size_t en = 0;
