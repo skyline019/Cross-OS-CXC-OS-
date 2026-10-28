@@ -1,0 +1,22 @@
+PASS stage-1-crash
+PASS stage-1-recover
+PASS stage-1-reboot
+PASS stage=1 state=old committed_blocks=0
+PASS stage-2-crash
+PASS negative-no-replay
+PASS negative control: discarding a committed log is detected
+--- stage-2-recover serial tail ---
+
+xv6 kernel is booting
+
+pmem: instrumentation only; no hardware cache writeback
+pmem: stub (no PMEM_MAP) base=0x88000000 — EMUL path
+ONBOX_PMFS_PMEM0_PASS mode=EMUL backend=emul size=8388608
+pmfs: explicitly formatted v3
+ONBOX_PMFS_MOUNT_PASS epoch=4 slot=1 emul=1
+pmfs: ready (v3, boot selftests disabled)
+init: starting sh
+$ logtest check new
+XV6_LOG_TEST_FAIL code=12
+
+XV6_LOG_RECOVERY_FAIL: stage-2-recover: guest reported failure 12

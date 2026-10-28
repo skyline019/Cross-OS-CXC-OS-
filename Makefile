@@ -161,6 +161,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_logstress\
+	$U/_logtest\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_sync\
@@ -274,6 +275,17 @@ bench-sweep: kernel-emul
 # Independent protocol specification model with three mutation controls.
 test-model:
 	python3 tools/check_persist_model.py
+
+# Native block-log software cut points are test-only and can hang the guest.
+# This target runs make clean and rebuilds fs.img: use a disposable checkout.
+# The log oracle itself kills QEMU using temporary copies of that image.
+.PHONY: native-log-build test-xv6-crash
+native-log-build:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DXV6_LOG_FAULT_INJECT" $K/kernel fs.img
+
+test-xv6-crash: native-log-build
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py crash
 
 # Software-boundary fault injection is test-only and can hang the guest.
 # The harness uses temporary copies of fs.img and the shared guest-RAM file.

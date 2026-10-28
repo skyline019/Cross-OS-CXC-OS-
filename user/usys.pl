@@ -61,3 +61,4 @@ entry("pmfs_format");
 entry("pmfs_fstat");
 entry("pmfs_fault");
 entry("fsync");
+entry("xv6_log_fault");

@@ -21,7 +21,7 @@
 | NVDIMM + Zicbom 进程重启与切点 | 3 核，66 次启动，`PMFS_RECOVERY_PASS ... zicbom=1 nvdimm=1` | [运行日志](results/2026-10-28-v3/final-nvdimm-zicbom.log)、[逐次串口归档](results/2026-10-28-v3/final-nvdimm-zicbom-serial.tar.gz) |
 | 普通共享 RAM 进程重启与切点 | 3 核，66 次启动，默认及 Zicbom 路径均通过 | [默认](results/2026-10-28-v3/final-recovery.log)、[Zicbom](results/2026-10-28-v3/final-zicbom.log) |
 | 原生 xv6 完整 usertests | 3 核 74 项、`ALL TESTS PASSED` | [日志](results/2026-10-28-v3/final-usertests.log) |
-| xv6 原生块日志 crash | 1 核，退出 0 | [日志](results/2026-10-28-v3/final-crash.log) |
+| xv6 原生块日志 crash | 当时的概率性脚本：1 核，退出 0；后续 CI 失败后已替换，见[新测试](XV6-LOG-RECOVERY.md) | [历史日志](results/2026-10-28-v3/final-crash.log) |
 | `contract-full`、`contract-pmem`、`contract-pmem2` | 均退出 0；PMEM2 仅共享 RAM 魔数 | [EMUL](results/2026-10-28-v3/final-contract-full.log)、[MAP](results/2026-10-28-v3/final-contract-map.log)、[PMEM2](results/2026-10-28-v3/final-contract-pmem2.log) |
 | `bench-sweep` | EMUL N=8/16/32、MAP N=32，各 5 次，计数相同，字节校验通过 | [原始输出](results/2026-10-28-v3/final-bench.log) |
 | 有界规格模型 | 正确协议 64 个检查状态通过；删除数据刷写、提前发布、删除提交刷写三项负控均找到反例 | [日志](results/2026-10-28-v3/final-model.log) |
@@ -37,7 +37,10 @@
 ```sh
 make -j2 kernel/kernel fs.img
 CPUS=3 ./test-xv6.py usertests
-CPUS=1 ./test-xv6.py crash
+CPUS=1 python3 tools/xv6_log_recovery.py --expect-disabled
+CPUS=1 make test-xv6-crash  # 重建为仅供测试的插桩内核
+CPUS=3 ./test-xv6.py log    # 继续使用上一步构建的插桩内核
+CPUS=3 ./test-xv6.py stress
 CPUS=1 make contract-full
 CPUS=1 make contract-pmem
 CPUS=1 make contract-pmem2

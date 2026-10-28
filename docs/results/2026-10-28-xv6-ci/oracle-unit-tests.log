@@ -1,0 +1,12 @@
+test_committed_blocks_and_partial_install (test_xv6_log_recovery.DiskLogTests.test_committed_blocks_and_partial_install) ... ok
+test_invalid_headers_are_rejected (test_xv6_log_recovery.DiskLogTests.test_invalid_headers_are_rejected) ... ok
+test_invalid_superblock_is_rejected (test_xv6_log_recovery.DiskLogTests.test_invalid_superblock_is_rejected) ... ok
+test_negative_control_changes_only_the_copy (test_xv6_log_recovery.DiskLogTests.test_negative_control_changes_only_the_copy) ... ok
+test_exact_replay_order_and_destinations (test_xv6_log_recovery.TraceTests.test_exact_replay_order_and_destinations) ... ok
+test_serial_failure_requires_a_complete_line (test_xv6_log_recovery.TraceTests.test_serial_failure_requires_a_complete_line) ... ok
+test_shell_prompt_must_be_at_line_start_and_not_a_command (test_xv6_log_recovery.TraceTests.test_shell_prompt_must_be_at_line_start_and_not_a_command) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.002s
+
+OK

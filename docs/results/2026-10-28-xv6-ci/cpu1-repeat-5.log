@@ -1,0 +1,23 @@
+PASS stage-1-crash
+PASS stage-1-recover
+PASS stage-1-reboot
+PASS stage=1 state=old committed_blocks=0
+PASS stage-2-crash
+PASS negative-no-replay
+PASS negative control: discarding a committed log is detected
+PASS stage-2-recover
+PASS stage-2-reboot
+PASS stage=2 state=new committed_blocks=4
+PASS stage-3-crash
+PASS stage-3-recover
+PASS stage-3-reboot
+PASS stage=3 state=new committed_blocks=4
+PASS stage-4-crash
+PASS stage-4-recover
+PASS stage-4-reboot
+PASS stage=4 state=new committed_blocks=4
+PASS stage-5-crash
+PASS stage-5-recover
+PASS stage-5-reboot
+PASS stage=5 state=new committed_blocks=0
+XV6_LOG_RECOVERY_PASS stages=5 negative_controls=1

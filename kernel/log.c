@@ -6,6 +6,9 @@
 #include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
+#ifdef XV6_LOG_FAULT_INJECT
+#include "proc.h"
+#endif
 
 // Simple logging that allows concurrent FS system calls.
 //
@@ -51,6 +54,48 @@ struct log log;
 static void recover_from_log(void);
 static void commit();
 
+// Test-only software cut points for the native xv6 block log. The caller's
+// next nonempty commit stops at the selected boundary until QEMU is killed.
+// A normal kernel rejects the syscall and contains no fault points.
+#ifdef XV6_LOG_FAULT_INJECT
+static int log_fault_stage;
+static int log_fault_pid;
+
+static void
+log_fault_point(int stage)
+{
+  if (log_fault_stage == stage && myproc() && myproc()->pid == log_fault_pid) {
+    printk("XV6_LOG_FAULT stage=%d blocks=%d\n", stage, log.lh.n);
+    for (;;)
+      asm volatile("" ::: "memory");
+  }
+}
+#else
+#define log_fault_point(stage) ((void)0)
+#endif
+
+uint64
+sys_xv6_log_fault(void)
+{
+#ifdef XV6_LOG_FAULT_INJECT
+  int stage;
+  argint(0, &stage);
+  if (stage < 1 || stage > 5)
+    return -1;
+  acquire(&log.lock);
+  if (log_fault_stage || log.committing || log.outstanding) {
+    release(&log.lock);
+    return -1;
+  }
+  log_fault_pid = myproc()->pid;
+  log_fault_stage = stage;
+  release(&log.lock);
+  return 0;
+#else
+  return -1;
+#endif
+}
+
 void
 initlog(int dev, struct superblock *sb)
 {
@@ -81,6 +126,8 @@ install_trans(int recovering)
       bunpin(dbuf);
     brelse(lbuf);
     brelse(dbuf);
+    if (!recovering && tail == 0)
+      log_fault_point(3); // one home block installed, others still pending
   }
 }
 
@@ -203,11 +250,15 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
-    write_log();      // Write modified blocks from cache to log
-    write_head();     // Write header to disk -- the real commit
-    install_trans(0); // Now install writes to home locations
+    write_log(); // Write modified blocks from cache to log
+    log_fault_point(1);
+    write_head(); // Write header to disk -- the real commit
+    log_fault_point(2);
+    install_trans(0); // Now install writes to home locations (point 3 inside)
+    log_fault_point(4);
     log.lh.n = 0;
     write_head(); // Erase the transaction from the log
+    log_fault_point(5);
   }
 }
 

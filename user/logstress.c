@@ -3,46 +3,65 @@
 #include "kernel/fcntl.h"
 #include "user/user.h"
 
-// Stress xv6 logging system by having several processes writing
-// concurrently to their own file (e.g., logstress f1 f2 f3 f4)
+// Exercise concurrent block-log writers and verify their complete files.
+// Use only on disposable media: the named files are truncated.
+#define BUFSZ  2000
+#define WRITES 20
 
-#define BUFSZ 500
+static char buf[BUFSZ];
 
-char buf[BUFSZ];
+static void __attribute__((noreturn))
+fail(const char *file, const char *operation)
+{
+  printf("LOGSTRESS_FAIL file=%s operation=%s\n", file, operation);
+  exit(1);
+}
 
 int
 main(int argc, char **argv)
 {
-  int fd, n;
-  enum { N = 250, SZ = 2000 };
-
+  if (argc < 2) {
+    printf("usage: logstress file ...\n");
+    exit(1);
+  }
   for (int i = 1; i < argc; i++) {
-    int pid1 = fork();
-    if (pid1 < 0) {
-      printf("%s: fork failed\n", argv[0]);
-      exit(1);
-    }
-    if (pid1 == 0) {
-      fd = open(argv[i], O_CREATE | O_RDWR);
-      if (fd < 0) {
-        printf("%s: create %s failed\n", argv[0], argv[i]);
-        exit(1);
+    int pid = fork();
+    if (pid < 0)
+      fail(argv[i], "fork");
+    if (pid == 0) {
+      int fd = open(argv[i], O_CREATE | O_TRUNC | O_RDWR);
+      if (fd < 0)
+        fail(argv[i], "open-write");
+      memset(buf, '0' + i, BUFSZ);
+      for (int j = 0; j < WRITES; j++)
+        if (write(fd, buf, BUFSZ) != BUFSZ)
+          fail(argv[i], "write");
+      if (close(fd) != 0)
+        fail(argv[i], "close-write");
+      fd = open(argv[i], O_RDONLY);
+      if (fd < 0)
+        fail(argv[i], "open-read");
+      for (int j = 0; j < WRITES; j++) {
+        if (read(fd, buf, BUFSZ) != BUFSZ)
+          fail(argv[i], "read");
+        for (int k = 0; k < BUFSZ; k++)
+          if (buf[k] != '0' + i)
+            fail(argv[i], "data");
       }
-      memset(buf, '0' + i, SZ);
-      for (i = 0; i < N; i++) {
-        if ((n = write(fd, buf, SZ)) != SZ) {
-          printf("write failed %d\n", n);
-          exit(1);
-        }
-      }
+      if (read(fd, buf, 1) != 0 || close(fd) != 0)
+        fail(argv[i], "eof");
       exit(0);
     }
   }
-  int xstatus;
+  int failed = 0;
   for (int i = 1; i < argc; i++) {
-    wait(&xstatus);
-    if (xstatus != 0)
-      exit(xstatus);
+    int status;
+    if (wait(&status) < 0 || status != 0)
+      failed = 1;
   }
-  return 0;
+  if (failed)
+    fail("-", "child");
+  printf("LOGSTRESS_PASS files=%d bytes=%d\n", argc - 1,
+         (argc - 1) * WRITES * BUFSZ);
+  exit(0);
 }

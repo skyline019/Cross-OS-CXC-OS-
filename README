@@ -54,6 +54,7 @@ Current status, test evidence and limits: THESIS.md and
   docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
   docs/SEMANTICS.md                   exact supported subset and error semantics
   docs/QEMU-NVDIMM.md                 device and persistence-domain limits
+  docs/XV6-LOG-RECOVERY.md            native xv6 log CI diagnosis and tests
   docs/EXCELLENCE-ROADMAP.md          original planning/baseline audit
   docs/LOCAL-SANDBOX-TESTS.md         historical pre-repair evidence
 
@@ -73,6 +74,8 @@ power failures. v3 is incompatible with v2; there is no automatic migration.
   make qemu                 # volatile EMUL, a new empty PMFS each boot
   make kernel-pmem          # rebuild MAP with ordinary 160 MiB guest RAM
   make test-model           # bounded specification + mutation controls
+  make test-xv6-crash      # test-only native log + orphan process-restart tests
+  CPUS=3 ./test-xv6.py stress # concurrent native block-log writers and readback
   make test-recovery        # MAP restart/fault oracle; software boundaries
   make test-recovery-zicbom # same oracle, QEMU CPU with Zicbom enabled
   make test-recovery-nvdimm QEMU=/path/to/patched/qemu-system-riscv64
@@ -80,8 +83,9 @@ power failures. v3 is incompatible with v2; there is no automatic migration.
   make contract-pmem2       # two-boot shared-RAM magic smoke, not power loss
   make bench-sweep          # matched operation counts; prints raw tick samples
 
-IMPORTANT: kernel-pmem, contracts, benchmark and recovery targets call
-make clean and rebuild fs.img. test-xv6.py can also recreate fs.img. Run in a
+IMPORTANT: kernel-pmem, contracts, benchmark and recovery targets (including
+`make test-xv6-crash`) call make clean and rebuild fs.img. test-xv6.py can
+also recreate fs.img. Run in a
 disposable checkout and back up any data. Normal MAP startup refuses blank,
 v2 or corrupted media without formatting it. Only when intentional, in the
 guest run `pmformat --force` to destroy and format an unmounted PMFS image.

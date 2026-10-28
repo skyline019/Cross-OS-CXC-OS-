@@ -32,8 +32,16 @@ jobs:
         run: make -j2 kernel/kernel fs.img
       - name: xv6 usertests, three harts
         run: ./test-xv6.py usertests
-      - name: xv6 block-log recovery
-        run: CPUS=1 ./test-xv6.py crash
+      - name: Native log oracle unit tests
+        run: python3 -m unittest discover -s tools -p test_xv6_log_recovery.py
+      - name: Default kernel rejects native log fault injection
+        run: CPUS=1 XV6_LOG_DIR=.ci-logs/xv6-default python3 tools/xv6_log_recovery.py --expect-disabled
+      - name: xv6 deterministic block-log and orphan recovery, one hart
+        run: CPUS=1 XV6_LOG_DIR=.ci-logs/xv6-crash-cpu1 make test-xv6-crash
+      - name: xv6 deterministic block-log recovery, three harts
+        run: CPUS=3 XV6_LOG_DIR=.ci-logs/xv6-crash-cpu3 ./test-xv6.py log
+      - name: xv6 concurrent block-log writes and readback
+        run: CPUS=3 ./test-xv6.py stress
       - name: Destructive EMUL selftests and matched-workload smoke
         run: CPUS=1 make contract-full
       - name: Destructive MAP selftests
@@ -48,13 +56,16 @@ jobs:
         run: make test-recovery RECOVERY_ARGS="--log-dir .ci-logs/recovery"
       - name: Zicbom instruction-path oracle on QEMU TCG
         run: make test-recovery-zicbom RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
-      - name: Upload PMFS serial logs
+      - name: Upload test serial logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: pmfs-serial-logs
-          path: .ci-logs/
+          name: linux-test-serial-logs
+          path: |
+            .ci-logs/
+            test-xv6.out
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 14
 
   nvdimm:
@@ -88,11 +99,12 @@ jobs:
         run: make test-recovery-nvdimm-zicbom QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm-zicbom"
       - name: Upload NVDIMM serial logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nvdimm-serial-logs
           path: .ci-logs/
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 14
 
   macos:
