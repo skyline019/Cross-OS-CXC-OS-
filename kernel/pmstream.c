@@ -41,6 +41,16 @@ pmstream_free(struct pmstream *s)
     memset(s, 0, sizeof(*s));
 }
 
+int
+pmstream_any_active(void)
+{
+  int i;
+  for (i = 0; i < PMSTREAM_SLOTS; i++)
+    if (g_streams[i].used)
+      return 1;
+  return 0;
+}
+
 static int
 emit_chunk(struct pmstream *s, const uint8 *data, uint32 len)
 {

@@ -174,6 +174,8 @@ UPROGS=\
 	$U/_pmfs_file\
 	$U/_pmfs_eff\
 	$U/_pmstats\
+	$U/_pmcompact\
+	$U/_pmfs_gc\
 	$U/_vfstest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
@@ -280,6 +282,7 @@ bench-sweep: kernel-emul
 test-model:
 	python3 tools/check_persist_model.py
 	python3 tools/check_vfs_model.py
+	python3 tools/check_gc_model.py
 
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.
@@ -309,6 +312,20 @@ test-vfs:
 
 test-vfs-recovery: recovery-build
 	python3 tools/vfs_recovery.py --cpus $(CPUS) --qemu $(QEMU) $(RECOVERY_ARGS)
+
+# Explicit compaction/GC checks. The space-limit target intentionally rebuilds
+# a tiny volatile device and must only run in a disposable checkout.
+.PHONY: test-pmfs-gc test-pmfs-gc-recovery test-pmfs-gc-nospace
+test-pmfs-gc:
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py 'test_pmfs_gc$$'
+
+test-pmfs-gc-recovery: recovery-build
+	python3 tools/pmfs_gc_recovery.py --cpus $(CPUS) --qemu $(QEMU) $(RECOVERY_ARGS)
+
+test-pmfs-gc-nospace:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMFS_EMUL_BYTES=131072" $K/kernel fs.img
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py 'test_pmfs_nospace$$'
 
 test-recovery-zicbom:
 	$(MAKE) clean

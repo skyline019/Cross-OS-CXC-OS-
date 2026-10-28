@@ -46,6 +46,7 @@ entry("sync");
 entry("pmfs_put");
 entry("pmfs_get");
 entry("pmfs_seal");
+entry("pmfs_compact");
 entry("pmfs_stat");
 entry("pmfs_metrics");
 entry("cycles");

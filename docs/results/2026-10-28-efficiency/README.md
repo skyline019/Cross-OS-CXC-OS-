@@ -1,6 +1,6 @@
 # KV/CDC/VFS 软件效率与恢复验证（2026-10-28）
 
-这是本轮优化的实测记录，与早先的 [VFS 第一阶段](../2026-10-28-vfs/README.md)分开。原始日志、可应用的消融/负控补丁、逐次串口输出及[源码散列/工具链](environment.txt)随文保存。沙箱以 QEMU 9.2.0 TCG、Zig 0.13.0/Clang 18.1.6 的 RISC-V 包装器及 GNU binutils 2.42 构建，不是标准 GNU RISC-V GCC 机器，也不是硬件实验；最终 GitHub Actions 应以实际运行结果为准。NVDIMM 本地构建快照与最终源码的 `pmindex.c` 只差一处注释措辞。
+这是上一轮源码 `6d0f21a1d328910be3289be7ab19191a923e01d1` 的历史实测记录，与早先的 [VFS 第一阶段](../2026-10-28-vfs/README.md)分开；其追加耗尽和“没有 GC”描述不代表[本轮维护实现](../2026-10-28-gc/README.md)的当前状态。原始日志、可应用的消融/负控补丁、逐次串口输出及[源码散列/工具链](environment.txt)随文保存。沙箱以 QEMU 9.2.0 TCG、Zig 0.13.0/Clang 18.1.6 的 RISC-V 包装器及 GNU binutils 2.42 构建，不是标准 GNU RISC-V GCC 机器，也不是硬件实验；最终 GitHub Actions 应以实际运行结果为准。NVDIMM 本地构建快照与最终源码的 `pmindex.c` 只差一处注释措辞。
 
 **所有数字是特定工作负载中的软件请求数，不是介质写入字节、物理擦除次数、器件磨损或真实硬件延迟。** QEMU 文件后端/进程杀死不模拟宿主断电，TCG 的 Zicbom 不模拟持久缓存层级。更多计数定义和未解决问题见[软件放大与耐久风险](../../PERFORMANCE-ENDURANCE.md)。
 

@@ -8,12 +8,12 @@
 
 | 方向 | 已有 | 继续缺失 |
 |---|---|---|
-| VFS | 固定 `/pm` 挂载点、逐组件遍历和 cwd、统一目录项、独立打开共享缓冲、seek/append、PM 子树 COW rename | 动态 mount table、原生及跨设备 rename、硬链接/打开后 unlink、符号链接、权限/进程凭据、mmap、完整 POSIX 和大规模资源 |
-| 算法与并发 | 按 inode 引用固定 cwd/fd；同 inode 共用工作集、每打开对象独立 offset；选择性 COW 元数据根、CDC/固定分块自适应、有界精确 KV 索引与完整 fallback | 可扩展细粒度并发、安全回收/compaction、checkpoint 热点/磨损均衡、足够容量、实现级线性化与锁序验证；不得声称算法首创 |
+| VFS | 固定 `/pm` 挂载点、逐组件遍历和 cwd、统一目录项、独立打开共享缓冲、seek/append、PM 子树 COW rename、同后端普通文件硬链接 | 动态 mount table、原生及跨设备 rename、打开后删除最后链接、符号链接、权限/进程凭据、mmap、完整 POSIX 和大规模资源 |
+| 算法与并发 | inode 引用固定 cwd/fd；选择性 COW 元数据根、CDC/固定分块自适应、有界索引、双槽可达性元数据复用和显式全链 COW 压缩 | 可扩展细粒度并发、满盘可持续/增量 GC、新 run 页安全复用、checkpoint 热点/磨损均衡、足够容量、实现级线性化与锁序验证；不得声称算法首创 |
 | 可靠性 | 1/3 核 VFS 与空间边界；MAP/NVDIMM 和 Zicbom 的进程重启故障切点；独立规格模型及真实内核提前发布变异负控 | 将实际 store/flush/drain 轨迹接入状态空间模型，覆盖完整事务/并发与更多故障；不能把进程 kill 冒充物理掉电 |
 | 评测与材料 | 相同成功数和内容校验、跨 QEMU 启动原始样本及 bootstrap；元数据/索引消融和软件请求计数 | 真实等价持久边界、更多工作负载、介质流量/磨损指标、独立环境复现、正文及文献全面重写；现有 QEMU 结果不证明硬件性能优势 |
 
-精确语义见[语义](SEMANTICS.md)，最近实测及复现命令见[优化验证](results/2026-10-28-efficiency/README.md)和[软件耐久风险](PERFORMANCE-ENDURANCE.md)。历史计划中有关 CDC/KV 取舍的建议不再适用：当前要求保留这些核心并继续优化。
+精确语义见[语义](SEMANTICS.md)，最近实测及复现命令见[维护验证](results/2026-10-28-gc/README.md)、[上一轮优化验证](results/2026-10-28-efficiency/README.md)和[软件耐久风险](PERFORMANCE-ENDURANCE.md)。历史计划中有关 CDC/KV 取舍的建议不再适用：当前要求保留这些核心并继续优化。
 
 ## 1. 目标与判断标准
 

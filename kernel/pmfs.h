@@ -1,4 +1,4 @@
-// Versioned PMFS checkpoint and append-only page allocator.
+// Versioned PMFS checkpoints, append-only runs, and COW metadata allocation.
 #ifndef XV6_PMFS_H
 #define XV6_PMFS_H
 
@@ -44,6 +44,16 @@ struct pmfs {
   uint32 inode_page;
   uint32 dent_page;
   uint32 run_head;
+  // Volatile run reachability caches for the two checkpoint slots. These are
+  // hints only: slot headers and metadata roots are rechecked on every scan.
+  uint64 gc_run_bits[2][PMDEV_DIRTY_WORDS];
+  uint32 gc_run_head[2];
+  uint8 gc_run_valid[2];
+  uint32 gc_cursor;
+  uint64 gc_scans;
+  uint64 gc_trace_runs;
+  uint64 gc_reused_pages;
+  uint64 gc_failed_scans;
 };
 
 void pmfs_init(void);
@@ -58,6 +68,9 @@ int pmfs_format(struct pmfs *fs);
 int pmfs_mount(struct pmfs *fs);
 int pmfs_commit(struct pmfs *fs);
 int pmfs_alloc_pages(struct pmfs *fs, uint32 n, uint32 *out_pid);
+// Allocate up to two COW metadata pages, reusing only pages unreachable from
+// both valid checkpoints. Runs must continue to use append-only allocation.
+int pmfs_alloc_meta(struct pmfs *fs, uint32 n, uint32 out[2]);
 int pmfs_write_data_page(struct pmfs *fs, uint32 pid, const void *src);
 
 int pmfs_storage_selftest(void);

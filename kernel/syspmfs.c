@@ -71,6 +71,16 @@ sys_pmfs_seal(void)
 }
 
 uint64
+sys_pmfs_compact(void)
+{
+  int rc;
+  pmfs_lock();
+  rc = !pmfs_mounted() ? PM_COMPACT_ERROR : pm_compact(pm_algo_global());
+  pmfs_unlock();
+  return rc;
+}
+
+uint64
 sys_pmfs_stat(void)
 {
   uint64 uwa;
@@ -99,7 +109,9 @@ sys_pmfs_metrics(void)
   int capacity;
   argaddr(0, &dst);
   argint(1, &capacity);
-  if (capacity < (int)sizeof(m))
+  // Preserve the original v1 prefix for older callers; new counters are an
+  // optional trailing extension rather than a breaking struct-size change.
+  if (capacity < (int)__builtin_offsetof(struct pmfs_metrics, gc_scans))
     return -1;
   pmfs_lock();
   if (!pmfs_mounted()) {
@@ -123,9 +135,22 @@ sys_pmfs_metrics(void)
   m.kv_fallback_run_probes = a->fallback_run_probes;
   m.kv_posting_skips = a->posting_skips;
   m.kv_page_reads = a->wa.page_reads;
+  m.gc_scans = fs->gc_scans;
+  m.gc_trace_runs = fs->gc_trace_runs;
+  m.gc_reused_pages = fs->gc_reused_pages;
+  m.gc_failed_scans = fs->gc_failed_scans;
+  m.fs_tail_pages = fs->tail;
+  m.fs_capacity_pages = fs->npages;
+  m.kv_runs = a->nruns;
+  m.compact_calls = a->compact_calls;
+  m.compact_input_records = a->compact_input_records;
+  m.compact_output_records = a->compact_output_records;
+  m.compact_output_pages = a->compact_output_pages;
   pmfs_unlock();
-  return copyout(myproc()->pagetable, myproc()->sz, dst, (char *)&m,
-                 sizeof(m)) < 0
+  if (capacity > (int)sizeof(m))
+    capacity = sizeof(m);
+  return copyout(myproc()->pagetable, myproc()->sz, dst, (char *)&m, capacity) <
+             0
            ? -1
            : 0;
 }

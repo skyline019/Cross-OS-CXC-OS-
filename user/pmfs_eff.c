@@ -24,8 +24,11 @@ main(void)
   int fd, i;
 
   TEST(pmfs_metrics((void *)-1, sizeof(a)) < 0 &&
-         pmfs_metrics(&a, sizeof(a) - 1) < 0 && pmfs_metrics(&a, -1) < 0 &&
-         mkdir("/pm/wa") == 0,
+         pmfs_metrics(&a, __builtin_offsetof(struct pmfs_metrics, gc_scans) -
+                            1) < 0 &&
+         pmfs_metrics(&a, __builtin_offsetof(struct pmfs_metrics, gc_scans)) ==
+           0 &&
+         pmfs_metrics(&a, -1) < 0 && mkdir("/pm/wa") == 0,
        1);
   fd = open("/pm/wa/f", O_CREATE | O_RDWR);
   TEST(fd >= 0 && pmfs_metrics(&a, sizeof(a)) == 0 &&

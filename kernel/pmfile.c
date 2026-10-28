@@ -217,9 +217,8 @@ pmfile_load(void)
       for (j = 0; j < PMFILE_MAX_INO; j++)
         if (next_dents[j].ino == (uint32)(i + 1))
           refs++;
-      if (refs != 1)
-        return -2;
-      if (ino->used != 1 || ino->nlink != 1 ||
+      if (ino->used != 1 || refs < 1 || ino->nlink != (uint32)refs ||
+          (ino->type == PMFILE_TYPE_DIR && refs != 1) ||
           (ino->type != PMFILE_TYPE_DIR && ino->type != PMFILE_TYPE_REG) ||
           ino->nextent > PMFILE_MAX_EXT)
         return -2;
@@ -240,7 +239,7 @@ pmfile_load(void)
         return -2;
     }
     if (d->ino) {
-      int terminated = 0, refs = 0;
+      int terminated = 0;
       if (d->ino > PMFILE_MAX_INO || !next_inodes[d->ino - 1].used ||
           d->name[0] != '/')
         return -2;
@@ -273,14 +272,9 @@ pmfile_load(void)
             return -2;
         }
       }
-      for (j = 0; j < PMFILE_MAX_INO; j++) {
-        if (next_dents[j].ino == d->ino)
-          refs++;
-        if (j < i && next_dents[j].ino && name_eq(next_dents[j].name, d->name))
+      for (j = 0; j < i; j++)
+        if (next_dents[j].ino && name_eq(next_dents[j].name, d->name))
           return -2;
-      }
-      if (refs != 1)
-        return -2;
     }
   }
   memmove(inodes, next_inodes, sizeof(inodes));
@@ -297,7 +291,7 @@ pmfile_store_meta_mask(int changed)
 {
   struct pmfs *fs = pmfs_store();
   static uint8 page[PMDEV_PAGE];
-  uint32 body, pid, count, old_tail, old_inode, old_dent;
+  uint32 body, pid, pages[2], index = 0, count, old_tail, old_inode, old_dent;
 
   if (fs == 0 || !fs->mounted || !changed || (changed & ~PM_META_ALL) ||
       sizeof(inodes) + PMFILE_HDR > PMDEV_PAGE ||
@@ -309,10 +303,11 @@ pmfile_store_meta_mask(int changed)
   old_inode = fs->inode_page;
   old_dent = fs->dent_page;
   count = ((changed & PM_META_INODES) != 0) + ((changed & PM_META_DENTS) != 0);
-  if (pmfs_alloc_pages(fs, count, &pid) != 0)
+  if (pmfs_alloc_meta(fs, count, pages) != 0)
     return -1;
 
   if (changed & PM_META_INODES) {
+    pid = pages[index++];
     memset(page, 0, sizeof(page));
     body = sizeof(inodes);
     memmove(page + PMFILE_HDR, inodes, body);
@@ -320,9 +315,10 @@ pmfile_store_meta_mask(int changed)
     *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
     if (pmfs_write_data_page(fs, pid, page) != 0)
       goto rollback;
-    fs->inode_page = pid++;
+    fs->inode_page = pid;
   }
   if (changed & PM_META_DENTS) {
+    pid = pages[index++];
     memset(page, 0, sizeof(page));
     body = sizeof(dents);
     memmove(page + PMFILE_HDR, dents, body);
@@ -472,6 +468,45 @@ pmfile_type_ino(int ino)
 }
 
 int
+pmfile_nlink_ino(int ino)
+{
+  if (pmfile_type_ino(ino) < 0)
+    return -1;
+  return inodes[ino - 1].nlink;
+}
+
+int
+pmfile_live_chunks(uint64 *keys, uint32 *lens, int max)
+{
+  int i, j, n = 0;
+  if (!keys || !lens || max < 0)
+    return -1;
+  for (i = 0; i < PMFILE_MAX_INO; i++) {
+    if (!inodes[i].used || inodes[i].type != PMFILE_TYPE_REG)
+      continue;
+    if (inodes[i].nextent > PMFILE_MAX_EXT)
+      return -1;
+    for (j = 0; j < (int)inodes[i].nextent; j++) {
+      if (n >= max)
+        return -1;
+      keys[n] = inodes[i].ext[j].key;
+      lens[n++] = inodes[i].ext[j].len;
+    }
+  }
+  return n;
+}
+
+int
+pmfile_any_open(void)
+{
+  int i;
+  for (i = 0; i < PMFILE_MAX_FD; i++)
+    if (ofile[i].ino)
+      return 1;
+  return 0;
+}
+
+int
 pmfile_path_ino(int ino, char *path)
 {
   int i;
@@ -612,6 +647,29 @@ int
 pmfile_create(const char *path)
 {
   return create_entry(path, PMFILE_TYPE_REG);
+}
+
+// Only regular files can have multiple names. The caller holds pmfs_lock and
+// pins ino; parent lookup, link count and the new dentry publish atomically.
+int
+pmfile_link_ino(int ino, const char *path)
+{
+  int di, parent;
+  if (!pmfs_mounted() || pmfile_type_ino(ino) != PMFILE_TYPE_REG ||
+      !valid_path(path) || find_dent_full(path) >= 0 ||
+      resolve_parent(path, &parent) != 0 || (di = alloc_dent()) < 0 ||
+      inodes[ino - 1].nlink >= PMFILE_MAX_INO)
+    return -1;
+  inodes[ino - 1].nlink++;
+  dents[di].ino = ino;
+  dents[di].parent = parent;
+  name_copy(dents[di].name, path);
+  if (pmfile_store_meta() != 0) {
+    inodes[ino - 1].nlink--;
+    memset(&dents[di], 0, sizeof(dents[di]));
+    return -1;
+  }
+  return 0;
 }
 
 int
@@ -786,6 +844,9 @@ pmfile_fsync(int fd)
       sync_extents_from_stream(&ofile[fd].work, st) != 0)
     return -2;
   old = inodes[ino];
+  // Links may have changed while this open stream was dirty; its contents
+  // must not overwrite a newer namespace link count.
+  ofile[fd].work.nlink = old.nlink;
   inodes[ino] = ofile[fd].work;
   // A file-content commit changes the inode/extent graph, not its dentry.
   if (pmfile_store_meta_mask(PM_META_INODES) != 0) {
@@ -846,11 +907,17 @@ pmfile_unlink(const char *path)
   if (di < 0)
     return -1;
   ino = (int)dents[di].ino;
-  if (ino == PMFILE_ROOT_INO || pmfile_refs(ino))
-    return -1; // a cwd, directory fd or in-flight lookup pins this inode
-  for (i = 0; i < PMFILE_MAX_FD; i++)
-    if (ofile[i].ino == ino)
+  if (ino == PMFILE_ROOT_INO)
+    return -1;
+  // Removing a nonfinal link cannot orphan the inode, even while it is open.
+  // Final-link unlink remains unsupported while any reference is alive.
+  if (inodes[ino - 1].nlink == 1) {
+    if (pmfile_refs(ino))
       return -1;
+    for (i = 0; i < PMFILE_MAX_FD; i++)
+      if (ofile[i].ino == ino)
+        return -1;
+  }
   if (inodes[ino - 1].type == PMFILE_TYPE_DIR) {
     for (i = 0; i < PMFILE_MAX_INO; i++)
       if (dents[i].ino && dents[i].parent == (uint32)ino)
@@ -858,7 +925,10 @@ pmfile_unlink(const char *path)
   }
   old_inode = inodes[ino - 1];
   old_dent = dents[di];
-  memset(&inodes[ino - 1], 0, sizeof(inodes[ino - 1]));
+  if (inodes[ino - 1].nlink > 1)
+    inodes[ino - 1].nlink--;
+  else
+    memset(&inodes[ino - 1], 0, sizeof(inodes[ino - 1]));
   memset(&dents[di], 0, sizeof(dents[di]));
   if (pmfile_store_meta() != 0) {
     inodes[ino - 1] = old_inode;
@@ -899,12 +969,18 @@ pmfile_rename(const char *oldpath, const char *newpath)
 
   if (dst >= 0) {
     target = dents[dst].ino;
-    if (target == PMFILE_ROOT_INO || pmfile_refs(target) ||
+    if (target == ino)
+      return 0; // two hard links to the same file: POSIX no-op
+    if (target == PMFILE_ROOT_INO ||
         inodes[target - 1].type != inodes[ino - 1].type)
       return -1;
-    for (i = 0; i < PMFILE_MAX_FD; i++)
-      if (ofile[i].ino == target)
+    if (inodes[target - 1].nlink == 1) {
+      if (pmfile_refs(target))
         return -1;
+      for (i = 0; i < PMFILE_MAX_FD; i++)
+        if (ofile[i].ino == target)
+          return -1;
+    }
     if (inodes[target - 1].type == PMFILE_TYPE_DIR)
       for (i = 0; i < PMFILE_MAX_INO; i++)
         if (dents[i].ino && dents[i].parent == (uint32)target)
@@ -925,7 +1001,10 @@ pmfile_rename(const char *oldpath, const char *newpath)
   memmove(saved, dents, sizeof(dents));
   if (target >= 0) {
     replaced = inodes[target - 1];
-    memset(&inodes[target - 1], 0, sizeof(inodes[target - 1]));
+    if (replaced.nlink > 1)
+      inodes[target - 1].nlink--;
+    else
+      memset(&inodes[target - 1], 0, sizeof(inodes[target - 1]));
     memset(&dents[dst], 0, sizeof(dents[dst]));
   }
   for (i = 0; i < PMFILE_MAX_INO; i++) {

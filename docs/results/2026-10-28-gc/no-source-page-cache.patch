@@ -1,0 +1,28 @@
+--- a/kernel/pmalgo.c
++++ b/kernel/pmalgo.c
+@@ -514,7 +514,7 @@
+ {
+   struct pmfs *fs;
+   uint32 rid, p, n = 0, keep = 0, pages_needed = 0, out_runs, i;
+-  uint32 old_tail, old_head, new_head, written = 0, cached_pid = PMFS_NIL;
++  uint32 old_tail, old_head, new_head, written = 0;
+   uint64 max_internal = 0, saved_next_chunk, seq;
+   int refs;
+ 
+@@ -640,13 +640,9 @@
+         np++;
+         off = sizeof(struct pmrun_page);
+       }
+-      // Adjacent sorted records frequently share a source page. Reuse the
+-      // verified scratch page until the source pid changes.
+-      if (rec->pid != cached_pid) {
+-        if (read_run_page(a, rec->pid, read_buffer) != 0)
+-          goto rollback;
+-        cached_pid = rec->pid;
+-      }
++      // PERFORMANCE CONTROL: reread the source page for each record.
++      if (read_run_page(a, rec->pid, read_buffer) != 0)
++        goto rollback;
+       memmove(&key, read_buffer + rec->off, sizeof(key));
+       memmove(&len, read_buffer + rec->off + 8, sizeof(len));
+       if (key != rec->key || len != rec->len)

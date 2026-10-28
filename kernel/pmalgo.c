@@ -1,6 +1,6 @@
-// Append-only, checksummed KV runs. A checkpoint names the newest run; each
-// run points to the previous run. Unreachable pages are never reused while a
-// checkpoint may reference them. Compaction/reclamation is intentionally off.
+// Checksummed KV runs are appended in increasing page order. A checkpoint
+// names the newest run; metadata GC protects every run reachable from either
+// slot. Run allocation itself remains append-only.
 #include "types.h"
 #include "param.h"
 #include "riscv.h"
@@ -10,6 +10,9 @@
 #include "pmalgo.h"
 #include "pmindex.h"
 #include "pmem.h"
+#include "pmfile.h"
+#include "pmstream.h"
+#include "pmstats.h"
 #include "pmcontract.h"
 
 #define PMRUN_MAGIC     0x33554e52534d5055ULL
@@ -39,6 +42,23 @@ typedef char
 static struct pm_algo g_algo;
 static uint8 run_buffer[PMRUN_MAX_PAGES][PMDEV_PAGE];
 static uint8 read_buffer[PMDEV_PAGE];
+
+// Bounded scratch, protected by pmfs_lock. Values remain in immutable source
+// pages and are copied only when writing an output run.
+#define PM_COMPACT_RECORDS (PM_MAX_RUNS * PM_MEM_MAX)
+#define PM_COMPACT_REFS    (PMFILE_MAX_INO * PMFILE_MAX_EXT)
+struct compact_record {
+  uint64 key;
+  uint32 pid;
+  uint32 off;
+  uint32 len;
+  uint32 rid;
+};
+static struct compact_record compact_rec[PM_COMPACT_RECORDS];
+static struct compact_record compact_tmp[PM_COMPACT_RECORDS];
+static uint64 compact_keys[PM_COMPACT_REFS];
+static uint32 compact_lens[PM_COMPACT_REFS];
+static uint8 compact_seen[PM_COMPACT_REFS];
 
 static uint64
 mix64(uint64 x)
@@ -248,6 +268,74 @@ load_run(struct pm_algo *a, uint32 pid, uint32 rid, uint64 *seq_out,
   return 0;
 }
 
+// Independently trace a checkpoint's chain, including the older slot, before
+// any metadata page may be recycled. Validate page headers, checksums, record
+// bounds, ordering and non-overlap; never infer the older chain from the
+// current in-memory index. Runs are immutable while either slot names them.
+int
+pm_algo_trace_runs(struct pmfs *fs, uint32 head, uint32 tail, uint64 *bits,
+                   uint64 *run_count)
+{
+  static uint8 page[PMDEV_PAGE];
+  struct pmrun_page *h = (struct pmrun_page *)page;
+  uint64 newer_seq = ~(uint64)0, runs = 0;
+
+  if (!fs || !bits || tail < PMFS_DATA0 || tail > fs->npages)
+    return -1;
+  while (head != PMFS_NIL) {
+    uint32 pages, prev, p, all = 0;
+    uint64 seq, last = 0;
+    int have_last = 0;
+    if (++runs > PM_MAX_RUNS || head < PMFS_DATA0 || head >= tail ||
+        pmdev_read(&fs->dev, head, 0, page, PMDEV_PAGE) != 0 ||
+        h->magic != PMRUN_MAGIC || h->version != PMRUN_VERSION ||
+        h->checksum != page_checksum(page) || h->page0 != head ||
+        h->page_index != 0 || h->npages == 0 || h->npages > PMRUN_MAX_PAGES ||
+        h->npages > tail - head || h->seq == 0 || h->seq >= newer_seq ||
+        (h->previous != PMFS_NIL &&
+         (h->previous < PMFS_DATA0 || h->previous >= head)))
+      return -1;
+    pages = h->npages;
+    prev = h->previous;
+    seq = h->seq;
+    for (p = 0; p < pages; p++) {
+      uint32 off = sizeof(*h), i, count, pid = head + p;
+      uint64 mask = 1ULL << (pid & 63);
+      if ((bits[pid >> 6] & mask) ||
+          pmdev_read(&fs->dev, pid, 0, page, PMDEV_PAGE) != 0 ||
+          h->magic != PMRUN_MAGIC || h->version != PMRUN_VERSION ||
+          h->checksum != page_checksum(page) || h->page0 != head ||
+          h->page_index != p || h->npages != pages || h->previous != prev ||
+          h->seq != seq)
+        return -1;
+      bits[pid >> 6] |= mask;
+      count = h->nrecords;
+      if (count == 0 || count > PM_MEM_MAX || all + count > PM_MEM_MAX)
+        return -1;
+      for (i = 0; i < count; i++) {
+        uint64 key;
+        uint32 len;
+        if (off + PM_REC_HDR > PMDEV_PAGE)
+          return -1;
+        memmove(&key, page + off, sizeof(key));
+        memmove(&len, page + off + 8, sizeof(len));
+        if (len > PM_VAL_MAX || len > PMDEV_PAGE - off - PM_REC_HDR ||
+            (have_last && key <= last))
+          return -1;
+        have_last = 1;
+        last = key;
+        off += PM_REC_HDR + len;
+      }
+      all += count;
+    }
+    newer_seq = seq;
+    head = prev;
+  }
+  if (run_count)
+    *run_count += runs;
+  return 0;
+}
+
 int
 pm_algo_recover(struct pm_algo *a)
 {
@@ -381,8 +469,243 @@ rollback:
   return -1;
 }
 
-// No unsafe compaction: return success without discarding any live run.
-// Capacity exhaustion is reported by pm_seal instead of dropping old views.
+// Sort by key ascending and run recency descending; the first record for a
+// key is its newest version. Bottom-up merge sort avoids a kernel-stack
+// recursion and remains O(N log N) for the bounded 8192-record input.
+static int
+compact_before(const struct compact_record *a, const struct compact_record *b)
+{
+  return a->key < b->key || (a->key == b->key && a->rid >= b->rid);
+}
+
+static void
+compact_sort(uint32 n)
+{
+  uint32 width, start;
+  for (width = 1; width < n; width *= 2) {
+    for (start = 0; start < n; start += 2 * width) {
+      uint32 left = start, mid = start + width, end = start + 2 * width;
+      uint32 right, dst = start;
+      if (mid > n)
+        mid = n;
+      if (end > n)
+        end = n;
+      right = mid;
+      while (left < mid && right < end) {
+        if (compact_before(&compact_rec[left], &compact_rec[right]))
+          compact_tmp[dst++] = compact_rec[left++];
+        else
+          compact_tmp[dst++] = compact_rec[right++];
+      }
+      while (left < mid)
+        compact_tmp[dst++] = compact_rec[left++];
+      while (right < end)
+        compact_tmp[dst++] = compact_rec[right++];
+    }
+    memmove(compact_rec, compact_tmp, n * sizeof(compact_rec[0]));
+  }
+}
+
+// Full-chain COW merge. It never overwrites the old chain, publishes exactly
+// one new checkpoint, and leaves the previous slot protected by metadata GC.
+// This is an explicit bounded operation, not automatic or near-full GC.
+int
+pm_compact(struct pm_algo *a)
+{
+  struct pmfs *fs;
+  uint32 rid, p, n = 0, keep = 0, pages_needed = 0, out_runs, i;
+  uint32 old_tail, old_head, new_head, written = 0, cached_pid = PMFS_NIL;
+  uint64 max_internal = 0, saved_next_chunk, seq;
+  int refs;
+
+  if (!a || !(fs = a->fs) || !fs->mounted)
+    return PM_COMPACT_ERROR;
+  if (a->mem_n || pmfile_any_open() || pmstream_any_active())
+    return PM_COMPACT_BUSY;
+  if (a->nruns > PM_MAX_RUNS)
+    return PM_COMPACT_ERROR;
+  refs = pmfile_live_chunks(compact_keys, compact_lens, PM_COMPACT_REFS);
+  if (refs < 0)
+    return PM_COMPACT_ERROR;
+  memset(compact_seen, 0, sizeof(compact_seen));
+  for (i = 0; i < (uint32)refs; i++)
+    if (!pm_algo_is_internal_key(compact_keys[i]) || compact_lens[i] == 0 ||
+        compact_lens[i] > PM_VAL_MAX)
+      return PM_COMPACT_ERROR;
+
+  // Collect locations, not values. Every read is checksummed again so corrupt
+  // source media cannot silently become a newly published compacted view.
+  for (rid = 0; rid < a->nruns; rid++) {
+    struct pm_run *r = &a->runs[rid];
+    if (!r->used || !r->npages || r->npages > PMRUN_MAX_PAGES)
+      return PM_COMPACT_ERROR;
+    for (p = 0; p < r->npages; p++) {
+      struct pmrun_page *h = (struct pmrun_page *)read_buffer;
+      uint32 off = sizeof(*h), j;
+      if (read_run_page(a, r->page0 + p, read_buffer) != 0 ||
+          h->page0 != r->page0 || h->page_index != p ||
+          h->npages != r->npages || h->seq != r->seq || h->nrecords == 0 ||
+          h->nrecords > PM_MEM_MAX)
+        return PM_COMPACT_ERROR;
+      for (j = 0; j < h->nrecords; j++) {
+        uint64 key;
+        uint32 len;
+        if (n >= PM_COMPACT_RECORDS || off + PM_REC_HDR > PMDEV_PAGE)
+          return PM_COMPACT_ERROR;
+        memmove(&key, read_buffer + off, sizeof(key));
+        memmove(&len, read_buffer + off + 8, sizeof(len));
+        if (len > PM_VAL_MAX || len > PMDEV_PAGE - off - PM_REC_HDR)
+          return PM_COMPACT_ERROR;
+        compact_rec[n].key = key;
+        compact_rec[n].pid = r->page0 + p;
+        compact_rec[n].off = off;
+        compact_rec[n].len = len;
+        compact_rec[n++].rid = rid;
+        if (pm_algo_is_internal_key(key) && key > max_internal)
+          max_internal = key;
+        off += PM_REC_HDR + len;
+      }
+    }
+  }
+  compact_sort(n);
+  for (i = 0; i < n;) {
+    struct compact_record rec = compact_rec[i];
+    uint32 j, next = i + 1;
+    int retain = !pm_algo_is_internal_key(rec.key) || rec.key == max_internal;
+    while (next < n && compact_rec[next].key == rec.key)
+      next++;
+    for (j = 0; j < (uint32)refs; j++) {
+      if (compact_keys[j] == rec.key) {
+        if (compact_lens[j] != rec.len)
+          return PM_COMPACT_ERROR;
+        compact_seen[j] = 1;
+        retain = 1;
+      }
+    }
+    if (retain)
+      compact_rec[keep++] = rec;
+    i = next;
+  }
+  for (i = 0; i < (uint32)refs; i++)
+    if (!compact_seen[i])
+      return PM_COMPACT_ERROR;
+
+  // Keep the greatest historical internal chunk as a high-water marker, even
+  // when it is dead, so a restart cannot recycle an older chunk identifier.
+  // Count exact output pages before writing anything; insufficient temporary
+  // tail space leaves the current checkpoint and in-memory index untouched.
+  out_runs = (keep + PM_MEM_MAX - 1) / PM_MEM_MAX;
+  if (out_runs > PM_MAX_RUNS ||
+      (out_runs && (a->next_seq == ~(uint64)0 ||
+                    (uint64)out_runs > ~(uint64)0 - a->next_seq)))
+    return PM_COMPACT_ERROR;
+  for (i = 0; i < keep;) {
+    uint32 end = i + PM_MEM_MAX, off = sizeof(struct pmrun_page), np = 1;
+    if (end > keep)
+      end = keep;
+    while (i < end) {
+      uint32 size = PM_REC_HDR + compact_rec[i++].len;
+      if (off + size > PMDEV_PAGE) {
+        np++;
+        off = sizeof(struct pmrun_page);
+      }
+      off += size;
+    }
+    if (np > PMRUN_MAX_PAGES)
+      return PM_COMPACT_ERROR;
+    pages_needed += np;
+  }
+  if (fs->tail > fs->npages || pages_needed > fs->npages - fs->tail)
+    return PM_COMPACT_NOSPACE;
+  if (a->nruns == 0 && keep == 0)
+    return 0;
+
+  old_tail = fs->tail;
+  old_head = fs->run_head;
+  saved_next_chunk = a->next_chunk;
+  new_head = PMFS_NIL;
+  seq = a->next_seq;
+  for (i = 0; i < keep;) {
+    uint32 end = i + PM_MEM_MAX, off = sizeof(struct pmrun_page);
+    uint32 counts[PMRUN_MAX_PAGES], np = 1, pid;
+    if (end > keep)
+      end = keep;
+    memset(run_buffer, 0, sizeof(run_buffer));
+    memset(counts, 0, sizeof(counts));
+    while (i < end) {
+      struct compact_record *rec = &compact_rec[i++];
+      uint64 key;
+      uint32 len, size = PM_REC_HDR + rec->len;
+      if (off + size > PMDEV_PAGE) {
+        np++;
+        off = sizeof(struct pmrun_page);
+      }
+      // Adjacent sorted records frequently share a source page. Reuse the
+      // verified scratch page until the source pid changes.
+      if (rec->pid != cached_pid) {
+        if (read_run_page(a, rec->pid, read_buffer) != 0)
+          goto rollback;
+        cached_pid = rec->pid;
+      }
+      memmove(&key, read_buffer + rec->off, sizeof(key));
+      memmove(&len, read_buffer + rec->off + 8, sizeof(len));
+      if (key != rec->key || len != rec->len)
+        goto rollback;
+      memmove(run_buffer[np - 1] + off, &key, sizeof(key));
+      memmove(run_buffer[np - 1] + off + 8, &len, sizeof(len));
+      if (len)
+        memmove(run_buffer[np - 1] + off + PM_REC_HDR,
+                read_buffer + rec->off + PM_REC_HDR, len);
+      counts[np - 1]++;
+      off += size;
+    }
+    if (pmfs_alloc_pages(fs, np, &pid) != 0)
+      goto rollback;
+    for (p = 0; p < np; p++) {
+      struct pmrun_page *h = (struct pmrun_page *)run_buffer[p];
+      h->magic = PMRUN_MAGIC;
+      h->seq = seq;
+      h->version = PMRUN_VERSION;
+      h->page0 = pid;
+      h->page_index = p;
+      h->npages = np;
+      h->previous = new_head;
+      h->nrecords = counts[p];
+      h->checksum = page_checksum(run_buffer[p]);
+      if (pmfs_write_data_page(fs, pid + p, run_buffer[p]) != 0)
+        goto rollback;
+    }
+    written += np;
+    new_head = pid;
+    seq++;
+  }
+  fs->run_head = new_head;
+  if (pmfs_commit(fs) != 0)
+    goto rollback;
+  // Publication succeeded: rebuild all volatile indexes from the new chain.
+  // If verification unexpectedly fails, stop serving rather than roll back
+  // an already-durable checkpoint in memory.
+  if (pm_algo_recover(a) != 0) {
+    fs->mounted = 0;
+    return PM_COMPACT_ERROR;
+  }
+  if (a->next_chunk < saved_next_chunk)
+    a->next_chunk = saved_next_chunk;
+  a->wa.compacts++;
+  a->wa.phys_bytes += (uint64)written * PMDEV_PAGE;
+  a->compact_calls++;
+  a->compact_input_records += n;
+  a->compact_output_records += keep;
+  a->compact_output_pages += written;
+  return 0;
+
+rollback:
+  fs->tail = old_tail;
+  fs->run_head = old_head;
+  return PM_COMPACT_ERROR;
+}
+
+// Automatic or incremental maintenance is intentionally not enabled.
 int
 pm_maintain(struct pm_algo *a)
 {

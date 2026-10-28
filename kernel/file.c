@@ -266,7 +266,7 @@ filestat(struct file *f, uint64 addr)
     st.dev = 2;
     st.ino = f->pmino;
     st.type = f->type == FD_PMFS_DIR ? T_DIR : T_FILE;
-    st.nlink = 1;
+    st.nlink = pmfile_nlink_ino(f->pmino);
     st.size = f->type == FD_PMFS_DIR
                 ? (PMFILE_MAX_INO + 2) * sizeof(struct dirent)
                 : f->pm->len;

@@ -46,3 +46,4 @@
 #define SYS_getdents     43
 #define SYS_rename       44
 #define SYS_pmfs_metrics 45
+#define SYS_pmfs_compact 46

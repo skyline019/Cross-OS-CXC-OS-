@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Process-restart oracle for atomic PMFS directory-subtree rename.
+"""Process-restart oracle for PMFS subtree rename and hard-link transactions.
 
 Run on a disposable build with PMEM_MAP and PMFS_FAULT_INJECT, after building
 kernel/kernel and fs.img. All guest disks and RAM/NVDIMM backends are temporary.
@@ -100,6 +100,117 @@ def main():
                     vfs(ram, old, f"{kind}-page-{stage}-{skip}-old")
                     ram.unlink()
             prepared.unlink()
+
+        # Both creating and removing an alias publish inode link counts and
+        # dentries together. Every interruption must recover the old or new
+        # graph, with matching inode numbers, contents and link counts.
+        one = copy_base("link-one-base")
+        vfs(one, "link-prepare")
+        vfs(one, "link-one", "link-one-baseline-reboot")
+        two = directory / "link-two-base.ram"
+        recovery.sparse_copy(one, two)
+        vfs(two, "link-add", "link-two-prepare")
+        vfs(two, "link-two", "link-two-baseline-reboot")
+        for action, prepared, old, new in (
+            ("add", one, "link-one", "link-two"),
+            ("drop", two, "link-two", "link-one"),
+        ):
+            def link_copy(label):
+                ram = directory / f"link-{action}-{label}.ram"
+                recovery.sparse_copy(prepared, ram)
+                return ram
+
+            ram = link_copy("normal")
+            vfs(ram, f"link-{action}")
+            vfs(ram, new, f"link-{action}-normal-reboot-1")
+            vfs(ram, new, f"link-{action}-normal-reboot-2")
+            ram.unlink()
+            for stage in range(1, 6):
+                ram = link_copy(f"checkpoint-{stage}")
+                run.boot(ram, f"link-{action}-checkpoint-{stage}",
+                         f"vfstest fault-link-{action} {stage} 0",
+                         f"PMFS_FAULT_POINT stage={stage}", False,
+                         failure_marker=b"VFS_TEST_FAIL")
+                expected = new if stage >= 4 else old
+                vfs(ram, expected, f"link-{action}-checkpoint-{stage}-{expected}")
+                ram.unlink()
+            for stage in (6, 7):
+                for skip in range(2):
+                    ram = link_copy(f"page-{stage}-{skip}")
+                    run.boot(ram, f"link-{action}-page-{stage}-{skip}",
+                             f"vfstest fault-link-{action} {stage} {skip}",
+                             f"PMFS_FAULT_POINT stage={stage}", False,
+                             failure_marker=b"VFS_TEST_FAIL")
+                    vfs(ram, old, f"link-{action}-page-{stage}-{skip}-{old}")
+                    ram.unlink()
+        one.unlink()
+        two.unlink()
+
+        # Content updates through a dedicated stream retain hard-link counts
+        # and atomically switch all aliases from the old version to the new.
+        stream = copy_base("link-stream-base")
+        vfs(stream, "stream-prepare")
+        vfs(stream, "stream-old", "stream-baseline-reboot")
+
+        def stream_copy(label):
+            ram = directory / f"link-stream-{label}.ram"
+            recovery.sparse_copy(stream, ram)
+            return ram
+
+        ram = stream_copy("normal")
+        vfs(ram, "stream-update")
+        vfs(ram, "stream-new", "stream-normal-reboot-1")
+        vfs(ram, "stream-new", "stream-normal-reboot-2")
+        ram.unlink()
+        ram = stream_copy("dirty")
+        run.boot(ram, "stream-dirty", "vfstest stream-dirty",
+                 "VFS_LINK_DIRTY_READY", False, failure_marker=b"VFS_TEST_FAIL")
+        vfs(ram, "stream-old", "stream-dirty-reboot")
+        ram.unlink()
+        for skip in (0, 1):
+            for stage in range(1, 6):
+                ram = stream_copy(f"checkpoint-{skip}-{stage}")
+                run.boot(ram, f"stream-checkpoint-{skip}-{stage}",
+                         f"vfstest stream-fault {stage} {skip}",
+                         f"PMFS_FAULT_POINT stage={stage}", False,
+                         failure_marker=b"VFS_TEST_FAIL")
+                expected = "stream-new" if skip == 1 and stage >= 4 else "stream-old"
+                vfs(ram, expected, f"stream-checkpoint-{skip}-{stage}-view")
+                ram.unlink()
+        for stage in (6, 7):
+            for skip in (0, 1):
+                ram = stream_copy(f"page-{stage}-{skip}")
+                run.boot(ram, f"stream-page-{stage}-{skip}",
+                         f"vfstest stream-fault {stage} {skip}",
+                         f"PMFS_FAULT_POINT stage={stage}", False,
+                         failure_marker=b"VFS_TEST_FAIL")
+                vfs(ram, "stream-old", f"stream-page-{stage}-{skip}-old")
+                ram.unlink()
+        stream.unlink()
+
+        # A page-write interruption happens before the inactive slot is
+        # invalidated. Tear the active slot afterwards: the older checkpoint
+        # must still contain its own complete namespace and live run chain.
+        dual = copy_base("gc-dual-base")
+        vfs(dual, "gc-prepare")
+        vfs(dual, "gc-b", "gc-dual-baseline-reboot")
+        _, active_slot, _ = recovery.newest_sb(dual)
+        ram = directory / "gc-dual-normal.ram"
+        recovery.sparse_copy(dual, ram)
+        vfs(ram, "gc-move")
+        vfs(ram, "gc-a", "gc-dual-normal-reboot")
+        ram.unlink()
+        for stage in (6, 7):
+            ram = directory / f"gc-dual-fault-{stage}.ram"
+            recovery.sparse_copy(dual, ram)
+            run.boot(ram, f"gc-dual-fault-{stage}", f"vfstest gc-fault {stage} 0",
+                     f"PMFS_FAULT_POINT stage={stage}", False,
+                     failure_marker=b"VFS_TEST_FAIL")
+            recovery.flip_byte(ram, recovery.FS_START + active_slot * recovery.PAGE + 8)
+            vfs(ram, "gc-a", f"gc-dual-fallback-{stage}-1")
+            vfs(ram, "gc-a", f"gc-dual-fallback-{stage}-2")
+            ram.unlink()
+        dual.unlink()
         print(f"VFS_RECOVERY_PASS boots={run.count} cpus={args.cpus} "
               f"nvdimm={int(args.nvdimm)} zicbom={int(args.zicbom)}")
     return 0

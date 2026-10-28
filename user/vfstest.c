@@ -4,6 +4,7 @@
 #include "kernel/fcntl.h"
 #include "kernel/fs.h"
 #include "kernel/vfs.h"
+#include "kernel/pmstats.h"
 #include "user/user.h"
 
 static char buf[1024];
@@ -51,7 +52,7 @@ basic(const char *mode)
 {
   int fd, fd2, n, i, j, pid, status, ready[2], go[2], fds[16];
   int dots, dotdots, dirs, longs, mounts, count[3];
-  struct stat st;
+  struct stat st, st2;
   struct vfs_dirent ent;
   struct dirent de;
 
@@ -324,6 +325,86 @@ basic(const char *mode)
     CHECK(close(fds[j]) == 0, 62);
   CHECK(unlink("/pm/vf/multi") == 0, 63);
 
+  // A hard link names the same inode; unlinking a nonfinal name is safe even
+  // while a descriptor is open, and rename between aliases is a no-op.
+  CHECK(mkdir("/pm/vf/links") == 0 &&
+          link("/pm/vf/links", "/pm/vf/dirlink") < 0 &&
+          link("README", "/pm/vf/native-link") < 0,
+        69);
+  fd = open("/pm/vf/links/a", O_CREATE | O_RDWR);
+  CHECK(fd >= 0 && write(fd, "A", 1) == 1 &&
+          link("/pm/vf/links/a", "/pm/vf/links/b") == 0 &&
+          link("/pm/vf/links/a", "/pm/vf/links/b") < 0 && fstat(fd, &st) == 0 &&
+          st.nlink == 2 && fsync(fd) == 0,
+        70);
+  fd2 = open("/pm/vf/links/b", O_RDONLY);
+  CHECK(fd2 >= 0 && fstat(fd2, &st2) == 0 && st2.nlink == 2 &&
+          st.ino == st2.ino && read(fd2, buf, 1) == 1 && buf[0] == 'A' &&
+          close(fd2) == 0 && rename("/pm/vf/links/a", "/pm/vf/links/b") == 0 &&
+          unlink("/pm/vf/links/a") == 0 && fstat(fd, &st) == 0 &&
+          st.nlink == 1 && unlink("/pm/vf/links/b") < 0 && close(fd) == 0 &&
+          checkfile("/pm/vf/links/b", "A") == 0 &&
+          unlink("/pm/vf/links/b") == 0,
+        71);
+
+  // Replacing a linked target removes only its destination name; an open fd
+  // and the remaining alias continue to reference its original inode.
+  CHECK(writefile("/pm/vf/links/t", "old") == 0 &&
+          link("/pm/vf/links/t", "/pm/vf/links/u") == 0 &&
+          writefile("/pm/vf/links/s", "new") == 0,
+        72);
+  fd = open("/pm/vf/links/t", O_RDWR);
+  CHECK(fd >= 0 && write(fd, "O", 1) == 1 &&
+          rename("/pm/vf/links/s", "/pm/vf/links/t") == 0 &&
+          fstat(fd, &st) == 0 && st.nlink == 1 && fsync(fd) == 0 &&
+          lseek(fd, 0, SEEK_SET) == 0 && read(fd, buf, 3) == 3 &&
+          memcmp(buf, "Old", 3) == 0 && close(fd) == 0 &&
+          checkfile("/pm/vf/links/u", "Old") == 0 &&
+          checkfile("/pm/vf/links/t", "new") == 0,
+        73);
+
+  // Dedicated streams cache a working inode. A link created while one is
+  // dirty must not be undone when that stale work inode is later committed.
+  CHECK(pmfs_create("/vf/links/h") == 0 &&
+          (fd = pmfs_fopen("/vf/links/h")) >= 0 &&
+          pmfs_fwrite(fd, "stream", 6) == 6 &&
+          link("/pm/vf/links/h", "/pm/vf/links/i") == 0 &&
+          pmfs_fsync(fd) == 0 && pmfs_fclose(fd) == 0,
+        87);
+  fd = open("/pm/vf/links/h", O_RDONLY);
+  fd2 = open("/pm/vf/links/i", O_RDONLY);
+  CHECK(fd >= 0 && fd2 >= 0 && fstat(fd, &st) == 0 && fstat(fd2, &st2) == 0 &&
+          st.nlink == 2 && st2.nlink == 2 && st.ino == st2.ino &&
+          close(fd) == 0 && close(fd2) == 0 &&
+          checkfile("/pm/vf/links/i", "stream") == 0,
+        88);
+
+  // Multiple harts add/open/remove different aliases to the same inode. The
+  // permanent name keeps it linked, while every link-count transition must
+  // remain serializable under the global PMFS lock.
+  CHECK(writefile("/pm/vf/links/p", "parallel") == 0, 95);
+  for (i = 0; i < 3; i++) {
+    pid = fork();
+    CHECK(pid >= 0, 96);
+    if (pid == 0) {
+      const char *alias = i == 0   ? "/pm/vf/links/p0"
+                          : i == 1 ? "/pm/vf/links/p1"
+                                   : "/pm/vf/links/p2";
+      for (j = 0; j < 20; j++) {
+        if (link("/pm/vf/links/p", alias) != 0 ||
+            checkfile(alias, "parallel") != 0 || unlink(alias) != 0)
+          exit(1);
+      }
+      exit(0);
+    }
+  }
+  for (i = 0; i < 3; i++)
+    CHECK(wait(&status) > 0 && status == 0, 97);
+  fd = open("/pm/vf/links/p", O_RDONLY);
+  CHECK(fd >= 0 && fstat(fd, &st) == 0 && st.nlink == 1 && close(fd) == 0 &&
+          unlink("/pm/vf/links/p") == 0,
+        98);
+
   // Race global sync against the last user close; sync must not extend the
   // file object's lifetime with an invisible reference that delays close.
   for (i = 0; i < 12; i++) {
@@ -352,34 +433,43 @@ basic(const char *mode)
   }
 }
 
-// Exhaust the append-only metadata allocator in a disposable EMUL image.
-// A failed rename must roll the in-memory tree back to the last committed one.
+// More metadata-only updates than the entire EMUL device has pages must work
+// without exhausting its append frontier. This is not full-device KV GC.
 static void
 capacity(const char *mode)
 {
   const char *src = "/pm/c/a", *dst = "/pm/c/b", *tmp;
+  struct pmfs_metrics before, after;
   int i, fd;
   CHECK(mkdir("/pm/c") == 0 && writefile(src, "capacity-data") == 0 &&
           writefile("/pm/c/g", "guard") == 0 &&
           (fd = open("/pm/c/dirty", O_CREATE | O_RDWR)) >= 0 &&
-          write(fd, "dirty", 5) == 5,
+          write(fd, "dirty", 5) == 5 &&
+          pmfs_metrics(&before, sizeof(before)) == 0,
         60);
-  for (i = 0; i < 4000; i++) {
-    if (rename(src, dst) != 0)
-      break;
+  for (i = 0; i < 5000; i++) {
+    CHECK(rename(src, dst) == 0, 61);
     tmp = src;
     src = dst;
     dst = tmp;
   }
-  CHECK(i > 0 && i < 4000 && checkfile(src, "capacity-data") == 0 &&
-          open(dst, O_RDONLY) < 0 && checkfile("/pm/c/g", "guard") == 0 &&
-          rename(src, dst) < 0 && checkfile(src, "capacity-data") == 0,
-        61);
-  // A dirty file cannot be committed once the append-only space is full;
-  // both global sync and the last close must report the error.
-  CHECK(sync() < 0 && close(fd) < 0 && checkfile(src, "capacity-data") == 0,
+  CHECK(pmfs_metrics(&after, sizeof(after)) == 0 &&
+          after.gc_reused_pages - before.gc_reused_pages >= 4998 &&
+          after.gc_failed_scans == before.gc_failed_scans &&
+          after.gc_trace_runs - before.gc_trace_runs <=
+            2 * before.kv_runs + 2 &&
+          after.fs_tail_pages <= before.fs_tail_pages + 2 &&
+          checkfile(src, "capacity-data") == 0 && open(dst, O_RDONLY) < 0 &&
+          checkfile("/pm/c/g", "guard") == 0 && sync() == 0 && close(fd) == 0 &&
+          checkfile("/pm/c/dirty", "dirty") == 0,
         67);
-  printf("VFS_CAPACITY_PASS successful_renames=%d\n", i);
+  printf("VFS_CAPACITY_PASS successful_renames=%d reused=%lu tail_before=%lu "
+         "tail_after=%lu scans=%lu traced_runs=%lu read_bytes=%lu\n",
+         i, after.gc_reused_pages - before.gc_reused_pages,
+         before.fs_tail_pages, after.fs_tail_pages,
+         after.gc_scans - before.gc_scans,
+         after.gc_trace_runs - before.gc_trace_runs,
+         after.dev_read_bytes - before.dev_read_bytes);
 }
 
 // A separate fresh MAP/NVDIMM image is used for each fault test. One rename
@@ -410,6 +500,49 @@ verify(const char *mode, int is_new, int replace)
   }
 }
 
+static void
+verify_link_stream(const char *mode, int is_new)
+{
+  struct stat a, b;
+  const char *data = is_new ? "new" : "old";
+  int fd = open("/pm/s/a", O_RDONLY), other = open("/pm/s/b", O_RDONLY);
+  CHECK(fd >= 0 && other >= 0 && fstat(fd, &a) == 0 && fstat(other, &b) == 0 &&
+          a.ino == b.ino && a.nlink == 2 && b.nlink == 2 && close(fd) == 0 &&
+          close(other) == 0 && checkfile("/pm/s/a", data) == 0 &&
+          checkfile("/pm/s/b", data) == 0,
+        89);
+}
+
+static void
+verify_gc_slots(const char *mode, int at_b)
+{
+  const char *have = at_b ? "/pm/d/b" : "/pm/d/a";
+  const char *missing = at_b ? "/pm/d/a" : "/pm/d/b";
+  CHECK(checkfile(have, "dual-root") == 0 && open(missing, O_RDONLY) < 0 &&
+          checkfile("/pm/d/g", "guard") == 0,
+        82);
+}
+
+static void
+verify_links(const char *mode, int linked)
+{
+  struct stat a, b;
+  int fd = open("/pm/l/a", O_RDONLY), other;
+  CHECK(fd >= 0 && fstat(fd, &a) == 0 && a.nlink == (linked ? 2 : 1) &&
+          read(fd, buf, 9) == 9 && memcmp(buf, "link-data", 9) == 0 &&
+          close(fd) == 0 && checkfile("/pm/l/guard", "guard") == 0,
+        74);
+  other = open("/pm/l/b", O_RDONLY);
+  if (linked) {
+    CHECK(other >= 0 && fstat(other, &b) == 0 && b.ino == a.ino &&
+            b.nlink == 2 && read(other, buf, 9) == 9 &&
+            memcmp(buf, "link-data", 9) == 0 && close(other) == 0,
+          75);
+  } else {
+    CHECK(other < 0, 76);
+  }
+}
+
 int
 main(int argc, char **argv)
 {
@@ -427,6 +560,72 @@ main(int argc, char **argv)
   else if (strcmp(mode, "move") == 0) {
     CHECK(rename("/pm/r/old", "/pm/r/new") == 0, 52);
     verify(mode, 1, 0);
+  } else if (strcmp(mode, "stream-prepare") == 0) {
+    CHECK(mkdir("/pm/s") == 0 && writefile("/pm/s/a", "old") == 0 &&
+            link("/pm/s/a", "/pm/s/b") == 0,
+          90);
+    verify_link_stream(mode, 0);
+  } else if (strcmp(mode, "stream-old") == 0) {
+    verify_link_stream(mode, 0);
+  } else if (strcmp(mode, "stream-new") == 0) {
+    verify_link_stream(mode, 1);
+  } else if (strcmp(mode, "stream-update") == 0 ||
+             strcmp(mode, "stream-dirty") == 0 ||
+             (strcmp(mode, "stream-fault") == 0 && argc == 4)) {
+    int fd = pmfs_fopen("/s/a");
+    CHECK(fd >= 0 && pmfs_fwrite(fd, "new", 3) == 3, 91);
+    if (strcmp(mode, "stream-dirty") == 0) {
+      printf("VFS_LINK_DIRTY_READY\n");
+      for (;;)
+        ;
+    }
+    if (strcmp(mode, "stream-fault") == 0)
+      CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 92);
+    CHECK(pmfs_fsync(fd) == 0 && pmfs_fclose(fd) == 0, 93);
+    if (strcmp(mode, "stream-fault") == 0)
+      fail(mode, 94);
+    verify_link_stream(mode, 1);
+  } else if (strcmp(mode, "gc-prepare") == 0) {
+    CHECK(mkdir("/pm/d") == 0 && writefile("/pm/d/a", "dual-root") == 0 &&
+            writefile("/pm/d/g", "guard") == 0 &&
+            rename("/pm/d/a", "/pm/d/b") == 0,
+          83);
+    verify_gc_slots(mode, 1);
+  } else if (strcmp(mode, "gc-a") == 0) {
+    verify_gc_slots(mode, 0);
+  } else if (strcmp(mode, "gc-b") == 0) {
+    verify_gc_slots(mode, 1);
+  } else if (strcmp(mode, "gc-move") == 0) {
+    CHECK(rename("/pm/d/b", "/pm/d/a") == 0, 84);
+    verify_gc_slots(mode, 0);
+  } else if (strcmp(mode, "gc-fault") == 0 && argc == 4) {
+    CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 85);
+    rename("/pm/d/b", "/pm/d/a");
+    fail(mode, 86);
+  } else if (strcmp(mode, "link-prepare") == 0) {
+    CHECK(mkdir("/pm/l") == 0 && writefile("/pm/l/a", "link-data") == 0 &&
+            writefile("/pm/l/guard", "guard") == 0,
+          77);
+    verify_links(mode, 0);
+  } else if (strcmp(mode, "link-one") == 0) {
+    verify_links(mode, 0);
+  } else if (strcmp(mode, "link-two") == 0) {
+    verify_links(mode, 1);
+  } else if (strcmp(mode, "link-add") == 0) {
+    CHECK(link("/pm/l/a", "/pm/l/b") == 0, 78);
+    verify_links(mode, 1);
+  } else if (strcmp(mode, "link-drop") == 0) {
+    CHECK(unlink("/pm/l/b") == 0, 79);
+    verify_links(mode, 0);
+  } else if ((strcmp(mode, "fault-link-add") == 0 ||
+              strcmp(mode, "fault-link-drop") == 0) &&
+             argc == 4) {
+    CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 80);
+    if (strcmp(mode, "fault-link-add") == 0)
+      link("/pm/l/a", "/pm/l/b");
+    else
+      unlink("/pm/l/b");
+    fail(mode, 81);
   } else if (strcmp(mode, "fault") == 0 && argc == 4) {
     CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 53);
     rename("/pm/r/old", "/pm/r/new");

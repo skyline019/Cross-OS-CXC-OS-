@@ -213,11 +213,12 @@ sys_fstat(void)
   return filestat(f, st);
 }
 
-// Hard links are currently supported only within the native xv6 backend.
+// Native and PMFS regular-file links remain confined to one backend.
 uint64
 sys_link(void)
 {
   char name[MAXPATH], diskname[DIRSIZ], new[MAXPATH], old[MAXPATH];
+  char pmpath[PMFILE_NAME];
   struct vnode src = {0}, parent = {0};
   struct inode *dp, *ip;
   int slash, rc = -1;
@@ -227,8 +228,16 @@ sys_link(void)
   begin_op();
   if (vfs_walk(old, 0, &src, 0, 0) != 0 ||
       vfs_walk(new, 1, &parent, name, &slash) != 0 || slash ||
-      src.kind != VFS_XV6 || parent.kind != VFS_XV6 ||
       vfs_ismount(&parent, name))
+    goto out;
+  if (src.kind == VFS_PMFS && parent.kind == VFS_PMFS) {
+    pmfs_lock();
+    if (pmfile_child_path(parent.pmino, name, pmpath) == 0)
+      rc = pmfile_link_ino(src.pmino, pmpath);
+    pmfs_unlock();
+    goto out;
+  }
+  if (src.kind != VFS_XV6 || parent.kind != VFS_XV6)
     goto out;
   ip = src.ip;
   dp = parent.ip;

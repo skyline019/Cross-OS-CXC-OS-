@@ -55,10 +55,16 @@ void pmfile_pin(int ino);
 void pmfile_unpin(int ino);
 int pmfile_lookup_ino(int parent, const char *name); // returns a pinned inode
 int pmfile_type_ino(int ino);
+int pmfile_nlink_ino(int ino);
 int pmfile_path_ino(int ino, char *path);
+// Used under pmfs_lock by explicit compaction; max is at least
+// PMFILE_MAX_INO * PMFILE_MAX_EXT. Each durable extent must survive.
+int pmfile_live_chunks(uint64 *keys, uint32 *lens, int max);
+int pmfile_any_open(void);
 int pmfile_child_path(int parent, const char *name, char *path);
 int pmfile_dirent(int ino, int slot, struct vfs_dirent *entry);
 int pmfile_rename(const char *oldpath, const char *newpath);
+int pmfile_link_ino(int ino, const char *newpath);
 int pmfile_selftest(void);
 int pmfile_chaos_selftest(void);
 int pmfile_edge_selftest(void);

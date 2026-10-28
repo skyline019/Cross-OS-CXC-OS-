@@ -34,6 +34,7 @@ int xv6_log_fault(int stage);
 int pmfs_put(unsigned long key, const void *val, int len);
 int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
 int pmfs_seal(void);
+int pmfs_compact(void);
 int pmfs_stat(void *wa);
 struct pmfs_metrics;
 int pmfs_metrics(struct pmfs_metrics *metrics, int bytes);

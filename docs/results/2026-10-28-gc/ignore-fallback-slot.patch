@@ -1,0 +1,11 @@
+--- a/kernel/pmfs.c
++++ b/kernel/pmfs.c
+@@ -334,6 +334,8 @@
+     if (pmfs_validate_sb(fs, &raw) != 0 || raw.tail > fs->tail)
+       goto bad;
+     sb = raw;
++    if (slot != fs->sb_slot)
++      continue; // NEGATIVE CONTROL: ignore the fallback slot
+     if (slot == fs->sb_slot) {
+       if (pmfs_sb_epoch(&sb) != fs->epoch || sb.tail != fs->tail ||
+           sb.inode_page != fs->inode_page || sb.dent_page != fs->dent_page ||

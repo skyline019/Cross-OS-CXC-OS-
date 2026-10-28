@@ -40,6 +40,8 @@ jobs:
         run: ./test-xv6.py vfs
       - name: PMFS write avoidance and indexed query regression
         run: ./test-xv6.py efficiency
+      - name: PMFS explicit compaction and metadata reclamation
+        run: make test-pmfs-gc
       - name: Native log oracle unit tests
         run: python3 -m unittest discover -s tools -p test_xv6_log_recovery.py
       - name: Default kernel rejects native log fault injection
@@ -62,10 +64,14 @@ jobs:
         run: make test-model
       - name: PMFS restart, corruption and software fault-boundary oracle
         run: make test-recovery RECOVERY_ARGS="--log-dir .ci-logs/recovery"
-      - name: VFS subtree rename restart and software fault boundaries
+      - name: VFS rename, hard links and dual-slot reclamation restart
         run: python3 tools/vfs_recovery.py --log-dir .ci-logs/vfs-recovery
+      - name: COW compaction and deferred run reclamation restart
+        run: python3 tools/pmfs_gc_recovery.py --log-dir .ci-logs/gc-recovery
       - name: Zicbom instruction-path oracle on QEMU TCG
         run: make test-recovery-zicbom RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
+      - name: Compaction low-space preflight (tiny disposable EMUL device)
+        run: make test-pmfs-gc-nospace
       - name: Upload test serial logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -105,12 +111,16 @@ jobs:
         run: python3 tools/check_nvdimm_device.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64"
       - name: NVDIMM process-restart and fault-boundary oracle
         run: make test-recovery-nvdimm QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm"
-      - name: VFS subtree rename on NVDIMM software boundaries
+      - name: VFS namespace and dual-slot reclamation on NVDIMM
         run: python3 tools/vfs_recovery.py --nvdimm --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/vfs-nvdimm
+      - name: COW compaction and reclamation on NVDIMM
+        run: python3 tools/pmfs_gc_recovery.py --nvdimm --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/gc-nvdimm
       - name: NVDIMM with Zicbom instruction path
         run: make test-recovery-nvdimm-zicbom QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm-zicbom"
-      - name: VFS subtree rename with Zicbom instruction path
+      - name: VFS namespace and dual-slot reclamation with Zicbom
         run: python3 tools/vfs_recovery.py --nvdimm --zicbom --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/vfs-nvdimm-zicbom
+      - name: COW compaction and reclamation with Zicbom
+        run: python3 tools/pmfs_gc_recovery.py --nvdimm --zicbom --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/gc-nvdimm-zicbom
       - name: Upload NVDIMM serial logs
         if: always()
         uses: actions/upload-artifact@v7

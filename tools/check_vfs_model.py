@@ -109,6 +109,20 @@ def main():
         raise SystemExit("VFS_MODEL_FAIL partial-subtree was not detected")
     print(f"VFS_MODEL_NEG_PASS mutation=partial-subtree counterexample={bad[:2]}")
 
+    # Hard-link creation changes two independent root pages. Atomic root
+    # publication must expose either (one name, nlink=1) or (two names,
+    # nlink=2); publishing one new page alone is inconsistent.
+    link_old = (frozenset({"a"}), 1)
+    link_new = (frozenset({"a", "b"}), 2)
+    for names, nlink in (link_old, link_new):
+        if len(names) != nlink:
+            raise SystemExit("VFS_MODEL_FAIL hard-link committed graph")
+    for mixed in ((link_new[0], link_old[1]), (link_old[0], link_new[1])):
+        if len(mixed[0]) == mixed[1]:
+            raise SystemExit("VFS_MODEL_FAIL hard-link partial-root mutation")
+    print("VFS_MODEL_PASS protocol=hard-link graphs=old,new "
+          "negative=mixed-roots model=bounded-not-kernel-trace")
+
     # Mutating live metadata in place exposes all subsets of entry updates.
     old_entries, new_entries = sorted(OLD), sorted(NEW)
     # Match entries by inode, rather than lexical path ordering.

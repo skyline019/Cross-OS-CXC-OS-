@@ -16,7 +16,7 @@
                                       |         追加 run、重建索引
                                    pmindex（有界缓存/索引）
                                         |
-                           pmfs：双槽 checkpoint、追加分配
+                  pmfs：双槽 checkpoint、可达性位图、元数据页复用
                                         |
                         pmdev：页布局与 dirty bitmap（不走 bio/log/virtio）
                                         |
@@ -33,11 +33,11 @@
 
 ## 介质布局与关键不变量
 
-PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留，后续页按 tail 追加。checkpoint 记录 epoch、tail、run 链头、inode 和 dentry 快照根；元数据、run 页有边界和校验。已提交数据和旧根不被后续操作原地覆盖。没有安全回收或 compaction，耗尽即失败。
+PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留；KV run 按 tail 追加，元数据快照可复用双槽均不可达的旧页。checkpoint 记录 epoch、tail、run 链头、inode 和 dentry 快照根；元数据、run 页有边界和校验。已提交数据和仍受保护的根不被后续操作原地覆盖。显式 COW 全链压缩及双槽可达性、缓存假设、空间不足和格式兼容详见[维护设计](MAINTENANCE.md)；它不是可在满盘运行的全设备 GC。
 
 一次根发布的设计顺序：
 
-1. 追加内容/run 和必要的 inode/dentry 页；请求各页持久化并执行屏障。
+1. 追加内容/run，从双槽均不可达的旧页或 tail 分配必要的 inode/dentry 页；请求各页持久化并执行屏障。
 2. 对非当前 checkpoint 槽的对齐 8 B 状态/校验词写零并持久化；写入新头（仍未提交）并持久化。
 3. 一次 8 B store 写入提交状态及校验，请求持久化并执行屏障；随后在内存更新 epoch/槽号并返回。
 
@@ -51,8 +51,10 @@ PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留，后续页按 tail 追加
 
 每个普通 PM inode 最多有一个共享的有界工作缓冲和一个底层槽；独立 `open` 获得各自偏移，`dup`/`fork` 共用打开对象和偏移。PMFS sleep lock 串行化缓冲、写入、append 选尾和同步；专用文件句柄与普通打开同一 inode 互斥。全局同步直接在 PMFS 锁下遍历有界共享 inode 表并提交脏缓冲，不给 `struct file` 额外加引用；这避免并发最后 `close` 被同步快照延长寿命后提前成功返回。该粗粒度锁保证当前受限操作路径的互斥，不是可扩展多核设计或完整线性化证明。
 
-子树 rename 先检查目标、环和所有后代的新路径长度，再复制旧 dentry 表供普通错误回滚，修改内存图后**一次**调用元数据 COW checkpoint 发布。非替换式移动只追加新 dentry 页并复用不可变 inode 页；替换目标会同时生成两页。文件内容提交只生成 inode 页并复用不可变 dentry 页；所有新页都在同一个 checkpoint 发布相应根之前持久化。重写复杂度 `O(受限 dentry 数)`；活动引用按 inode 保持，目标若被引用则拒绝替换。
+子树 rename 先检查目标、环和所有后代的新路径长度，再复制旧 dentry 表供普通错误回滚，修改内存图后**一次**调用元数据 COW checkpoint 发布。非替换式移动只生成新 dentry 页并复用不可变 inode 页；替换目标会同时生成两页。文件内容提交只生成 inode 页并复用不可变 dentry 页；所有新页都在同一个 checkpoint 发布相应根之前持久化。重写复杂度 `O(受限 dentry 数)`；活动引用按 inode 保持，目录目标或文件的最后链接若被引用则拒绝替换。普通文件可有多个 dentry，`link`/非最后链接删除以一次双页元数据提交维护一致的链接数。
 
 PMFS KV 查询优先查内存批次和小值缓存；缓存未命中时，完整重建/持续更新的有界精确索引直达最新 run 的页。精确表满后未收入的键仍走 newest-first 搜索；所有键都更新 coarse posting，fallback 直接倒序遍历置位的 run、跳过零位，再使用 Bloom 和 fence。普通 fd 提交先探测 CDC 切分，在不超过 4 extent、且分块数不多于固定分块时采用 CDC，否则退回固定分块；专用 CDC/KV/stream 接口仍保留。当前 CDC 仅用于切分，**没有内容去重**。
+
+显式压缩按 key 和版本归并完整当前 run 链，保留最新公共 KV、当前 inode 所需 chunk 及 chunk-ID 高水标记；尾部空间精确预检后写出不重叠的新链，最后发布一个新根并重建索引。旧链必须继续保护到引用它的旧槽被替换。受限页数、全局锁、无在线分步/预留及 run 仍只追加等限制不可省略。
 
 重启 oracle、实际代码变异负控、软件计数与模型见[优化验证记录](results/2026-10-28-efficiency/README.md)。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。

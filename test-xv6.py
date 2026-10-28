@@ -195,12 +195,32 @@ def test_vfs():
     print("OK")
 
 def test_vfscapacity():
-    print("Test rollback when PMFS metadata space is exhausted")
+    print("Test bounded PMFS metadata reuse across repeated COW renames")
     q = QEMU(True)
     q.wait_for_prompt()
     q.cmd("vfstest capacity\n")
     q.monitor(r'^VFS_TEST_PASS mode=capacity$', progress=r'^VFS_CAPACITY_PASS',
               failure=r'^VFS_TEST_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_pmfs_gc():
+    print("Test PMFS COW compaction, GC, busy checks and live data")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc basic\n")
+    q.monitor(r'^PMFS_GC_PASS mode=basic$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_pmfs_nospace():
+    print("Test compaction preflight on a tiny disposable PMFS device")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_gc nospace\n")
+    q.monitor(r'^PMFS_GC_PASS mode=nospace$', progress=r'^PMFS_GC_',
+              failure=r'^PMFS_GC_FAIL', timeout=120)
     q.stop()
     print("OK")
 
