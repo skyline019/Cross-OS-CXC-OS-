@@ -6,7 +6,8 @@ import struct
 import tempfile
 import unittest
 
-from xv6_log_recovery import BSIZE, DiskLog, FSMAGIC, TestFailure, check_recovery_trace
+from xv6_log_recovery import (BSIZE, DiskLog, FAILURE_LINE, FSMAGIC, TestFailure,
+                              check_recovery_trace)
 
 
 class DiskLogTests(unittest.TestCase):
@@ -73,6 +74,10 @@ class DiskLogTests(unittest.TestCase):
 
 
 class TraceTests(unittest.TestCase):
+    def test_serial_failure_requires_a_complete_line(self):
+        self.assertEqual(FAILURE_LINE.findall(b"XV6_LOG_TEST_FAIL code=1"), [])
+        self.assertEqual(FAILURE_LINE.findall(b"XV6_LOG_TEST_FAIL code=12\r\n"), [b"12"])
+
     def test_exact_replay_order_and_destinations(self):
         output = b"recovering tail 0 dst 20\r\nrecovering tail 1 dst 21\r\n"
         check_recovery_trace(output, [20, 21])

@@ -27,6 +27,9 @@ import time
 
 BSIZE = 1024
 FSMAGIC = 0x10203040
+# Do not treat the end of a currently buffered partial line as a complete
+# marker: xv6 printf may send one character per write/interrupt.
+FAILURE_LINE = re.compile(rb"(?m)^XV6_LOG_TEST_FAIL code=(\d+)\r?\n")
 
 
 class TestFailure(RuntimeError):
@@ -118,7 +121,7 @@ class Runner:
             while True:
                 if b"panic:" in output:
                     raise TestFailure(f"{label}: kernel panic")
-                failures = re.findall(rb"(?m)^XV6_LOG_TEST_FAIL code=(\d+)\r?$", output)
+                failures = FAILURE_LINE.findall(output)
                 if failures and any(int(code) != expected_failure for code in failures):
                     raise TestFailure(f"{label}: guest reported failure {failures[-1].decode()}; "
                                       "build with XV6_LOG_FAULT_INJECT for crash cases")
@@ -174,7 +177,7 @@ class Runner:
 
 def check_recovery_trace(output, expected):
     found = [(int(tail), int(dst)) for tail, dst in
-             re.findall(rb"(?m)^recovering tail (\d+) dst (\d+)\r?$", output)]
+             re.findall(rb"(?m)^recovering tail (\d+) dst (\d+)\r?\n", output)]
     wanted = list(enumerate(expected))
     if found != wanted:
         raise TestFailure(f"recovery trace {found} != committed log {wanted}")
@@ -185,7 +188,7 @@ def crash_suite(root, runner, directory):
         disk = directory / f"stage-{stage}.img"
         shutil.copyfile(root / "fs.img", disk)
         fault_marker = (rb"^XV6_LOG_FAULT stage=" + str(stage).encode() +
-                        rb" blocks=(\d+)\r?$")
+                        rb" blocks=(\d+)\r?\n")
         output = runner.boot(disk, f"stage-{stage}-crash", f"logtest crash {stage}",
                              fault_marker, shell_after=False)
         match = re.search(fault_marker, output, re.MULTILINE)
@@ -214,12 +217,12 @@ def crash_suite(root, runner, directory):
             DiskLog(negative).discard_commit_header()
             negative_output = runner.boot(
                 negative, "negative-no-replay", "logtest check new",
-                rb"^XV6_LOG_TEST_FAIL code=12\r?$", expected_failure=12)
+                rb"^XV6_LOG_TEST_FAIL code=12\r?\n", expected_failure=12)
             check_recovery_trace(negative_output, [])
             print("PASS negative control: discarding a committed log is detected", flush=True)
 
         state = "old" if stage == 1 else "new"
-        verify_marker = (rb"^XV6_LOG_TEST_PASS state=" + state.encode() + rb"\r?$")
+        verify_marker = (rb"^XV6_LOG_TEST_PASS state=" + state.encode() + rb"\r?\n")
         output = runner.boot(disk, f"stage-{stage}-recover", f"logtest check {state}",
                              verify_marker)
         check_recovery_trace(output, blocks)
@@ -257,7 +260,7 @@ def main():
             disk = directory / "disabled.img"
             shutil.copyfile(root / "fs.img", disk)
             runner.boot(disk, "fault-injection-disabled", "logtest disabled",
-                        rb"^XV6_LOG_DISABLED_PASS\r?$")
+                        rb"^XV6_LOG_DISABLED_PASS\r?\n")
             print("XV6_LOG_DISABLED_PASS", flush=True)
         else:
             crash_suite(root, runner, directory)

@@ -93,7 +93,10 @@ class QEMU(object):
         self.output = self.outbytes.decode("utf-8", "replace")
 
     def lines(self):
-        return self.output.splitlines()
+        # Serial output can arrive one character at a time. Do not match a
+        # trailing incomplete line (for example inode 3 before inode 30).
+        end = self.output.rfind("\n") + 1
+        return self.output[:end].splitlines()
 
     def error(self, *regexps):
         print("FAIL: match failed", regexps)
