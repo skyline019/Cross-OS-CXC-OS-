@@ -432,12 +432,12 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-python
 
-      # M301: MSYS2 cannot exec Linux ET_EXEC. WSL native x86_64 gives
-      # CC_CONF mode=run (qemu-user optional; package install was too heavy).
+      # M301: MSYS2 cannot exec Linux ET_EXEC. WSL runs guest ELF (mode=run).
       - uses: Vampire/setup-wsl@v5
         with:
           distribution: Ubuntu-24.04
           set-as-default: true
+          additional-packages: python3 gcc
 
       - name: Probe WSL guest ELF exec
         shell: pwsh
@@ -470,9 +470,12 @@ jobs:
           ctest --test-dir build/host-tests --output-on-failure
 
       - name: CXC_A2 conformance (M301 require-exec)
-        shell: msys2 {0}
-        run: >-
-          python3 tools/cc_conformance.py --strict --elf-check --require-exec
+        shell: pwsh
+        run: |
+          # Prefer full Linux build+run inside WSL (parity with Linux CI).
+          # Fallback path in contract_test still uses MSYS + WSL exec.
+          $wp = (wsl -d Ubuntu-24.04 -e wslpath -a ((Get-Location).Path)).Trim()
+          wsl -d Ubuntu-24.04 -e bash -lc "cd '$wp' && python3 tools/cc_conformance.py --strict --elf-check --require-exec"
 
       - name: Host-side test contract
         shell: msys2 {0}
@@ -509,8 +512,12 @@ jobs:
               "\n".join(lines) + "\n", encoding="utf-8"
           )
           print("\n".join(lines))
-          if any(line.startswith("MISSING ") for line in lines):
-              raise SystemExit("required evidence files missing")
+          # Only require UEFI artifacts; host contract may be skipped if
+          # conformance failed earlier (if: always()).
+          if any(
+              line.startswith("MISSING build/uefi/") for line in lines
+          ):
+              raise SystemExit("required UEFI evidence files missing")
           PY
 
       - name: Upload Windows build evidence

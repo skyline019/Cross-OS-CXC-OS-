@@ -1,5 +1,8 @@
-/* Host helper: compile one CXC_A2 source file to a raw ET_EXEC blob on stdout.
- * Used by tools/cc_conformance.py (M287). */
+/* Host helper: compile one CXC_A2 source file to a raw ET_EXEC blob.
+ * Used by tools/cc_conformance.py (M287/M301).
+ * argv: cc_conf_compile <src.c> [out.elf]
+ *   - with out.elf: write binary file (preferred on Windows/MSYS)
+ *   - without: write stdout (must be binary — M301) */
 #define CC_HOST 1
 #include "cxc_cc/cc.h"
 
@@ -7,16 +10,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#include <fcntl.h>
+#include <io.h>
+static void stdout_binary(void) {
+    (void)_setmode(_fileno(stdout), _O_BINARY);
+}
+#else
+static void stdout_binary(void) {}
+#endif
+
 int main(int argc, char** argv) {
     FILE* f;
+    FILE* out;
     char* src = 0;
     long n = 0;
     unsigned char* elf = 0;
     size_t elf_n = 0;
     int code;
 
-    if (argc != 2) {
-        fprintf(stderr, "usage: cc_conf_compile <src.c>\n");
+    if (argc != 2 && argc != 3) {
+        fprintf(stderr, "usage: cc_conf_compile <src.c> [out.elf]\n");
         return 2;
     }
     f = fopen(argv[1], "rb");
@@ -55,9 +69,25 @@ int main(int argc, char** argv) {
         free(src);
         return 1;
     }
-    if (fwrite(elf, 1, elf_n, stdout) != elf_n) {
-        free(src);
-        return 2;
+    if (argc == 3) {
+        out = fopen(argv[2], "wb");
+        if (!out) {
+            fprintf(stderr, "open out failed\n");
+            free(src);
+            return 2;
+        }
+        if (fwrite(elf, 1, elf_n, out) != elf_n) {
+            fclose(out);
+            free(src);
+            return 2;
+        }
+        fclose(out);
+    } else {
+        stdout_binary();
+        if (fwrite(elf, 1, elf_n, stdout) != elf_n) {
+            free(src);
+            return 2;
+        }
     }
     free(src);
     return 0;

@@ -96,24 +96,36 @@ def build_compiler(work: Path) -> Path:
 
 
 def compile_src(compiler: Path, src: str, work: Path) -> tuple[bytes | None, str]:
-    """Return (elf_bytes, err). err is COMPILE_FAIL:N or empty."""
+    """Return (elf_bytes, err). err is COMPILE_FAIL:N or empty.
+
+    M301: always compile to an on-disk .elf via argv[2] so Windows/MSYS never
+    text-mangles ELF bytes through stdout pipes.
+    """
     prefix, _ = find_cc()
     use_wsl = bool(prefix)
     src_path = work / "case.c"
-    src_path.write_text(src, encoding="utf-8")
+    elf_path = work / "case.elf"
+    # newline="" keeps LF on Windows so lexer/line maps match Linux CI.
+    src_path.write_text(src, encoding="utf-8", newline="\n")
     if use_wsl:
         cmd = [
             *prefix,
             to_build_path(compiler, True),
             to_build_path(src_path, True),
+            to_build_path(elf_path, True),
         ]
     else:
-        cmd = [str(compiler), str(src_path)]
+        cmd = [str(compiler), str(src_path), str(elf_path)]
     result = subprocess.run(cmd, check=False, capture_output=True)
     if result.returncode != 0:
         err = (result.stderr or b"").decode("utf-8", "replace").strip()
         return None, err or f"COMPILE_FAIL:{result.returncode}"
-    return result.stdout, ""
+    if not elf_path.is_file():
+        return None, "COMPILE_FAIL:no_elf"
+    data = elf_path.read_bytes()
+    if len(data) < 64:
+        return None, "COMPILE_FAIL:short_elf"
+    return data, ""
 
 
 def u64(b: bytes, off: int) -> int:
@@ -313,11 +325,21 @@ def run_elf(elf: bytes, work: Path) -> tuple[int, bytes]:
                 to_build_path(path, True),
             ]
     elif mode == "run" and not sys.platform.startswith("linux"):
-        cmd = [_wsl_bin() or "wsl", "-e", to_build_path(path, True)]
+        # Copy off DrvFs onto Linux tmpfs before exec (WSL /mnt quirks).
+        wsl_path = to_build_path(path, True)
+        script = (
+            "set -e; t=$(mktemp); cp '%s' \"$t\"; chmod +x \"$t\"; "
+            "\"$t\"; ec=$?; rm -f \"$t\"; exit \"$ec\""
+            % wsl_path.replace("'", r"'\''")
+        )
+        cmd = [_wsl_bin() or "wsl", "-e", "bash", "-lc", script]
     else:
         cmd = [str(path)]
     result = subprocess.run(cmd, check=False, capture_output=True, cwd=str(work))
-    return result.returncode & 0xFF, result.stdout or b""
+    out = result.stdout or b""
+    # Normalize any CRLF from WSL/console wrappers before substring checks.
+    out = out.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return result.returncode & 0xFF, out
 
 
 def cases() -> list[Case]:
@@ -725,7 +747,17 @@ def main() -> int:
             if status in ("bug", "reject", "xpass") and not args.strict:
                 print(f"{status.upper()} {case.name}: {err or case.reason}", file=sys.stderr)
             if status in ("bug", "reject") and args.strict:
-                print(f"{status.upper()} {case.name}: {err or case.reason}", file=sys.stderr)
+                detail = err or case.reason
+                if status == "bug" and elf is not None and run_mode != "compile-elf":
+                    try:
+                        got_c, got_o = run_elf(elf, case_dir)
+                        detail = (
+                            f"{detail} got_exit={got_c} want_exit={case.exit_code} "
+                            f"got_out={got_o!r} want_out={case.stdout!r}"
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        detail = f"{detail} re-run:{exc}"
+                print(f"{status.upper()} {case.name}: {detail}", file=sys.stderr)
             if status == "xpass" and args.strict:
                 print(
                     f"XPASS {case.name}: known gap started passing ({case.reason})",
