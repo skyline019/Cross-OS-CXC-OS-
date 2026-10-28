@@ -303,10 +303,15 @@ jobs:
 
       - name: xAPIC and x2APIC
         run: |
+          # M300: CCDRV planted batch3 (spawn_as=44) needs headroom after prior
+          # matrix boots; 180s default timed out under CI load while default
+          # qemu-test already passed the same image.
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --cpu "qemu64,-x2apic" --work-dir build/qemu-xapic
+            --check --cpu "qemu64,-x2apic" --timeout 240 \
+            --work-dir build/qemu-xapic
           python3 tools/run_qemu.py --image build/uefi/cxc-os.img \
-            --check --cpu "qemu64,+x2apic" --work-dir build/qemu-x2apic
+            --check --cpu "qemu64,+x2apic" --timeout 240 \
+            --work-dir build/qemu-x2apic
 
       - name: SMP UP, 8-way (xAPIC+x2APIC), and 16-way
         run: |
@@ -427,17 +432,17 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-python
 
-      # M301: MSYS2 qemu is system-only; use WSL qemu-user for mode=qemu.
+      # M301: MSYS2 cannot exec Linux ET_EXEC. WSL native x86_64 gives
+      # CC_CONF mode=run (qemu-user optional; package install was too heavy).
       - uses: Vampire/setup-wsl@v5
         with:
           distribution: Ubuntu-24.04
           set-as-default: true
-          additional-packages: qemu-user
 
-      - name: Probe WSL qemu-user
+      - name: Probe WSL guest ELF exec
         shell: pwsh
         run: |
-          wsl -d Ubuntu-24.04 -e sh -c "command -v qemu-x86_64 && qemu-x86_64 --version | head -n1"
+          wsl -d Ubuntu-24.04 -e sh -c "uname -m | grep -E 'x86_64|amd64'"
 
       - name: Configure Release (-Werror)
         shell: msys2 {0}

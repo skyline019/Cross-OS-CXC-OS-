@@ -9,7 +9,7 @@
 |---|---|---|
 | M299 asm_mode CF | 完成 | `S-for`/`S-do`/`S-switch`/`S-break`/`S-continue`/`S-ternary`/`S-nested` + as ops；host 回编同构 |
 | M300 planted batch3 | 完成 | +9 叶（40 总）；`memset`/`memcmp`/`strcmp`/`strncmp`/`strcpy`/`stpcpy`/`strcat`/`strchrnul`/`atoi`；musl 别名 `__strchrnul`/`__stpcpy`；`planted: 13` / `inputs_s: 44`；contract `planted≤22` |
-| M301 Win CC_CONF exec | 完成 | WSL `qemu-user` → `mode=qemu`；`--require-exec` / `CXC_REQUIRE_CONF_EXEC` 禁止 CI `compile-elf` |
+| M301 Win CC_CONF exec | 完成 | WSL x86_64 → `mode=run`（或 qemu-user→`qemu`）；`--require-exec` 禁止 CI `compile-elf` |
 | M302 docs/VERSION | 完成 | 本文件；dialect / a2-mini-cc / README / cadence；**v2.92.0** |
 
 ## 冻结面（未削弱）
