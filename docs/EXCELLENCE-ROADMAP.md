@@ -196,7 +196,7 @@ make contract-pmem
 make contract-pmem2
 python3 tools/contract_pmfs.py --file --posix
 ./test-xv6.py -q usertests
-./test-xv6.py crash
+make test-xv6-crash  # 后续更新：重建测试内核，见 XV6-LOG-RECOVERY.md
 ```
 
 这些是当前已有目标，只能得到其实际覆盖的 smoke 结论，不是未来验收门。`contract-pmem`、`contract-pmem2` 和 `bench-sweep` 的重建会执行 `make clean` 并删除 `fs.img`；`contract-pmem2` 还会删除并重建 `guest-ram.img`；`test-xv6.py` 会重建 `fs.img`；启动自测会修改持久区。`make bench-sweep` 还会覆盖 `docs/BENCH.md`，目前结果不适合作性能结论。先备份数据并核对脚本，再运行。

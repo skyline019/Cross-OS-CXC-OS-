@@ -26,6 +26,8 @@ int pause(int);
 int uptime(void);
 int sync(void);
 int fsync(int fd);
+// Test-only: returns -1 unless the kernel was built with XV6_LOG_FAULT_INJECT.
+int xv6_log_fault(int stage);
 int pmfs_put(unsigned long key, const void *val, int len);
 int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
 int pmfs_seal(void);

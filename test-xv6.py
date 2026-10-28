@@ -5,8 +5,9 @@
 #
 # ./test-xv6.py usertests  (runs usertests)
 # ./test-xv6.py -q usertests (runs the quick tests of usertests)
-# ./test-xv6.py crash  (runs the crash tests)
-# ./test-xv6.py log (runs the log crash test)
+# make test-xv6-crash  (rebuilds a test-only kernel; use a disposable checkout)
+# ./test-xv6.py log (requires XV6_LOG_FAULT_INJECT in the built kernel)
+# ./test-xv6.py stress (concurrent block-log writers and readback)
 
 import argparse, os, inspect, re, signal, subprocess, sys, time
 from subprocess import run
@@ -27,7 +28,8 @@ class QEMU(object):
         q = ["make", "qemu"]
         self.proc = subprocess.Popen(q, stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE,
-                                      stderr=subprocess.STDOUT)
+                                      stderr=subprocess.STDOUT,
+                                      start_new_session=True)
         os.set_blocking(self.proc.stdout.fileno(), False)
         self.output = ""
         self.outbytes = bytearray()
@@ -35,17 +37,11 @@ class QEMU(object):
         time.sleep(1)
 
     def reset_fs(self):
-        try:
-            run(["rm", "-f", "fs.img"], check=True)
-            run(["make", "fs.img"], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Command failed with exit code {e.returncode}")
+        run(["rm", "-f", "fs.img"], check=True)
+        run(["make", "fs.img"], check=True)
 
     def build_xv6(self):
-        try:
-            run(["make", "kernel/kernel"], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Command failed with exit code {e.returncode}")
+        run(["make", "kernel/kernel"], check=True)
 
     def save_output(self):
       try:
@@ -61,17 +57,29 @@ class QEMU(object):
         self.proc.stdin.write(c)
         self.proc.stdin.flush()
         
+    def _stop_group(self, sig):
+        try:
+            os.killpg(self.proc.pid, sig)
+        except ProcessLookupError:
+            pass
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self.proc.wait(timeout=5)
+        self.read()
+        self.proc.stdin.close()
+        self.proc.stdout.close()
+
     def crash(self):
-        ps = run(['ps', '-opid', '--no-headers', '--ppid', str(self.proc.pid)], stdout=subprocess.PIPE, encoding='utf8')
-        kids = [int(line) for line in ps.stdout.splitlines()]
-        if len(kids) == 0:
-            print("no qemu")
-            sys.exit(1)
-        print("kill", kids[0])
-        os.kill(kids[0], signal.SIGKILL)
+        print("kill qemu process group", self.proc.pid)
+        self._stop_group(signal.SIGKILL)
 
     def stop(self):
-        self.proc.terminate()
+        self._stop_group(signal.SIGTERM)
 
     def read(self):
         while True:
@@ -89,6 +97,9 @@ class QEMU(object):
 
     def error(self, *regexps):
         print("FAIL: match failed", regexps)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            detail = self.output[-3000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print("::error title=xv6 test serial tail::" + detail)
         self.save_output()
         self.stop()
         sys.exit(1)
@@ -115,78 +126,66 @@ class QEMU(object):
                 print(line)
         self.reported = end
 
-    def monitor(self, *regexps, progress="", timeout):
-        deadline = time.time() + timeout
+    def monitor(self, *regexps, progress="", failure="", timeout):
+        deadline = time.monotonic() + timeout
         while True:
             time.sleep(1)
-            timeleft = deadline - time.time()
-            if timeleft < 0:
-                self.error(*regexps)
             self.read()
             if progress:
                 self.progress(progress)
+            if failure and self.match(failure, exit=False):
+                self.error(*regexps)
             if self.match(*regexps, exit=False):
                 return
+            if self.proc.poll() is not None or time.monotonic() >= deadline:
+                self.error(*regexps)
 
-def crash_log():
+def crash_orphan(program):
     q = QEMU(True)
-    q.cmd("logstress f0 f1 f2 f3 f4 f5\n")
-    time.sleep(2)
+    q.cmd(program + "\n")
+    q.monitor(r'^wait for kill and reclaim \d+$', timeout=30)
+    inum = int(re.search(r'^wait for kill and reclaim (\d+)\r?$', q.output, re.MULTILINE).group(1))
     q.crash()
-    q.stop()
+    return inum
 
-def recover_log():
+def recover_orphan(inum):
+    pattern = r'^ireclaim: orphaned inode %d$' % inum
     q = QEMU()
-    time.sleep(2)
-    q.read()
-    ok = q.match('^recovering', exit=False)
-    if ok:
-        q.cmd("ls\n")
-        q.monitor('f5', timeout=30)
+    q.monitor(pattern, timeout=30)
+    # The diagnostic is printed before reclamation finishes. Wait for fsinit
+    # to complete, then check a second boot does not reclaim the inode again.
+    q.monitor('^init: starting sh', timeout=30)
     q.stop()
-    return ok
-
-def forphan():
-    q = QEMU(True)
-    q.cmd("forphan\n")
-    q.monitor('wait', timeout=30)
-    q.crash()
-    q.stop()
-
-def dorphan():
-    q = QEMU(True)
-    q.cmd("dorphan\n")
-    q.monitor('wait', timeout=30)
-    q.crash()
-    q.stop()
-
-def recover_orphan():
     q = QEMU()
-    q.monitor('^ireclaim', timeout=30)
+    q.monitor('^init: starting sh', timeout=30)
+    if q.match(pattern, exit=False):
+        q.error('orphan must not reappear on the second reboot')
     q.stop()
 
 def test_log():
-    print("Test recovery of log")
-    for i in range(20):
-        crash_log()
-        ok = recover_log()
-        if ok:
-            print("OK")
-            return
-        print("log attempt ", i+1)
-    print("FAIL")
-    sys.exit(1)
-    
+    print("Test deterministic recovery of the native block log")
+    result = run([sys.executable, "tools/xv6_log_recovery.py"])
+    if result.returncode:
+        sys.exit(result.returncode)
+    print("OK")
+
+def test_stress():
+    print("Test concurrent block-log writes and readback")
+    q = QEMU(True)
+    q.cmd("logstress f0 f1 f2 f3 f4 f5\n")
+    q.monitor('^LOGSTRESS_PASS files=6 bytes=240000$',
+              failure='^LOGSTRESS_FAIL', timeout=90)
+    q.stop()
+    print("OK")
+
 def test_forphan():
     print("Test recovery of an orphaned file")
-    forphan()
-    recover_orphan()
+    recover_orphan(crash_orphan("forphan"))
     print("OK")
 
 def test_dorphan():
-    print("Test recovery of an orphaned file")
-    dorphan()
-    recover_orphan()
+    print("Test recovery of an orphaned directory")
+    recover_orphan(crash_orphan("dorphan"))
     print("OK")
 
 def test_crash():

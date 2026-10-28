@@ -36,7 +36,8 @@
 #define SYS_pmfs_mkdir   35
 #define SYS_pmfs_readdir 36
 
-#define SYS_pmfs_format 37
-#define SYS_pmfs_fstat  38
-#define SYS_pmfs_fault  39
-#define SYS_fsync       40
+#define SYS_pmfs_format   37
+#define SYS_pmfs_fstat    38
+#define SYS_pmfs_fault    39
+#define SYS_fsync         40
+#define SYS_xv6_log_fault 41
