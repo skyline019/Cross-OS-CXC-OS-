@@ -1,0 +1,2 @@
+PASS stage-1-crash
+XV6_LOG_RECOVERY_FAIL: stage 1: unexpected empty-header boundary

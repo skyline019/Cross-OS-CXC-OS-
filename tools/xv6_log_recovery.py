@@ -122,10 +122,15 @@ class Runner:
             while True:
                 if b"panic:" in output:
                     raise TestFailure(f"{label}: kernel panic")
-                failures = FAILURE_LINE.findall(output)
-                if failures and any(int(code) != expected_failure for code in failures):
-                    raise TestFailure(f"{label}: guest reported failure {failures[-1].decode()}; "
-                                      "build with XV6_LOG_FAULT_INJECT for crash cases")
+                unexpected = [int(code) for code in FAILURE_LINE.findall(output)
+                              if int(code) != expected_failure]
+                if unexpected:
+                    code = unexpected[-1]
+                    detail = f"{label}: guest reported failure {code}"
+                    if code == 5:
+                        detail += ("; build with XV6_LOG_FAULT_INJECT and ensure no other "
+                                   "log operation is active when arming")
+                    raise TestFailure(detail)
                 if predicate():
                     return
                 if proc.poll() is not None:

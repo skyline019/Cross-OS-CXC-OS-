@@ -26,6 +26,7 @@
 
 - 默认内核注入开关拒绝测试通过；对默认内核运行故障测试按预期失败，测试前后源 `fs.img` 哈希一致，见[负控](results/2026-10-28-xv6-ci/default-control.log)。宿主解析器[7 项单元测试](results/2026-10-28-xv6-ci/oracle-unit-tests.log)通过。
 - 从干净构建运行 `CPUS=1 make test-xv6-crash` 通过，含五个切点、错误重放负控和文件/目录孤儿回收：[日志](results/2026-10-28-xv6-ci/cpu1-clean-build-crash.log)、[逐启动串口](results/2026-10-28-xv6-ci/serial-cpu1.tar.gz)。1 核和 3 核五切点测试分别再重复 5 次全部通过（每轮 16 次启动），含负控；3 核[串口](results/2026-10-28-xv6-ci/serial-cpu3.tar.gz)。
+- 两个**实际内核变异负控**只应用于独立副本：移除重放后，第 2 切点读回报错；提前写提交头后，第 1 切点的磁盘头检查报错。两者都按预期被发现，补丁和预期失败日志分别为 [no-replay](results/2026-10-28-xv6-ci/mutation-no-replay.patch) / [日志](results/2026-10-28-xv6-ci/mutation-no-replay-expected-failure.log)、[early-commit](results/2026-10-28-xv6-ci/mutation-early-commit.patch) / [日志](results/2026-10-28-xv6-ci/mutation-early-commit-expected-failure.log)。不要将负控补丁用于正常内核。
 - 3 核文件/目录孤儿回收各重复 5 次、6 个写进程的 240,000 字节并发读写各重复 5 次，均通过；日志分别为 `cpu3-orphan-{1..5}.log` 和 `cpu3-stress-{1..5}.log`。
 - 原生完整 `usertests` 3 核 74 项及新版驱动的快速 68 项均 `ALL TESTS PASSED`；完整测试执行于最终 shell 等待修正之前，底层内核相同。[完整日志](results/2026-10-28-xv6-ci/cpu3-usertests-full.log)、[快速日志](results/2026-10-28-xv6-ci/cpu3-usertests-quick.log)。
 - PMFS `contract-full`、普通共享 RAM 重启/故障 oracle（3 核、66 次启动）及有界持久模型/三个负控通过；分别见[契约](results/2026-10-28-xv6-ci/pmfs-contract-full.log)、[恢复](results/2026-10-28-xv6-ci/pmfs-recovery.log)、[模型](results/2026-10-28-xv6-ci/persist-model.log)。契约中的指标只是 TCG 冒烟，不是物理设备性能。

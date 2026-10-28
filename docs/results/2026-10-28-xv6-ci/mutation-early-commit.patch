@@ -1,0 +1,14 @@
+--- a/kernel/log.c
++++ b/kernel/log.c
+@@ -250,9 +250,9 @@
+ commit()
+ {
+   if (log.lh.n > 0) {
+-    write_log(); // Write modified blocks from cache to log
++    write_head(); // mutation control: publish too early
++    write_log();
+     log_fault_point(1);
+-    write_head(); // Write header to disk -- the real commit
+     log_fault_point(2);
+     install_trans(0); // Now install writes to home locations (point 3 inside)
+     log_fault_point(4);

@@ -1,0 +1,11 @@
+--- a/kernel/log.c
++++ b/kernel/log.c
+@@ -166,7 +166,7 @@
+ recover_from_log(void)
+ {
+   read_head();
+-  install_trans(1); // if committed, copy from log to disk
++  /* mutation control: skip the committed-log replay */
+   log.lh.n = 0;
+   write_head(); // clear the log
+ }
