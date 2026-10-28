@@ -1,0 +1,38 @@
+2026-10-28T09:21:34Z
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+Zig 0.13.0
+GNU objdump (GNU Binutils) 2.42
+QEMU emulator version 9.2.0
+RISC-V toolchain: Zig/Clang freestanding wrapper; LLD wrapper --no-rosegment -e start; user ELFs objcopy --strip-debug.
+QEMU: unpatched 9.2.0, TCG; custom headless build --disable-pixman --enable-fdt=system; system GLib runtime 2.74.6.
+GLib 2.74.6 generated headers used a then-current gvdb main; it was not pinned. bc version check was a test-only comparison wrapper.
+These are isolated copies, not the CI GNU RISC-V GCC environment and not physical power-loss tests.
+7f9e3a661e909d5188d1b8b14f082b98a19c323a30d43bfdd1b2893ed37273e0  /home/user/.cache/xv6-ci/tools/ziglang/zig
+00a61e193fcdb97fa49d3ffe39677adbd0976f4b7e0f2ad3df563d06418593de  /home/user/.cache/xv6-ci/build-qemu/qemu-system-riscv64
+488e3baf61a5f715a898c3e20b39facdeb72e9a4f9a01495c4316c525e00a0d1  /home/user/.cache/xv6-ci/project/kernel/kernel
+b7ad386289e7060b44bbf01344bd04f243be4662b1103d6cdc810cebd149f781  /home/user/.cache/xv6-ci/project-fault/kernel/kernel
+
+--- compiler wrapper ---
+#!/usr/bin/env bash
+args=()
+for arg in "$@"; do
+  case "$arg" in -march=rv64gc) ;; *) args+=("$arg");; esac
+done
+exec /home/user/.cache/xv6-ci/tools/ziglang/zig cc -target riscv64-freestanding \
+  -mcpu=generic_rv64+m+a+f+d+c+zicsr+zifencei -Wno-typedef-redefinition \
+  -Wno-unused-command-line-argument -fno-sanitize=all "${args[@]}"
+--- linker wrapper ---
+#!/usr/bin/env bash
+args=()
+out=
+user=0
+next=0
+for arg in "$@"; do
+  if [[ "$next" == 1 ]]; then out=$arg; next=0; fi
+  if [[ "$arg" == -o ]]; then next=1; fi
+  if [[ "$arg" == user/user.ld ]]; then args+=(--no-rosegment -e start); user=1; fi
+done
+/home/user/.cache/xv6-ci/tools/ziglang/zig ld.lld "${args[@]}" "$@" || exit $?
+if [[ "$user" == 1 ]]; then
+  /home/user/.cache/xv6-ci/deps/bin/riscv64-unknown-elf-objcopy --strip-debug "$out" || exit $?
+fi

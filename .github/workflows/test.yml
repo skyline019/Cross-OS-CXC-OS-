@@ -58,7 +58,7 @@ jobs:
         run: make test-recovery-zicbom RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
       - name: Upload test serial logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-test-serial-logs
           path: |
@@ -99,7 +99,7 @@ jobs:
         run: make test-recovery-nvdimm-zicbom QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm-zicbom"
       - name: Upload NVDIMM serial logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nvdimm-serial-logs
           path: .ci-logs/

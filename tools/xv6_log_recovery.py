@@ -30,6 +30,7 @@ FSMAGIC = 0x10203040
 # Do not treat the end of a currently buffered partial line as a complete
 # marker: xv6 printf may send one character per write/interrupt.
 FAILURE_LINE = re.compile(rb"(?m)^XV6_LOG_TEST_FAIL code=(\d+)\r?\n")
+SHELL_PROMPT = re.compile(rb"(?m)^\$ $")
 
 
 class TestFailure(RuntimeError):
@@ -141,7 +142,8 @@ class Runner:
                         output.extend(chunk)
 
         try:
-            wait_for(lambda: b"init: starting sh" in output and b"$ " in output, "shell")
+            wait_for(lambda: b"init: starting sh" in output and SHELL_PROMPT.search(output) is not None,
+                     "shell prompt")
             offset = len(output)
             proc.stdin.write((command + "\n").encode())
             proc.stdin.flush()
@@ -149,7 +151,8 @@ class Runner:
             wait_for(lambda: pattern.search(output, offset) is not None, marker.decode())
             matched = pattern.search(output, offset)
             if shell_after:
-                wait_for(lambda: b"$ " in output[matched.end():], "completed shell prompt")
+                wait_for(lambda: SHELL_PROMPT.search(output, matched.end()) is not None,
+                         "completed shell prompt")
         except Exception:
             sys.stderr.write(f"--- {label} serial tail ---\n" +
                              output[-6000:].decode("utf-8", "replace") + "\n")

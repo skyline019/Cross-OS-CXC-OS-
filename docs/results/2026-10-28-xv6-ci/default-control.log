@@ -1,0 +1,7 @@
+Default kernel injection-off positive and fail-closed negative controls
+fs-before=5b53927909978c1590211de3b8a0f803f0a7218d073deb3cd6db8652498f7c1c
+PASS fault-injection-disabled
+XV6_LOG_DISABLED_PASS
+XV6_LOG_RECOVERY_FAIL: stage-1-crash: guest reported failure 5; build with XV6_LOG_FAULT_INJECT for crash cases
+fs-after=5b53927909978c1590211de3b8a0f803f0a7218d073deb3cd6db8652498f7c1c
+PASS default kernel rejects injection; original disk image unchanged

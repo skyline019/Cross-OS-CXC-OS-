@@ -34,7 +34,6 @@ class QEMU(object):
         self.output = ""
         self.outbytes = bytearray()
         self.reported = 0
-        time.sleep(1)
 
     def reset_fs(self):
         run(["rm", "-f", "fs.img"], check=True)
@@ -51,6 +50,18 @@ class QEMU(object):
       except OSError as e:
         print("Provided a bad results path. Error:", e)     
         
+    def wait_for_prompt(self, timeout=45):
+        # Do not send a command before sh actually prints its prompt. Sending
+        # too early can interleave the prompt and a guest's result on one line.
+        deadline = time.monotonic() + timeout
+        while True:
+            self.read()
+            if re.search(r'(?m)^\$ $', self.output):
+                return
+            if self.proc.poll() is not None or time.monotonic() >= deadline:
+                self.error('shell prompt')
+            time.sleep(0.05)
+
     def cmd(self, c):
         if isinstance(c, str):
             c = c.encode('utf-8')
@@ -145,6 +156,7 @@ class QEMU(object):
 
 def crash_orphan(program):
     q = QEMU(True)
+    q.wait_for_prompt()
     q.cmd(program + "\n")
     q.monitor(r'^wait for kill and reclaim \d+$', timeout=30)
     inum = int(re.search(r'^wait for kill and reclaim (\d+)\r?$', q.output, re.MULTILINE).group(1))
@@ -175,6 +187,7 @@ def test_log():
 def test_stress():
     print("Test concurrent block-log writes and readback")
     q = QEMU(True)
+    q.wait_for_prompt()
     q.cmd("logstress f0 f1 f2 f3 f4 f5\n")
     q.monitor('^LOGSTRESS_PASS files=6 bytes=240000$',
               failure='^LOGSTRESS_FAIL', timeout=90)
@@ -205,6 +218,7 @@ def test_usertests(test=""):
     elif test != "":
         opt += " " + test
     q = QEMU(True)
+    q.wait_for_prompt()
     q.cmd("usertests" + opt + "\n")
     q.monitor('^ALL TESTS PASSED', progress='test', timeout=timeout)
     q.stop()

@@ -279,6 +279,7 @@ test-model:
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.
 # The log oracle itself kills QEMU using temporary copies of that image.
+.PHONY: native-log-build test-xv6-crash
 native-log-build:
 	$(MAKE) clean
 	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DXV6_LOG_FAULT_INJECT" $K/kernel fs.img
