@@ -26,6 +26,9 @@ int pause(int);
 int uptime(void);
 int sync(void);
 int fsync(int fd);
+long lseek(int fd, long offset, int whence);
+int getdents(int fd, void *entries, int bytes);
+int rename(const char *oldpath, const char *newpath);
 // Test-only: returns -1 unless the kernel was built with XV6_LOG_FAULT_INJECT.
 int xv6_log_fault(int stage);
 int pmfs_put(unsigned long key, const void *val, int len);

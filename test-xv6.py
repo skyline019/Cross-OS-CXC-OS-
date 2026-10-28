@@ -8,6 +8,7 @@
 # make test-xv6-crash  (rebuilds a test-only kernel; use a disposable checkout)
 # ./test-xv6.py log (requires XV6_LOG_FAULT_INJECT in the built kernel)
 # ./test-xv6.py stress (concurrent block-log writers and readback)
+# ./test-xv6.py vfs (ordinary VFS namespace/descriptor tests)
 
 import argparse, os, inspect, re, signal, subprocess, sys, time
 from subprocess import run
@@ -182,6 +183,25 @@ def test_log():
     result = run([sys.executable, "tools/xv6_log_recovery.py"])
     if result.returncode:
         sys.exit(result.returncode)
+    print("OK")
+
+def test_vfs():
+    print("Test VFS path, directory, descriptor and rename semantics")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("vfstest basic\n")
+    q.monitor(r'^VFS_TEST_PASS mode=basic$', failure=r'^VFS_TEST_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_vfscapacity():
+    print("Test rollback when PMFS metadata space is exhausted")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("vfstest capacity\n")
+    q.monitor(r'^VFS_TEST_PASS mode=capacity$', progress=r'^VFS_CAPACITY_PASS',
+              failure=r'^VFS_TEST_FAIL', timeout=120)
+    q.stop()
     print("OK")
 
 def test_stress():

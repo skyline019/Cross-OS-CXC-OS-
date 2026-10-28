@@ -1,0 +1,67 @@
+{
+  "measured_boots": 10,
+  "trials_per_boot": 5,
+  "n_per_trial": 8,
+  "unit": "r_time_ticks_per_trial",
+  "method": "median of five trials per boot; median across boots; percentile bootstrap resampling whole boots",
+  "bootstrap_seed": 20261028,
+  "bootstrap_samples": 2000,
+  "warning": "TCG software observations; different durability contracts, not physical PMEM performance or a causal speedup.",
+  "kv_ticks": {
+    "boot_medians": [
+      13861,
+      13243,
+      16653,
+      13231,
+      12960,
+      13899,
+      14156,
+      22340,
+      13863,
+      13407
+    ],
+    "median": 13862.0,
+    "bootstrap_95_percentile": [
+      13243.0,
+      15258.0
+    ]
+  },
+  "pmfs_ticks": {
+    "boot_medians": [
+      123643,
+      125792,
+      125767,
+      123678,
+      135265,
+      125108,
+      121946,
+      242608,
+      162170,
+      127085
+    ],
+    "median": 125779.5,
+    "bootstrap_95_percentile": [
+      123678.0,
+      143639.0
+    ]
+  },
+  "xv6_ticks": {
+    "boot_medians": [
+      1679760,
+      1720463,
+      1576146,
+      1697663,
+      1719166,
+      1676382,
+      1611876,
+      2124388,
+      1970094,
+      1712254
+    ],
+    "median": 1704958.5,
+    "bootstrap_95_percentile": [
+      1676382.0,
+      1844630.0
+    ]
+  }
+}

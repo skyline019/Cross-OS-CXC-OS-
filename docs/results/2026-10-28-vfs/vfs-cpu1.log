@@ -1,0 +1,22 @@
+Namespace(testrex='vfs', q=False)
+Test VFS path, directory, descriptor and rename semantics
+make: 'kernel/kernel' is up to date.
+riscv64-test-gcc -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -ffile-prefix-map=/home/user/.cache/vfs-work/final-one=. -march=rv64gc -std=gnu99 -MD -mcmodel=medany -ffreestanding -fno-common -nostdlib -fno-delete-null-pointer-checks -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset -fno-builtin-memmove -fno-builtin-memcmp -fno-builtin-log -fno-builtin-bzero -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin-putc -fno-builtin-free -fno-builtin-memcpy -Wno-main -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf -I.  -fno-stack-protector   -c -o user/vfstest.o user/vfstest.c
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_vfstest user/vfstest.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-objdump -S user/_vfstest > user/vfstest.asm
+riscv64-test-objdump -t user/_vfstest | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/vfstest.sym
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_logtest user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file user/_vfstest 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 424 blocks have been allocated
+balloc: write bitmap block at sector 46
+VFS_TEST_PASS mode=basic
+OK
+Test rollback when PMFS metadata space is exhausted
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_logtest user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file user/_vfstest 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 424 blocks have been allocated
+balloc: write bitmap block at sector 46
+VFS_CAPACITY_PASS successful_renames=1013
+VFS_TEST_PASS mode=capacity
+OK

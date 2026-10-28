@@ -111,7 +111,7 @@ class Runner:
         self.count = 0
 
     def boot(self, ram, label, command=None, marker=None, expect_shell=True,
-             ram_mb=160, expect_map=True):
+             ram_mb=160, expect_map=True, failure_marker=b"PMFS_REGRESS_FAIL"):
         self.count += 1
         disk = self.directory / f"disk-{self.count}.img"
         shutil.copyfile(self.root / "fs.img", disk)
@@ -169,8 +169,8 @@ class Runner:
                 proc.stdin.write((command + "\n").encode())
                 proc.stdin.flush()
                 needle = marker.encode()
-                wait_for(lambda: needle in output[offset:] or b"PMFS_REGRESS_FAIL" in output[offset:], marker)
-                if b"PMFS_REGRESS_FAIL" in output[offset:]:
+                wait_for(lambda: needle in output[offset:] or failure_marker in output[offset:], marker)
+                if failure_marker in output[offset:]:
                     raise RuntimeError(f"{label}: guest oracle reported failure")
                 if expect_shell:
                     start = output.index(needle, offset) + len(needle)

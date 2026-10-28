@@ -14,6 +14,53 @@
 #include "pmstream.h"
 #include "pmcdc.h"
 #include "pmcontract.h"
+#include "stat.h"
+#include "vfs.h"
+
+// Namespace pins protect cwd, open directories and in-flight lookups from
+// deletion/reuse. A spinlock permits fork to duplicate a pin while holding the
+// child process lock; mutations test pins while holding the PMFS sleep lock.
+static struct spinlock ref_lock;
+static uint inode_refs[PMFILE_MAX_INO];
+
+void
+pmfile_ref_init(void)
+{
+  initlock(&ref_lock, "pmfile refs");
+  memset(inode_refs, 0, sizeof(inode_refs));
+}
+
+void
+pmfile_pin(int ino)
+{
+  if (ino < 1 || ino > PMFILE_MAX_INO)
+    panic("pmfile_pin");
+  acquire(&ref_lock);
+  inode_refs[ino - 1]++;
+  release(&ref_lock);
+}
+
+void
+pmfile_unpin(int ino)
+{
+  if (ino < 1 || ino > PMFILE_MAX_INO)
+    panic("pmfile_unpin");
+  acquire(&ref_lock);
+  if (inode_refs[ino - 1] == 0)
+    panic("pmfile_unpin ref");
+  inode_refs[ino - 1]--;
+  release(&ref_lock);
+}
+
+static uint
+pmfile_refs(int ino)
+{
+  uint n;
+  acquire(&ref_lock);
+  n = inode_refs[ino - 1];
+  release(&ref_lock);
+  return n;
+}
 
 static struct pmfile_inode inodes[PMFILE_MAX_INO];
 static struct pmfile_dent dents[PMFILE_MAX_INO];
@@ -387,6 +434,132 @@ valid_path(const char *path)
   return 1;
 }
 
+static const char *
+base_name(const char *path)
+{
+  const char *base = path;
+  while (*path) {
+    if (*path == '/')
+      base = path + 1;
+    path++;
+  }
+  return base;
+}
+
+int
+pmfile_type_ino(int ino)
+{
+  if (!pmfs_mounted() || ino < 1 || ino > PMFILE_MAX_INO ||
+      !inodes[ino - 1].used)
+    return -1;
+  return inodes[ino - 1].type;
+}
+
+int
+pmfile_path_ino(int ino, char *path)
+{
+  int i;
+  if (pmfile_type_ino(ino) < 0 || path == 0)
+    return -1;
+  for (i = 0; i < PMFILE_MAX_INO; i++) {
+    if (dents[i].ino == (uint32)ino) {
+      name_copy(path, dents[i].name);
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int
+pmfile_lookup_ino(int parent, const char *name)
+{
+  int i, ino = -1;
+  if (pmfile_type_ino(parent) != PMFILE_TYPE_DIR || name == 0 || !name[0])
+    return -1;
+  if (name_eq(name, "."))
+    ino = parent;
+  else if (name_eq(name, "..")) {
+    for (i = 0; i < PMFILE_MAX_INO; i++)
+      if (dents[i].ino == (uint32)parent) {
+        ino = dents[i].parent;
+        break;
+      }
+  } else {
+    for (i = 0; i < PMFILE_MAX_INO; i++)
+      if (dents[i].ino && dents[i].parent == (uint32)parent &&
+          name_eq(base_name(dents[i].name), name)) {
+        ino = dents[i].ino;
+        break;
+      }
+  }
+  if (pmfile_type_ino(ino) < 0)
+    return -1;
+  pmfile_pin(ino);
+  return ino;
+}
+
+int
+pmfile_child_path(int parent, const char *name, char *path)
+{
+  char prefix[PMFILE_NAME];
+  int i, n, len;
+  if (pmfile_type_ino(parent) != PMFILE_TYPE_DIR || name == 0 || !name[0] ||
+      name_eq(name, ".") || name_eq(name, "..") ||
+      pmfile_path_ino(parent, prefix) != 0)
+    return -1;
+  n = strlen(name);
+  for (i = 0; i < n; i++)
+    if (name[i] == '/')
+      return -1;
+  len = strlen(prefix);
+  if (len + (len > 1 ? 1 : 0) + n >= PMFILE_NAME)
+    return -1;
+  memmove(path, prefix, len);
+  if (len > 1)
+    path[len++] = '/';
+  memmove(path + len, name, n);
+  path[len + n] = 0;
+  return 0;
+}
+
+// Slots are stable positions in the bounded dentry table, not a snapshot.
+// Mutations during enumeration may be observed or skipped, as documented.
+int
+pmfile_dirent(int ino, int slot, struct vfs_dirent *entry)
+{
+  int i, parent;
+  if (pmfile_type_ino(ino) != PMFILE_TYPE_DIR || slot < 0 || entry == 0)
+    return -1;
+  memset(entry, 0, sizeof(*entry));
+  if (slot == 0) {
+    entry->ino = ino;
+    entry->type = T_DIR;
+    safestrcpy(entry->name, ".", sizeof(entry->name));
+    return 1;
+  }
+  if (slot == 1) {
+    parent = ino == PMFILE_ROOT_INO ? PMFILE_ROOT_INO : -1;
+    for (i = 0; i < PMFILE_MAX_INO && parent < 0; i++)
+      if (dents[i].ino == (uint32)ino)
+        parent = dents[i].parent;
+    if (parent < 1)
+      return -1;
+    entry->ino = parent;
+    entry->type = T_DIR;
+    safestrcpy(entry->name, "..", sizeof(entry->name));
+    return 1;
+  }
+  i = slot - 2;
+  if (i >= PMFILE_MAX_INO)
+    return 0;
+  if (!dents[i].ino || dents[i].parent != (uint32)ino)
+    return 0;
+  entry->ino = dents[i].ino;
+  entry->type = inodes[entry->ino - 1].type == PMFILE_TYPE_DIR ? T_DIR : T_FILE;
+  safestrcpy(entry->name, base_name(dents[i].name), sizeof(entry->name));
+  return 1;
+}
+
 static int
 create_entry(const char *path, int type)
 {
@@ -656,8 +829,8 @@ pmfile_unlink(const char *path)
   if (di < 0)
     return -1;
   ino = (int)dents[di].ino;
-  if (ino == PMFILE_ROOT_INO)
-    return -1;
+  if (ino == PMFILE_ROOT_INO || pmfile_refs(ino))
+    return -1; // a cwd, directory fd or in-flight lookup pins this inode
   for (i = 0; i < PMFILE_MAX_FD; i++)
     if (ofile[i].ino == ino)
       return -1;
@@ -673,6 +846,88 @@ pmfile_unlink(const char *path)
   if (pmfile_store_meta() != 0) {
     inodes[ino - 1] = old_inode;
     dents[di] = old_dent;
+    return -1;
+  }
+  return 0;
+}
+
+// Move a file or a whole directory subtree by publishing one COW metadata
+// checkpoint. All validation happens before mutation; on an ordinary error
+// the in-memory graph is restored. The bounded path table makes the subtree
+// rewrite O(number of dentries), including for an open directory/cwd.
+int
+pmfile_rename(const char *oldpath, const char *newpath)
+{
+  static struct pmfile_dent saved[PMFILE_MAX_INO];
+  struct pmfile_inode replaced;
+  char renamed[PMFILE_NAME];
+  int src, dst, ino, target = -1, parent, i, oldlen, newlen;
+
+  if (!pmfs_mounted() || !valid_path(oldpath) || !valid_path(newpath))
+    return -1;
+  src = find_dent_full(oldpath);
+  if (src < 0 || dents[src].ino == PMFILE_ROOT_INO ||
+      resolve_parent(newpath, &parent) != 0)
+    return -1;
+  dst = find_dent_full(newpath);
+  if (dst == src)
+    return 0;
+  ino = dents[src].ino;
+  oldlen = strlen(oldpath);
+  newlen = strlen(newpath);
+  // Refuse moving a directory beneath itself, even through a deep descendant.
+  if (inodes[ino - 1].type == PMFILE_TYPE_DIR && newlen > oldlen &&
+      memcmp(oldpath, newpath, oldlen) == 0 && newpath[oldlen] == '/')
+    return -1;
+
+  if (dst >= 0) {
+    target = dents[dst].ino;
+    if (target == PMFILE_ROOT_INO || pmfile_refs(target) ||
+        inodes[target - 1].type != inodes[ino - 1].type)
+      return -1;
+    for (i = 0; i < PMFILE_MAX_FD; i++)
+      if (ofile[i].ino == target)
+        return -1;
+    if (inodes[target - 1].type == PMFILE_TYPE_DIR)
+      for (i = 0; i < PMFILE_MAX_INO; i++)
+        if (dents[i].ino && dents[i].parent == (uint32)target)
+          return -1;
+  }
+
+  // Validate every rewritten path before removing or changing any entry.
+  for (i = 0; i < PMFILE_MAX_INO; i++) {
+    int n;
+    if (!dents[i].ino)
+      continue;
+    n = strlen(dents[i].name);
+    if (n >= oldlen && memcmp(dents[i].name, oldpath, oldlen) == 0 &&
+        (n == oldlen || dents[i].name[oldlen] == '/') &&
+        newlen + n - oldlen >= PMFILE_NAME)
+      return -1;
+  }
+  memmove(saved, dents, sizeof(dents));
+  if (target >= 0) {
+    replaced = inodes[target - 1];
+    memset(&inodes[target - 1], 0, sizeof(inodes[target - 1]));
+    memset(&dents[dst], 0, sizeof(dents[dst]));
+  }
+  for (i = 0; i < PMFILE_MAX_INO; i++) {
+    int n;
+    if (!saved[i].ino || i == dst)
+      continue;
+    n = strlen(saved[i].name);
+    if (n < oldlen || memcmp(saved[i].name, oldpath, oldlen) != 0 ||
+        (n != oldlen && saved[i].name[oldlen] != '/'))
+      continue;
+    memmove(renamed, newpath, newlen);
+    memmove(renamed + newlen, saved[i].name + oldlen, n - oldlen + 1);
+    name_copy(dents[i].name, renamed);
+  }
+  dents[src].parent = parent;
+  if (pmfile_store_meta() != 0) {
+    memmove(dents, saved, sizeof(dents));
+    if (target >= 0)
+      inodes[target - 1] = replaced;
     return -1;
   }
   return 0;

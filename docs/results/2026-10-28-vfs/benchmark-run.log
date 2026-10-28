@@ -1,0 +1,12 @@
+BENCH_BOOT_PASS run=0 warmup=1 trials=5
+BENCH_BOOT_PASS run=1 warmup=0 trials=5
+BENCH_BOOT_PASS run=2 warmup=0 trials=5
+BENCH_BOOT_PASS run=3 warmup=0 trials=5
+BENCH_BOOT_PASS run=4 warmup=0 trials=5
+BENCH_BOOT_PASS run=5 warmup=0 trials=5
+BENCH_BOOT_PASS run=6 warmup=0 trials=5
+BENCH_BOOT_PASS run=7 warmup=0 trials=5
+BENCH_BOOT_PASS run=8 warmup=0 trials=5
+BENCH_BOOT_PASS run=9 warmup=0 trials=5
+BENCH_BOOT_PASS run=10 warmup=0 trials=5
+BENCH_REPRO_PASS boots=10 warmup=1 n=8 unit=r_time_ticks durability_equivalent=0

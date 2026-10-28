@@ -3,21 +3,24 @@
 > 这是受限 xv6 实验系统。普通 MAP 是 QEMU RAM；另有需打补丁的独立实验性 NVDIMM，默认持久操作不提供硬件写回。验收证据见[修复报告](PMFS-REPAIR-REPORT.md)，精确 API 限制见[语义](SEMANTICS.md)。
 
 ```text
-用户程序：/pm 绝对路径 open/read/write/fsync/close/mkdir/unlink
-        |                         专用 pmfs 文件/KV syscall
-xv6 struct file + 工作缓冲                   |
-        +--------------- pmfile -------------+
-                   COW inode/dentry 快照
-                          |
-               pmstream → pmcdc → pmalgo
-                         |         追加 run、重建索引
-                      pmindex（有界缓存/索引）
-                          |
-             pmfs：双槽 checkpoint、追加分配
-                          |
-          pmdev：页布局与 dirty bitmap（不走 bio/log/virtio）
-                          |
-            pmem：窗口内存、可选 CBO.CLEAN / fence
+用户程序：路径（绝对/相对）、目录 fd、seek/append、PM 内 rename
+          ├─ VFS vnode：逐组件遍历 + 固定 /pm 挂载点
+          │    ├─ 原生 inode → 块日志 / virtio
+          │    └─ PM inode pin → struct file（每独立 open 独立 offset）
+          │                        └─ 每 PM inode 共享工作缓冲
+          └─ 专用 pmfs 文件/KV syscall ─────────┐
+                           PMFS sleep lock ── pmfile
+                                  COW inode/dentry 快照
+                                        |
+                            pmstream → pmcdc → pmalgo
+                                      |         追加 run、重建索引
+                                   pmindex（有界缓存/索引）
+                                        |
+                           pmfs：双槽 checkpoint、追加分配
+                                        |
+                        pmdev：页布局与 dirty bitmap（不走 bio/log/virtio）
+                                        |
+                          pmem：窗口内存、可选 CBO.CLEAN / fence
 ```
 
 这是专用 PMFS 页布局和内存地址复制，不是直接把文件数据交给 xv6 块缓冲/virtio；但实现仍以 4 KiB 页组织并复制数据，不等于已经消除了所有块/页抽象。普通 xv6 根文件系统依然经 virtio 和日志。
@@ -42,6 +45,10 @@ PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留，后续页按 tail 追加
 
 恢复时选择通过范围、格式和校验的最高 epoch checkpoint，重建 run/index，校验文件元数据及关联；失败时拒绝挂载、不自动清空。单个无效 checkpoint 可以回退另一个；有效头引用的数据损坏会使挂载失败，而不是悄悄假装旧数据正确。
 
-## 并发与接口
+## VFS 算法、并发与生命周期
 
-专用 syscall 和普通 `/pm` fd 适配器经同一 sleep lock 串行操作 PMFS；独立打开同一文件会失败，`fork`/`dup` 共享同一 `struct file` 和偏移。这是保守的教学设计，不是多写者可扩展文件系统。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。
+`vfs_walk` 对每个分量执行后端实际查找并持有 inode 引用；只有原生根的 `pm` 进入 PMFS，PM 根的 `..` 回到原生根。PM inode pin 使用独立 spinlock，允许 `fork` 在进程锁下复制 cwd 引用而不睡眠；对原生 vnode 的 `iput` 在 xv6 日志事务内完成。目录 ABI 提供后端无关的固定长度项；原生 on-disk `dirent` 格式没有改变。
+
+每个普通 PM inode 最多有一个共享的有界工作缓冲和一个底层槽；独立 `open` 获得各自偏移，`dup`/`fork` 共用打开对象和偏移。PMFS sleep lock 串行化缓冲、写入、append 选尾和同步；专用文件句柄与普通打开同一 inode 互斥。全局同步在 file table spinlock 下取得引用快照，释放 spinlock 后才进入可睡眠的 PMFS 同步。该粗粒度锁保证当前受限操作路径的互斥，不是可扩展多核设计或完整线性化证明。
+
+子树 rename 先检查目标、环和所有后代的新路径长度，再复制旧 dentry 表供普通错误回滚，修改内存图后**一次**调用元数据 COW checkpoint 发布。重写复杂度 `O(受限 dentry 数)`；活动目录或文件的引用按 inode 保持，目标若被引用则拒绝替换。重启 oracle、实际代码变异负控与规格模型见 [VFS 验证记录](results/2026-10-28-vfs/README.md)。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。

@@ -33,8 +33,20 @@ make test-recovery-nvdimm-zicbom QEMU=/path/to/patched/qemu-system-riscv64
 
 脚本最终输出 `PMFS_RECOVERY_PASS boots=... cpus=... zicbom=... nvdimm=...`。测试专用 `PMFS_FAULT_INJECT` 可以故意挂起内核，不应部署生产镜像。日志目录只保存串口文本；测试中的磁盘与 RAM 临时文件被自动清理。
 
+## VFS 语义与子树恢复
+
+```sh
+# 默认 EMUL，重建 fs.img；同一镜像不要与其他测试并行使用
+CPUS=1 ./test-xv6.py vfs
+CPUS=3 ./test-xv6.py vfs
+# MAP 测试内核及临时磁盘/共享 RAM；会先 make clean
+make test-vfs-recovery CPUS=3 RECOVERY_ARGS="--log-dir .ci-logs/vfs-recovery"
+```
+
+功能用例包括跨挂载点路径、cwd/目录引用、长名字、独立打开可见性和并发 append、open/rename 组合、替换与类型限制、描述符耗尽清理；默认 8 MiB EMUL 另反复重命名直到空间耗尽并检查旧路径回滚。重启用例检查一次目录子树重命名正常后两次启动、checkpoint 1–5 和 inode/dentry 页 6–7 切点。实际内核提前发布子树的变异负控以及设备模式与实验限制见 [VFS 验证记录](results/2026-10-28-vfs/README.md)。
+
 ## 有界持久化规格模型
 
-`make test-model` 运行 `tools/check_persist_model.py`。它独立描述双槽 COW 协议，对三页各两条模拟缓存线及 checkpoint 的每个操作边界枚举所有当前脏线提前写回子集，假设屏障持久化已请求的写回、提交词 8 B 原子且校验无碰撞；成功确认后必须恢复新值。它还要求删除数据刷写、提前发布、删除提交词刷写三个负控找到反例。
+`make test-model` 运行 `tools/check_persist_model.py` 和 `tools/check_vfs_model.py`。前者独立描述双槽 COW 协议，对三页各两条模拟缓存线及 checkpoint 的每个操作边界枚举所有当前脏线提前写回子集，假设屏障持久化已请求的写回、提交词 8 B 原子且校验无碰撞；成功确认后必须恢复新值。它还要求删除数据刷写、提前发布、删除提交词刷写三个负控找到反例。VFS 模型另枚举有界目录根发布状态，验证旧/新子树，并检测提前发布、部分子树和原地更新三个变异。
 
 **限制：** 此模型是手写协议规格，不从内核生成 store/flush trace；页数和线数被有界缩小，不模拟真实缓存、介质、校验碰撞或所有并发 interleaving。其通过和负控有效性不能取代对代码实际执行路径的验证，更不是形式化硬件证明。

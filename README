@@ -55,13 +55,16 @@ Current status, test evidence and limits: THESIS.md and
   docs/SEMANTICS.md                   exact supported subset and error semantics
   docs/QEMU-NVDIMM.md                 device and persistence-domain limits
   docs/XV6-LOG-RECOVERY.md            native xv6 log CI diagnosis and tests
+  docs/results/2026-10-28-vfs/        VFS implementation and validation evidence
   docs/EXCELLENCE-ROADMAP.md          original planning/baseline audit
   docs/LOCAL-SANDBOX-TESTS.md         historical pre-repair evidence
 
-The kernel has an absolute /pm path adapter for ordinary file descriptors,
-plus dedicated file/KV calls. v3 uses checksummed append-only data and COW
-metadata, two checkpoints, explicit formatting, and a serialized writer.
-It is a bounded teaching prototype, not a general VFS or full POSIX FS.
+A small VFS walks native and PMFS paths component by component across a
+fixed synthetic /pm mount. It provides cwd, directory descriptors/getdents,
+seek/append, coherent independent opens, and PMFS subtree rename, as well as
+the dedicated file/KV calls. v3 uses checksummed append-only data, COW metadata,
+two checkpoints, explicit formatting, and coarse-grained PMFS serialization.
+It remains a bounded teaching prototype, not a complete VFS or POSIX FS.
 
 Unpatched MAP is ordinary guest RAM, NOT an NVDIMM. An experimental QEMU
 9.2.0 patch supports one separately backed cold-plugged NVDIMM on virt and
@@ -73,7 +76,11 @@ power failures. v3 is incompatible with v2; there is no automatic migration.
 
   make qemu                 # volatile EMUL, a new empty PMFS each boot
   make kernel-pmem          # rebuild MAP with ordinary 160 MiB guest RAM
-  make test-model           # bounded specification + mutation controls
+  make test-model           # bounded specifications + mutation controls
+  CPUS=3 make test-vfs      # default EMUL VFS and metadata exhaustion tests
+  make test-vfs-recovery    # PM subtree rename restart/fault oracle, MAP
+  python3 tools/bench_repro.py --runs 10 --warmup 1 --n 8 --output /tmp/pmfs-bench-results
+                            # prebuilt default EMUL; copies the input disk
   make test-xv6-crash      # test-only native log + orphan process-restart tests
   CPUS=3 ./test-xv6.py stress # concurrent native block-log writers and readback
   make test-recovery        # MAP restart/fault oracle; software boundaries

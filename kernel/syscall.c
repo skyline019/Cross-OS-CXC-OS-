@@ -122,6 +122,9 @@ extern uint64 sys_pmfs_fstat(void);
 extern uint64 sys_pmfs_fault(void);
 extern uint64 sys_fsync(void);
 extern uint64 sys_xv6_log_fault(void);
+extern uint64 sys_lseek(void);
+extern uint64 sys_getdents(void);
+extern uint64 sys_rename(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -168,6 +171,9 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_fault]   = sys_pmfs_fault,
   [SYS_fsync]        = sys_fsync,
   [SYS_xv6_log_fault] = sys_xv6_log_fault,
+  [SYS_lseek]        = sys_lseek,
+  [SYS_getdents]     = sys_getdents,
+  [SYS_rename]       = sys_rename,
   // clang-format on
 };
 

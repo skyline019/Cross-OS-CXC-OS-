@@ -23,6 +23,7 @@ OBJS = \
   $K/log.o \
   $K/sleeplock.o \
   $K/file.o \
+  $K/vfs.o \
   $K/pipe.o \
   $K/exec.o \
   $K/sysfile.o \
@@ -171,6 +172,7 @@ UPROGS=\
 	$U/_pmfs_regress\
 	$U/_pmfs_posix\
 	$U/_pmfs_file\
+	$U/_vfstest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -275,6 +277,7 @@ bench-sweep: kernel-emul
 # Independent protocol specification model with three mutation controls.
 test-model:
 	python3 tools/check_persist_model.py
+	python3 tools/check_vfs_model.py
 
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.
@@ -295,6 +298,15 @@ recovery-build:
 
 test-recovery: recovery-build
 	python3 tools/pmfs_recovery.py --cpus $(CPUS) $(RECOVERY_ARGS)
+
+# Disposable build: first rebuild a MAP/fault-injection kernel, then test
+# checkpoint/page boundaries of an atomic directory-subtree rename.
+.PHONY: test-vfs test-vfs-recovery
+test-vfs:
+	CPUS=$(CPUS) QEMU="$(QEMU)" ./test-xv6.py vfs
+
+test-vfs-recovery: recovery-build
+	python3 tools/vfs_recovery.py --cpus $(CPUS) --qemu $(QEMU) $(RECOVERY_ARGS)
 
 test-recovery-zicbom:
 	$(MAKE) clean

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-28T10:27:00.566848+00:00",
+  "git_commit": null,
+  "git_status_porcelain": null,
+  "kernel_sha256": "07fc52803e47940d7027ed2bc88970864988c7bad40271649d5e16aa91eb2725",
+  "input_image_sha256": "5fd0797076e8faf94e251e2a8b3ced169f91c4dc3e22292b3411220eea30fb5d",
+  "qemu_path": "/home/user/.cache/vfs-work/bin/qemu-system-riscv64",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "host": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "cpus": 1,
+  "backend": "EMUL, volatile",
+  "runs": 10,
+  "warmup": 1,
+  "n": 8,
+  "build_notes": "Zig/Clang RISC-V cross-compile wrapper, GNU objcopy/objdump, QEMU 9.2.0 TCG; non-GCC sandbox",
+  "disclaimer": "No physical durability or equivalent persistence semantics."
+}

@@ -544,6 +544,7 @@ pmfs_init(void)
 #endif
 
   initsleeplock(&pmfs_api_lock, "pmfs");
+  pmfile_ref_init();
   memset(&g_fs, 0, sizeof(g_fs));
 #ifdef PMEM_MAP
   if (!pmem_ready()) {

@@ -301,7 +301,10 @@ fd_write_test(const char *mode)
   unsigned int len;
   struct stat st;
   CHECK(mkdir("/pm/t/sub") == 0, 85);
-  CHECK(open("/pm/t/sub", O_RDONLY) < 0 && chdir("/pm/t") < 0, 86);
+  fd = open("/pm/t/sub", O_RDONLY);
+  CHECK(fd >= 0 && fstat(fd, &st) == 0 && st.type == T_DIR && close(fd) == 0 &&
+          chdir("/pm/t") == 0 && chdir("/") == 0,
+        86);
   CHECK(link("/pm/t/a", "block-link") < 0 && link("README", "/pm/t/link") < 0,
         87);
   fd = open("/pm/t/native", O_CREATE | O_RDWR);

@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
+#include "vfs.h"
 
 static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
@@ -32,17 +33,22 @@ kexec(char *path, char **argv)
   uint64 argc, sz = 0, sp, ustack[MAXARG], stackbase;
   struct elfhdr elf;
   struct inode *ip;
+  struct vnode node = {0};
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
 
   begin_op();
 
-  // Open the executable file.
-  if ((ip = namei(path)) == 0) {
+  // PMFS executable loading is not implemented; resolve the path through the
+  // same namespace so a PMFS cwd cannot accidentally execute a native path.
+  if (vfs_walk(path, 0, &node, 0, 0) != 0 || node.kind != VFS_XV6) {
+    vfs_put(&node);
     end_op();
     return -1;
   }
+  ip = node.ip;
+  node.kind = VFS_NONE;
   ilock(ip);
 
   // Read the ELF header.
