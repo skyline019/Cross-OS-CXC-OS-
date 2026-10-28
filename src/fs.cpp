@@ -1,6 +1,8 @@
 #include <cxc/fs.hpp>
 
 #include <cxc/cxcfs.hpp>
+#include <cxc/fbdev.hpp>
+#include <cxc/tty.hpp>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -11,13 +13,21 @@ extern "C" void* memset(void*, int, size_t);
 namespace cxc::fs {
 namespace {
 
-constexpr uint8_t backend_ram = 0;
-constexpr uint8_t backend_disk = 1;
-constexpr uint8_t backend_pipe = 2;
 constexpr int64_t errno_again = -11;   // -EAGAIN
 constexpr int64_t errno_notdir = -20;  // -ENOTDIR
 constexpr int64_t errno_range = -34;   // -ERANGE
 constexpr int64_t errno_pipe = -32;    // -EPIPE
+
+bool path_is_dev_fb0(const char* name, size_t len) {
+    return len == 7 && name[0] == 'd' && name[1] == 'e' && name[2] == 'v' &&
+           name[3] == '/' && name[4] == 'f' && name[5] == 'b' && name[6] == '0';
+}
+
+bool path_is_dev_tty0(const char* name, size_t len) {
+    return len == 8 && name[0] == 'd' && name[1] == 'e' && name[2] == 'v' &&
+           name[3] == '/' && name[4] == 't' && name[5] == 't' &&
+           name[6] == 'y' && name[7] == '0';
+}
 
 struct Inode {
     bool used;
@@ -537,6 +547,26 @@ int64_t open_path(const char* path, uint64_t flags, uint64_t /*mode*/) {
         return -1;
     }
 
+    if (path_is_dev_fb0(name, name_len) || path_is_dev_tty0(name, name_len)) {
+        if (creat || trunc) {
+            return -1;
+        }
+        const uint8_t backend =
+            path_is_dev_fb0(name, name_len) ? backend_fb : backend_tty;
+        const int32_t fd = alloc_fd();
+        if (fd < 0) {
+            return -1;
+        }
+        fds[fd].used = true;
+        fds[fd].backend = backend;
+        fds[fd].inode = 0;
+        fds[fd].offset = 0;
+        fds[fd].readable = want_read ? 1u : 0u;
+        fds[fd].writable = want_write ? 1u : 0u;
+        ++current_stats.opens;
+        return fd;
+    }
+
     const char* rest = nullptr;
     size_t rest_len = 0;
     if (disk_rest(name, name_len, rest, rest_len)) {
@@ -627,10 +657,27 @@ int64_t close_fd(uint32_t fd) {
     return 0;
 }
 
+int32_t fd_backend(uint32_t fd) {
+    if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
+        return -1;
+    }
+    return static_cast<int32_t>(fds[fd].backend);
+}
+
 int64_t read_fd(uint32_t fd, void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || fd < fd_table_begin ||
         fd >= fd_table_end || !fds[fd].used || fds[fd].readable == 0) {
         return -1;
+    }
+    if (fds[fd].backend == backend_tty) {
+        const size_t got =
+            tty::read(static_cast<char*>(buffer), length);
+        ++current_stats.reads;
+        return static_cast<int64_t>(got);
+    }
+    if (fds[fd].backend == backend_fb) {
+        ++current_stats.reads;
+        return 0;
     }
     if (fds[fd].backend == backend_pipe) {
         if (fds[fd].inode >= max_pipes || !pipes[fds[fd].inode].used) {
@@ -687,6 +734,16 @@ int64_t write_fd(uint32_t fd, const void* buffer, size_t length) {
     if (buffer == nullptr || length == 0 || fd < fd_table_begin ||
         fd >= fd_table_end || !fds[fd].used || fds[fd].writable == 0) {
         return -1;
+    }
+    if (fds[fd].backend == backend_tty) {
+        const size_t got =
+            tty::write(static_cast<const char*>(buffer), length);
+        ++current_stats.writes;
+        return static_cast<int64_t>(got);
+    }
+    if (fds[fd].backend == backend_fb) {
+        ++current_stats.writes;
+        return static_cast<int64_t>(length);
     }
     if (fds[fd].backend == backend_pipe) {
         if (fds[fd].inode >= max_pipes || !pipes[fds[fd].inode].used) {
@@ -751,7 +808,8 @@ int64_t lseek_fd(uint32_t fd, int64_t offset, int whence) {
     if (fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
-    if (fds[fd].backend == backend_pipe) {
+    if (fds[fd].backend == backend_pipe || fds[fd].backend == backend_fb ||
+        fds[fd].backend == backend_tty) {
         return -1;  // ESPIPE
     }
     int64_t size = 0;
@@ -805,6 +863,18 @@ int64_t fstat_fd(uint32_t fd, StatBuf& out) {
         ++current_stats.fstats;
         return 0;
     }
+    if (fds[fd].backend == backend_fb || fds[fd].backend == backend_tty) {
+        out = StatBuf{};
+        out.st_mode = s_ifchr | 0666;
+        out.st_nlink = 1;
+        out.st_rdev = fds[fd].backend == backend_fb ? 29ull : 4ull;
+        out.st_blksize = 4096;
+        if (fds[fd].backend == backend_fb) {
+            out.st_size = static_cast<int64_t>(fbdev::fb_size());
+        }
+        ++current_stats.fstats;
+        return 0;
+    }
     if (fds[fd].backend == backend_disk) {
         cxcfs::fill_stat(fds[fd].inode, out);
     } else {
@@ -821,6 +891,18 @@ int64_t stat_path(const char* path, StatBuf& out) {
         return -1;
     }
     const char* name = resolved;
+    if (path_is_dev_fb0(name, name_len) || path_is_dev_tty0(name, name_len)) {
+        out = StatBuf{};
+        out.st_mode = s_ifchr | 0666;
+        out.st_nlink = 1;
+        out.st_rdev = path_is_dev_fb0(name, name_len) ? 29ull : 4ull;
+        out.st_blksize = 4096;
+        if (path_is_dev_fb0(name, name_len)) {
+            out.st_size = static_cast<int64_t>(fbdev::fb_size());
+        }
+        ++current_stats.stats;
+        return 0;
+    }
     const char* rest = nullptr;
     size_t rest_len = 0;
     if (disk_rest(name, name_len, rest, rest_len)) {
@@ -846,7 +928,8 @@ int64_t getdents64_fd(uint32_t fd, void* buffer, size_t length) {
         fd < fd_table_begin || fd >= fd_table_end || !fds[fd].used) {
         return -1;
     }
-    if (fds[fd].backend == backend_pipe) {
+    if (fds[fd].backend == backend_pipe || fds[fd].backend == backend_fb ||
+        fds[fd].backend == backend_tty) {
         return -1;
     }
     if (fds[fd].backend == backend_disk) {

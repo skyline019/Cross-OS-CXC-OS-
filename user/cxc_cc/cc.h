@@ -13,20 +13,21 @@
 #endif
 
 enum {
-    CC_SRC_MAX = 16384,
-    CC_CODE_MAX = 65536,
-    CC_LOCAL_MAX = 56,
-    CC_IDENT_MAX = 20,
+    /* M292: capacity wall lift (ident64 / src64K / code256K / …). */
+    CC_SRC_MAX = 65536,
+    CC_CODE_MAX = 262144,
+    CC_LOCAL_MAX = 128,
+    CC_IDENT_MAX = 64,
     CC_PATH_MAX = 48,
-    CC_LIT_MAX = 8,
-    CC_STR_MAX = 16,
-    CC_LOOP_MAX = 4,
+    CC_LIT_MAX = 32, /* M291: was 8; long write must not silent-truncate */
+    CC_STR_MAX = 64,
+    CC_LOOP_MAX = 8,
     CC_BREAK_MAX = 8,
-    CC_FN_MAX = 64,
-    CC_FN_ARGS = 4,
-    CC_STRUCT_MAX = 6,
-    CC_STRUCT_FIELDS = 6,
-    CC_GLOBAL_MAX = 16,
+    CC_FN_MAX = 128,
+    CC_FN_ARGS = 8,
+    CC_STRUCT_MAX = 32,
+    CC_STRUCT_FIELDS = 16,
+    CC_GLOBAL_MAX = 64,
     CC_ENUM_MAX = 16,
     CC_CALL_MAX = 64,
     CC_LINK_MAX = 96, /* M252: deep musl closure headroom */
@@ -103,10 +104,14 @@ enum CcTok {
     TOK_BARBAR,
     TOK_PLUSEQ,
     TOK_MINUSEQ,
+    TOK_PERCENTEQ, /* M289: %= */
     TOK_PLUSPLUS,
     TOK_MINUSMINUS,
     TOK_LSHIFT,
-    TOK_RSHIFT
+    TOK_RSHIFT,
+    TOK_CARET,  /* M289: ^ */
+    TOK_TILDE,  /* M289: ~ */
+    TOK_UNKNOWN /* M287: unsupported char — hard fail, never silent EOF */
 };
 
 typedef struct CcLexer {
@@ -114,10 +119,14 @@ typedef struct CcLexer {
     size_t len;
     size_t pos;
     int tok;
-    long number;
+    long long number; /* M289: 64-bit hex / char literals */
     char text[CC_IDENT_MAX + 1];
     char str[CC_STR_MAX + 1];
     size_t str_len;
+    int line;      /* M296: 1-based line of current token */
+    int col;       /* M296: 1-based column of current token */
+    int scan_line; /* cursor line at pos */
+    int scan_col;  /* cursor column at pos */
 } CcLexer;
 
 typedef struct CcLocal {
@@ -128,7 +137,15 @@ typedef struct CcLocal {
     int is_char;  /* M132: word slot + truncate on store */
     int is_const; /* M132: reject assignment after init */
     int is_ptr;   /* M140: pointer to stype (Pt* p) */
+    int elem_w;   /* M288: pointee/array element width in bytes (1/8) */
 } CcLocal;
+
+/* M288: expression result type carried through parse_* for scaling. */
+typedef struct CcType {
+    int is_ptr;
+    int elem_w; /* pointee width when is_ptr; else 0 */
+    int is_char;
+} CcType;
 
 typedef struct CcGlobal {
     char name[CC_IDENT_MAX + 1];
@@ -206,6 +223,17 @@ typedef struct CcEmit {
     int next_slot;
     int failed;
     int fail_code; /* M109 debug: link/parse reason for DMSG */
+    int fail_line; /* M296: first-fail line (0 = unset) */
+    int fail_col;  /* M296: first-fail column */
+    int asm_mode;  /* M296: emit GAS text instead of/alongside bytes */
+    char* asm_buf;
+    size_t asm_len;
+    size_t asm_cap;
+    int asm_label_seq; /* M297: .LccN generator */
+    /* Pending forward jcc/jmp: code_at is reloc imm offset; label defined at patch. */
+    size_t asm_fix_at[64];
+    int asm_fix_id[64];
+    int nasm_fix;
     CcLoop loops[CC_LOOP_MAX];
     int nloops;
     CcFn fns[CC_FN_MAX];
@@ -252,6 +280,14 @@ int cc_enum_define(CcEmit* em, const char* name, long value);
 int cc_typedef_find(CcEmit* em, const char* name);
 int cc_typedef_define(CcEmit* em, const char* name);
 
+void cc_emit_asm_puts(CcEmit* em, const char* s); /* M296 asm_mode */
+void cc_emit_asm_fn_label(CcEmit* em, const char* name);
+int cc_asm_new_label(CcEmit* em);              /* M297 */
+void cc_asm_def_label(CcEmit* em, int id);     /* emit .LccN: */
+void cc_asm_jmp_label(CcEmit* em, int id);     /* jmp .LccN (asm only) */
+void cc_asm_je_label(CcEmit* em, int id);
+void cc_asm_jne_label(CcEmit* em, int id);
+void cc_emit_asm_test_rax(CcEmit* em); /* test %eax,%eax */
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
 void cc_emit_u32(CcEmit* em, unsigned v);
@@ -265,6 +301,7 @@ size_t cc_data_resolve_off(const CcEmit* em, size_t tagged);
 int cc_data_seal(CcEmit* em); /* concat ro|rw → data[]; fix reloc/globals */
 
 void cc_emit_mov_eax_imm(CcEmit* em, unsigned imm);
+void cc_emit_mov_rax_imm64(CcEmit* em, unsigned long long imm);
 void cc_emit_mov_edi_eax(CcEmit* em);
 void cc_emit_mov_edi_imm(CcEmit* em, unsigned imm);
 void cc_emit_int80(CcEmit* em);
@@ -276,6 +313,12 @@ void cc_emit_lea_local(CcEmit* em, int slot);
 void cc_emit_index_load(CcEmit* em, int base_slot);
 void cc_emit_index_store(CcEmit* em, int base_slot);
 void cc_emit_index_lea(CcEmit* em, int base_slot);
+void cc_emit_index_load_n(CcEmit* em, int base_slot, int count, int elem_w);
+void cc_emit_index_store_n(CcEmit* em, int base_slot, int count, int elem_w);
+void cc_emit_index_lea_n(CcEmit* em, int base_slot, int count, int elem_w);
+void cc_emit_ptr_index_load(CcEmit* em, int elem_w);
+void cc_emit_ptr_index_store(CcEmit* em, int elem_w);
+void cc_emit_ptr_add_scaled(CcEmit* em, int elem_w);
 void cc_emit_load_indirect(CcEmit* em);
 void cc_emit_store_indirect(CcEmit* em);
 void cc_emit_lea_data(CcEmit* em, size_t data_off);
@@ -287,6 +330,7 @@ void cc_emit_fn_prologue(CcEmit* em, int arity);
 void cc_emit_fn_prologue_sysv(CcEmit* em, int arity);
 void cc_emit_leave_ret(CcEmit* em);
 size_t cc_emit_call_rel32(CcEmit* em);
+void cc_emit_call_name(CcEmit* em, const char* name); /* M297 asm call */
 void cc_emit_write_lit2(CcEmit* em, const char* lit);
 void cc_emit_write_pass(CcEmit* em);
 void cc_emit_print_rax(CcEmit* em);
@@ -302,6 +346,9 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len);
 
 int cc_preprocess(const char* in, size_t in_len, char* out, size_t out_cap,
                   size_t* out_len);
+int cc_prep_last_fail_line(void); /* M297: location of last prep failure */
+int cc_prep_last_fail_col(void);
+void cc_note_fail(int code, int line, int col); /* publish DLOC snapshot */
 void cc_link_reset(void);
 int cc_link_count(void);
 const char* cc_link_at(int i);
@@ -313,10 +360,15 @@ int cc_import_elf(CcEmit* em, const char* path);
 void cc_und_reset(void);
 int cc_und_resolve(CcEmit* em);
 int cc_last_fail_code(void);
+int cc_last_fail_line(void); /* M296 DLOC */
+int cc_last_fail_col(void);
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len);
 int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
+                   size_t* out_len);
+/* M296: compile to GAS text (asm_mode); out is NUL-terminated asm. */
+int cc_compile_asm(const char* src, size_t len, char** out_asm,
                    size_t* out_len);
 
 /* M127: freestanding GAS subset → SysV ET_REL. */

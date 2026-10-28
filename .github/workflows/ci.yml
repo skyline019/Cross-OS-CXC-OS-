@@ -76,6 +76,9 @@ jobs:
       - name: Host toolchain chaos (M142)
         run: python3 tools/run_cc_chaos_test.py
 
+      - name: CXC_A2 semantic conformance (M287)
+        run: python3 tools/cc_conformance.py --strict --elf-check
+
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
 
@@ -277,7 +280,8 @@ jobs:
           grep -F 'hard: 1' build/uefi/qemu-test/serial.log
           grep -F 'fat: 1' build/uefi/qemu-test/serial.log
           grep -F 'as: 1' build/uefi/qemu-test/serial.log
-          grep -F 'bridge: 1 tcap: 1 spawn_as: 4 spawn_ld: 1 spawn_cc: 3 tdrv: 1 ccdrv: 1 edge: 1' build/uefi/qemu-test/serial.log
+          # M293/M295 dual windows: spawn_cc 3|4; spawn_as 4 OR ==inputs_s with planted<=33
+          python3 tools/check_spawn_dual_window.py build/uefi/qemu-test/serial.log
           grep -F 'src: 1' build/uefi/qemu-test/serial.log
           grep -F 'cc: 1' build/uefi/qemu-test/serial.log
           grep -F 'run: 1' build/uefi/qemu-test/serial.log

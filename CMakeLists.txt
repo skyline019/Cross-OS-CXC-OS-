@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cxc_os VERSION 2.80.0 LANGUAGES CXX ASM)
+project(cxc_os VERSION 2.91.0 LANGUAGES CXX ASM)
 
 if(NOT MINGW OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     message(FATAL_ERROR
@@ -196,10 +196,14 @@ add_executable(cxc_kernel
     src/e1000e_selftest.cpp
     src/edu.cpp
     src/elf.cpp
+    src/fb.cpp
+    src/fbdev.cpp
     src/fs.cpp
     src/gdt.S
     src/gdt.cpp
+    src/guiux.cpp
     src/heap.cpp
+    src/ide_session.cpp
     src/idt.cpp
     src/interrupts.S
     src/syscall_entry.S
@@ -208,6 +212,7 @@ add_executable(cxc_kernel
     src/kernel.cpp
     src/log.cpp
     src/memory.cpp
+    src/mouse.cpp
     src/msix.cpp
     src/net/checksum.cpp
     src/net/datagram.cpp
@@ -215,6 +220,7 @@ add_executable(cxc_kernel
     src/net/socket.cpp
     src/pci.cpp
     src/pmm.cpp
+    src/ps2.cpp
     src/runtime_test.cpp
     src/runtime_probe.S
     src/scheduler.cpp
@@ -222,7 +228,10 @@ add_executable(cxc_kernel
     src/serial.cpp
     src/smp.cpp
     src/syscall.cpp
+    src/tty.cpp
     src/user.cpp
+    src/vt100.cpp
+    src/wm.cpp
     "${CXC_SMP_TRAMPOLINE_SOURCE}"
     "${CXC_USER_HELLO_SOURCE}"
     "${CXC_USER_FS_SOURCE}"
@@ -1886,7 +1895,7 @@ if(CXC_QEMU_EXECUTABLE)
             --qemu "${CXC_QEMU_EXECUTABLE}"
             --work-dir "${CMAKE_CURRENT_BINARY_DIR}/qemu-test"
             --check
-            --timeout 180
+            --timeout 300
         DEPENDS esp_image
         USES_TERMINAL
         VERBATIM

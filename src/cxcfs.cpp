@@ -729,6 +729,77 @@ void fill_stat(uint32_t inode, fs::StatBuf& out) {
     out.st_blocks = (out.st_size + 511) / 512;
 }
 
+int32_t list_dir_rel(const char* dir_rel, size_t dir_len, DirEnt* out,
+                     uint32_t max_out) {
+    if (!mounted || out == nullptr || max_out == 0) {
+        return -1;
+    }
+    if (dir_rel == nullptr) {
+        dir_len = 0;
+    }
+    if (dir_len > 0 && find_inode(dir_rel, dir_len) < 0) {
+        return -1;
+    }
+    uint32_t n = 0;
+    for (uint32_t index = 0; index < max_files && n < max_out; ++index) {
+        if (!inodes[index].used) {
+            continue;
+        }
+        const char* full = inodes[index].name;
+        const size_t full_len = name_length(full);
+        if (dir_len == 0) {
+            // Volume root: names with no '/'.
+            bool slash = false;
+            for (size_t i = 0; i < full_len; ++i) {
+                if (full[i] == '/') {
+                    slash = true;
+                    break;
+                }
+            }
+            if (slash || full_len == 0 || full_len >= sizeof(out[n].name)) {
+                continue;
+            }
+            for (size_t i = 0; i < full_len; ++i) {
+                out[n].name[i] = full[i];
+            }
+            out[n].name[full_len] = 0;
+            out[n].is_dir = inodes[index].is_dir ? 1u : 0u;
+            ++n;
+            continue;
+        }
+        if (full_len <= dir_len + 1 || full[dir_len] != '/') {
+            continue;
+        }
+        bool prefix = true;
+        for (size_t i = 0; i < dir_len; ++i) {
+            if (full[i] != dir_rel[i]) {
+                prefix = false;
+                break;
+            }
+        }
+        if (!prefix) {
+            continue;
+        }
+        const char* child = full + dir_len + 1;
+        size_t child_len = 0;
+        while (child[child_len] != 0 && child[child_len] != '/') {
+            ++child_len;
+        }
+        // Immediate children only (same rule as getdents_inode).
+        if (child_len == 0 || child[child_len] == '/' ||
+            child_len + 1 >= sizeof(out[n].name)) {
+            continue;
+        }
+        for (size_t i = 0; i < child_len; ++i) {
+            out[n].name[i] = child[i];
+        }
+        out[n].name[child_len] = 0;
+        out[n].is_dir = inodes[index].is_dir ? 1u : 0u;
+        ++n;
+    }
+    return static_cast<int32_t>(n);
+}
+
 int64_t getdents_inode(uint32_t inode, void* buffer, size_t length) {
     if (!mounted || inode >= max_files || !inodes[inode].used ||
         !inodes[inode].is_dir || buffer == nullptr || length < 24) {

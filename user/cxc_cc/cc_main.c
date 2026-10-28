@@ -52,10 +52,31 @@ static int write_all(int fd, const unsigned char* buf, size_t n) {
     return 0;
 }
 
+static void write_dec(int fd, unsigned v) {
+    char tmp[16];
+    char out[16];
+    int n = 0;
+    int i = 0;
+    if (v == 0) {
+        tmp[n++] = '0';
+    } else {
+        while (v > 0 && n < 15) {
+            tmp[n++] = (char)('0' + (v % 10));
+            v /= 10;
+        }
+    }
+    while (n > 0) {
+        out[i++] = tmp[--n];
+    }
+    (void)write(fd, out, (size_t)i);
+}
+
 static void write_dmsg(int code) {
     char msg[8];
     const char* hint;
     int c;
+    int line;
+    int col;
     if (code < 0) {
         code = 0;
     }
@@ -103,11 +124,31 @@ static void write_dmsg(int code) {
     case 50:
         hint = "DHINT:LNK\n";
         break;
+    case 60:
+        hint = "DHINT:HASH\n"; /* M287: unknown lexeme / bare # */
+        break;
     default:
         hint = "DHINT:UNK\n";
         break;
     }
     c = write(1, hint, 10);
+    (void)c;
+    /* M296: append DLOC without changing DMSG/DHINT fixed widths. */
+    line = cc_last_fail_line();
+    col = cc_last_fail_col();
+    if (line < 0) {
+        line = 0;
+    }
+    if (col < 0) {
+        col = 0;
+    }
+    c = write(1, "DLOC:", 5);
+    (void)c;
+    write_dec(1, (unsigned)line);
+    c = write(1, ":", 1);
+    (void)c;
+    write_dec(1, (unsigned)col);
+    c = write(1, "\n", 1);
     (void)c;
 }
 
@@ -369,6 +410,8 @@ static int write_link_rsp(const char* rsp_path, char objs[][CC_CLI_PATH],
 
 int main(int argc, char** argv) {
     int compile_only = 0;
+    int preprocess_only = 0; /* M296 -E */
+    int asm_only = 0;        /* M296 -S */
     const char* out_path = 0;
     /* Path tables in BSS — large enough for musl soak. */
     static char inputs[CC_CLI_MAX_IN][CC_CLI_PATH];
@@ -392,6 +435,14 @@ int main(int argc, char** argv) {
             compile_only = 1;
             continue;
         }
+        if (streq(argv[i], "-E")) {
+            preprocess_only = 1;
+            continue;
+        }
+        if (streq(argv[i], "-S")) {
+            asm_only = 1;
+            continue;
+        }
         if (streq(argv[i], "-o")) {
             if (i + 1 >= argc) {
                 return 50;
@@ -413,6 +464,107 @@ int main(int argc, char** argv) {
 
     if (n_in == 0) {
         return 50;
+    }
+    if ((preprocess_only && asm_only) || (preprocess_only && compile_only) ||
+        (asm_only && compile_only)) {
+        return 50;
+    }
+
+    /* M296 -E: real cc_preprocess dump; single .c only. */
+    if (preprocess_only) {
+        static char src_buf[CC_SRC_MAX];
+        static char out_buf[CC_SRC_MAX];
+        size_t src_len = 0;
+        size_t out_len = 0;
+        int fd;
+        const char* in;
+        if (n_in != 1 || !ends_with(inputs[0], ".c")) {
+            return 50;
+        }
+        in = inputs[0];
+        fd = open(in, O_RDONLY, 0);
+        if (fd < 0) {
+            return 51;
+        }
+        if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
+            close(fd);
+            return 52;
+        }
+        close(fd);
+        src_buf[src_len] = 0;
+        if (cc_preprocess(src_buf, src_len, out_buf, sizeof(out_buf),
+                          &out_len) != 0) {
+            cc_note_fail(10, cc_prep_last_fail_line(), cc_prep_last_fail_col());
+            write_dmsg(10);
+            return 4;
+        }
+        if (out_path == 0) {
+            if (write_all(1, (const unsigned char*)out_buf, out_len) != 0) {
+                return 54;
+            }
+            return 0;
+        }
+        fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            return 53;
+        }
+        if (write_all(fd, (const unsigned char*)out_buf, out_len) != 0) {
+            close(fd);
+            return 54;
+        }
+        if (close(fd) != 0) {
+            return 55;
+        }
+        return 0;
+    }
+
+    /* M296 -S: asm_mode GAS text; single .c only. */
+    if (asm_only) {
+        static char src_buf[CC_SRC_MAX];
+        size_t src_len = 0;
+        char* asm_text = 0;
+        size_t asm_len = 0;
+        int fd;
+        const char* in;
+        char auto_out[CC_CLI_PATH];
+        if (n_in != 1 || !ends_with(inputs[0], ".c")) {
+            return 50;
+        }
+        in = inputs[0];
+        if (out_path == 0) {
+            replace_ext(in, ".s", auto_out, sizeof(auto_out));
+            if (auto_out[0] == 0) {
+                return 50;
+            }
+            out_path = auto_out;
+        }
+        fd = open(in, O_RDONLY, 0);
+        if (fd < 0) {
+            return 51;
+        }
+        if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
+            close(fd);
+            return 52;
+        }
+        close(fd);
+        src_buf[src_len] = 0;
+        if (cc_compile_asm(src_buf, src_len, &asm_text, &asm_len) != 0 ||
+            !asm_text || asm_len == 0) {
+            write_dmsg(cc_last_fail_code());
+            return 4;
+        }
+        fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            return 53;
+        }
+        if (write_all(fd, (const unsigned char*)asm_text, asm_len) != 0) {
+            close(fd);
+            return 54;
+        }
+        if (close(fd) != 0) {
+            return 55;
+        }
+        return 0;
     }
 
     if (compile_only) {
@@ -447,6 +599,51 @@ int main(int argc, char** argv) {
         out_path = "disk/out.elf";
     }
 
+    /* Single .c → ET_EXEC: allows `fn main` (obj mode forbids it; CRT lives in
+     * cc_compile). Multi-TU jobs still go through .o + disk/ld. */
+    if (n_in == 1 && ends_with(inputs[0], ".c")) {
+        static char src_buf[CC_SRC_MAX];
+        size_t src_len = 0;
+        unsigned char* elf = 0;
+        size_t elf_len = 0;
+        int fd;
+        fd = open(inputs[0], O_RDONLY, 0);
+        if (fd < 0) {
+            return 51;
+        }
+        if (read_all(fd, src_buf, CC_SRC_MAX - 1, &src_len) != 0) {
+            close(fd);
+            return 52;
+        }
+        close(fd);
+        src_buf[src_len] = 0;
+        if (cc_compile(src_buf, src_len, &elf, &elf_len) != 0 || !elf ||
+            elf_len == 0) {
+            write_dmsg(cc_last_fail_code());
+            return 4;
+        }
+        fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            return 53;
+        }
+        if (write_all(fd, elf, elf_len) != 0) {
+            close(fd);
+            return 54;
+        }
+        if (close(fd) != 0) {
+            return 55;
+        }
+        {
+            char* out_argv[2];
+            char* out_envp[1];
+            out_argv[0] = (char*)out_path;
+            out_argv[1] = 0;
+            out_envp[0] = 0;
+            execve(out_path, out_argv, out_envp);
+            return 8;
+        }
+    }
+
     /* Materialize each input to an ET_REL .o (cc / as / passthrough). */
     for (i = 0; i < n_in; i++) {
         const char* in = inputs[i];
@@ -462,12 +659,9 @@ int main(int argc, char** argv) {
             if (obj[0] == 0) {
                 return 50;
             }
-            /* Nest disk/cc -c for a.c/b.c; keep fat lib.c in-process. */
-            if (streq(in, "disk/a.c") || streq(in, "disk/b.c")) {
-                rc = spawn_cc_c(in, obj);
-            } else {
-                rc = compile_c_to_obj(in, obj);
-            }
+            /* M293: every .c nests disk/cc -c (no a.c/b.c special case).
+             * spawn_cc == 1 (top) + inputs_c. */
+            rc = spawn_cc_c(in, obj);
             if (rc != 0) {
                 return rc;
             }

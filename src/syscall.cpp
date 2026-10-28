@@ -1,10 +1,12 @@
 #include <cxc/syscall.hpp>
 
+#include <cxc/fbdev.hpp>
 #include <cxc/fs.hpp>
 #include <cxc/log.hpp>
 #include <cxc/pmm.hpp>
 #include <cxc/scheduler.hpp>
 #include <cxc/smp.hpp>
+#include <cxc/tty.hpp>
 #include <cxc/user.hpp>
 #include <cxc/vmm.hpp>
 
@@ -151,9 +153,30 @@ bool user_pages_ok(uint64_t address, size_t length, bool need_write) {
     return true;
 }
 
+constexpr size_t ide_cap_max = 8192;
+bool ide_cap_on = false;
+char ide_cap[ide_cap_max];
+size_t ide_cap_len = 0;
+
+void ide_cap_append(const char* bytes, size_t length) {
+    if (!ide_cap_on || bytes == nullptr || length == 0) {
+        return;
+    }
+    for (size_t i = 0; i < length; ++i) {
+        if (ide_cap_len + 1 >= ide_cap_max) {
+            break;
+        }
+        ide_cap[ide_cap_len++] = bytes[i];
+    }
+    if (ide_cap_len < ide_cap_max) {
+        ide_cap[ide_cap_len] = 0;
+    }
+}
+
 void note_stdout_pass(const char* bytes, size_t length) {
     ++current.write_calls;
     current.write_bytes += static_cast<uint32_t>(length);
+    ide_cap_append(bytes, length);
     if (length == sizeof(expected_program_pass) - 1) {
         bool match = true;
         for (size_t index = 0; index < sizeof(expected_program_pass) - 1;
@@ -854,7 +877,41 @@ cpu::InterruptFrame* handle_mmap(cpu::InterruptFrame* frame) {
     const uint64_t fd = frame->r8;
     const uint64_t offset = frame->r9;
 
+    constexpr uint64_t map_shared = 0x01;
     const uint64_t anon_private = map_private | map_anonymous;
+
+    // /dev/fb0: map framebuffer pages (shared or private, non-anonymous).
+    if (addr == 0 && length != 0 && (length & (page_size - 1)) == 0 &&
+        offset == 0 && (prot & (prot_read | prot_write)) != 0 &&
+        (prot & ~(prot_read | prot_write)) == 0 &&
+        (flags & map_anonymous) == 0 &&
+        ((flags & map_shared) != 0 || (flags & map_private) != 0) &&
+        fd <= 0xffffffffull) {
+        const int32_t backend = fs::fd_backend(static_cast<uint32_t>(fd));
+        if (backend == static_cast<int32_t>(fs::backend_fb)) {
+            const uint64_t limit =
+                default_mmap_base + mmap_max_pages * page_size;
+            if (current.mmap_next == 0 ||
+                current.mmap_next + length > limit ||
+                length > fbdev::fb_size()) {
+                frame->rax = static_cast<uint64_t>(mmap_error);
+                return frame;
+            }
+            const uint64_t root = read_cr3();
+            const uint64_t base = current.mmap_next;
+            uint32_t fail = 0;
+            if (!fbdev::map_to_user(root, base, length, fail)) {
+                frame->rax = static_cast<uint64_t>(mmap_error);
+                return frame;
+            }
+            current.mmap_next = base + length;
+            current.mmap_pages += static_cast<uint32_t>(length / page_size);
+            ++current.mmap_calls;
+            frame->rax = base;
+            return frame;
+        }
+    }
+
     if (addr != 0 || length == 0 || (length & (page_size - 1)) != 0 ||
         length > mmap_max_pages * page_size ||
         (prot & ~(prot_read | prot_write)) != 0 ||
@@ -961,8 +1018,8 @@ cpu::InterruptFrame* handle_uname(cpu::InterruptFrame* frame) {
     UtsName local{};
     fill_uts_field(local.sysname, "CXC/OS");
     fill_uts_field(local.nodename, "cxc");
-    fill_uts_field(local.release, "2.80.0");
-    fill_uts_field(local.version, "M126");
+    fill_uts_field(local.release, "2.82.0");
+    fill_uts_field(local.version, "M286");
     fill_uts_field(local.machine, "x86_64");
     fill_uts_field(local.domainname, "");
     memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(user_buf)), &local,
@@ -1002,11 +1059,44 @@ cpu::InterruptFrame* handle_mprotect(cpu::InterruptFrame* frame) {
     return frame;
 }
 
-// M71: isatty → ioctl(TCGETS); treat all as non-tty.
+// TCGETS on /dev/tty0; FBIOGET_VSCREENINFO on /dev/fb0; else -ENOTTY.
 cpu::InterruptFrame* handle_ioctl(cpu::InterruptFrame* frame) {
-    (void)frame->rdi;
-    (void)frame->rsi;
-    (void)frame->rdx;
+    const uint64_t fd = frame->rdi;
+    const uint64_t req = frame->rsi;
+    const uint64_t arg = frame->rdx;
+    constexpr uint64_t tcgets = 0x5401;
+
+    const int32_t backend = fs::fd_backend(static_cast<uint32_t>(fd));
+    if (backend == static_cast<int32_t>(fs::backend_tty) && req == tcgets) {
+        if (!user_pages_ok(arg, 36, true)) {
+            frame->rax = static_cast<uint64_t>(errno_fault);
+            return frame;
+        }
+        uint8_t local[64]{};
+        if (!tty::ioctl_tcgets(local, sizeof(local))) {
+            frame->rax = static_cast<uint64_t>(errno_notty);
+            return frame;
+        }
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(arg)), local, 36);
+        frame->rax = 0;
+        return frame;
+    }
+    if (backend == static_cast<int32_t>(fs::backend_fb) &&
+        req == fbdev::fbioget_vscreeninfo) {
+        if (!user_pages_ok(arg, sizeof(fbdev::VarScreenInfo), true)) {
+            frame->rax = static_cast<uint64_t>(errno_fault);
+            return frame;
+        }
+        fbdev::VarScreenInfo info{};
+        if (!fbdev::ioctl_get_vscreeninfo(info)) {
+            frame->rax = static_cast<uint64_t>(errno_inval);
+            return frame;
+        }
+        memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(arg)), &info,
+               sizeof(info));
+        frame->rax = 0;
+        return frame;
+    }
     frame->rax = static_cast<uint64_t>(errno_notty);
     return frame;
 }
@@ -1033,7 +1123,7 @@ cpu::InterruptFrame* handle_write(cpu::InterruptFrame* frame) {
         return frame;
     }
     const auto* bytes = reinterpret_cast<const char*>(buf);
-    if (fd == fs::fd_stdout) {
+    if (fd == fs::fd_stdout || fd == fs::fd_stderr) {
         log::write(bytes, static_cast<size_t>(len));
         note_stdout_pass(bytes, static_cast<size_t>(len));
         frame->rax = len;
@@ -1082,7 +1172,7 @@ cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
             return frame;
         }
         const auto* bytes = reinterpret_cast<const char*>(base);
-        if (fd == fs::fd_stdout) {
+        if (fd == fs::fd_stdout || fd == fs::fd_stderr) {
             for (size_t i = 0; i < static_cast<size_t>(len); ++i) {
                 scratch[total + i] = bytes[i];
             }
@@ -1100,7 +1190,7 @@ cpu::InterruptFrame* handle_writev(cpu::InterruptFrame* frame) {
             }
         }
     }
-    if (fd == fs::fd_stdout) {
+    if (fd == fs::fd_stdout || fd == fs::fd_stderr) {
         if (total == 0) {
             frame->rax = 0;
             return frame;
@@ -1665,6 +1755,48 @@ void reset_heap_after_exec() {
 
 const Session& session() {
     return current;
+}
+
+void ide_capture_reset() {
+    ide_cap_len = 0;
+    ide_cap[0] = 0;
+}
+
+void ide_capture_set(bool enabled) {
+    ide_cap_on = enabled;
+}
+
+void ide_capture_note(const char* text) {
+    if (text == nullptr) {
+        return;
+    }
+    size_t n = 0;
+    while (text[n] != 0) {
+        ++n;
+    }
+    const bool was = ide_cap_on;
+    ide_cap_on = true;
+    ide_cap_append(text, n);
+    ide_cap_on = was;
+}
+
+size_t ide_capture_size() {
+    return ide_cap_len;
+}
+
+size_t ide_capture_copy(char* out, size_t cap) {
+    if (out == nullptr || cap == 0) {
+        return 0;
+    }
+    size_t n = ide_cap_len;
+    if (n + 1 > cap) {
+        n = cap - 1;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = ide_cap[i];
+    }
+    out[n] = 0;
+    return n;
 }
 
 void fill_timespec_from_ticks(bool realtime, uint64_t& sec, uint64_t& nsec) {

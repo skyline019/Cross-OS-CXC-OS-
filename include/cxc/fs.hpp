@@ -20,6 +20,14 @@ constexpr int seek_end = 2;
 constexpr uint32_t s_ifmt = 0170000;
 constexpr uint32_t s_ifreg = 0100000;
 constexpr uint32_t s_ifdir = 0040000;
+constexpr uint32_t s_ifchr = 0020000;
+
+// Fd backend ids (also used by ioctl/mmap for /dev nodes).
+constexpr uint8_t backend_ram = 0;
+constexpr uint8_t backend_disk = 1;
+constexpr uint8_t backend_pipe = 2;
+constexpr uint8_t backend_fb = 3;
+constexpr uint8_t backend_tty = 4;
 
 // linux_dirent64.d_type values.
 constexpr uint8_t dt_unknown = 0;
@@ -33,6 +41,7 @@ constexpr size_t max_file_bytes = 4096;
 constexpr size_t max_files = 32;
 constexpr size_t max_getdents = 4096;
 constexpr uint32_t fd_stdout = 1;
+constexpr uint32_t fd_stderr = 2;
 constexpr uint32_t fd_table_begin = 3;
 constexpr uint32_t fd_table_end = 64;
 constexpr uint32_t max_pipes = 4;
@@ -94,6 +103,8 @@ int64_t unlink_path(const char* path);
 // Same backend only (ram↔ram or disk↔disk). Overwrites existing regular dest.
 int64_t rename_path(const char* old_path, const char* new_path);
 int64_t close_fd(uint32_t fd);
+// Returns backend id, or -1 if fd invalid.
+int32_t fd_backend(uint32_t fd);
 int64_t read_fd(uint32_t fd, void* buffer, size_t length);
 int64_t write_fd(uint32_t fd, const void* buffer, size_t length);
 int64_t lseek_fd(uint32_t fd, int64_t offset, int whence);

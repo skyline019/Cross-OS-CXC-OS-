@@ -4,10 +4,10 @@ CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主
 
 | 项 | 当前值 |
 |---|---|
-| 基线 | **Milestone 284 / v2.80.0**（CCDRV：`disk/cc` argv 真驱动） |
+| 基线 | **Milestone 298 / v2.91.0**（CCDRV + planted≤22 + asm_mode；GUIUX/IDE 可选） |
 | 证据 | QEMU + OVMF；串口 `CXC_OS_SELF_TEST_PASS` + 外部 peer `peer_ok=1` |
-| 机上合同终点 | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` |
-| 路线说明 | [`a2-mini-cc.md`](a2-mini-cc.md) · 第二十八次中场 [`midpoint-assessment-28.md`](midpoint-assessment-28.md) |
+| 机上合同终点 | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42`；有 GOP 时另见 `ONBOX_IDE_PASS` / `ONBOX_GUIUX_PASS` |
+| 路线说明 | [`a2-mini-cc.md`](a2-mini-cc.md) · [`midpoint-assessment-30.md`](midpoint-assessment-30.md) |
 | 产品目标 | [`product-goals.md`](product-goals.md)（一阶段主靶仍为 **A2**；**本窗未宣称 A2**） |
 
 默认 `qemu-test` 成功时串口应同时出现：
@@ -18,7 +18,7 @@ ONBOX_CCDRV_PASS
 peer_ok=1
 ```
 
-以及工具链审计样例：`spawn_as: 4` `spawn_ld: 1` `spawn_cc: 3` `ccdrv: 1` `tdrv: 1` `edge: 1`。
+以及工具链审计样例：`spawn_ld: 1`；`spawn_as`/`spawn_cc` 双窗（legacy 或 `spawn_as==inputs_s` + `planted≤33`）；`ccdrv: 1` `tdrv: 1` `edge: 1`。
 
 ---
 
@@ -99,7 +99,7 @@ peer_ok=1
 - `.s` → 仅 spawn `disk/as`
 - 链接 ET_EXEC → 仅 spawn `disk/ld`
 - 多 `.c`：HARD 作业中 `a.c`/`b.c` **嵌套** `disk/cc -c`；大 `lib.c` 可同进程编译
-- 默认 HARD 审计：`spawn_cc: 3`、`spawn_as: 4`、`spawn_ld: 1`
+- 默认 HARD 审计：`spawn_ld: 1`；`spawn_as`/`spawn_cc` 双窗；`planted≤33`
 
 **CLI 示例：**
 
@@ -140,11 +140,40 @@ fn score(){
 
 **musl：** 合同作业链接的是宿主预先编译并种入 `disk/` 的叶子 `.o`（ctype/string/…），不是机上完整编译 musl 源码。
 
-### 7. 验证与工程面
+### 7. 迷你 IDE（可选 GUI · M285）
+
+| 项 | 说明 |
+|---|---|
+| 显示 | EBS 前抓取 UEFI GOP；内核 WC 映射线性 FB；8×16 文本栅格 |
+| 输入 | PS/2 键盘（IRQ1）；合同用合成键泵，不依赖人工敲键 |
+| 编辑 | 内核态全屏缓冲 + 光标；默认 `fn main(){return 42;}` |
+| 保存 | F2 → 仅写 `disk/ide_main.c`（不覆盖 HARD `lib.c`） |
+| 编译运行 | F5 → `disk/cc -o disk/ide_out.elf disk/ide_main.c`；F9 → 再 exec |
+| 交互 | ESP 存在 `EFI/BOOT/IDEHOLD` 时进入 F2/F5/F9/Esc 循环 |
+| 可见运行 | `python3 tools/run_qemu.py --image … --gui`（默认 CI 仍 `-display none`） |
+
+**不宣称**：完整桌面、ISO C / 真 gcc（鼠标/多窗见下节 GUIUX）。
+
+### 8. GUIUX（可选 · M286）
+
+| 项 | 说明 |
+|---|---|
+| 鼠标 | PS/2 AUX（IRQ12）+ 合成包；点击切换窗口焦点 |
+| 多窗口 | 简易 WM：IDE + Terminal 两窗布局/绘制 |
+| 字号 | `fb::set_scale(1\|2)` 整数倍字形 |
+| VT100 | CSI 子集（H/J/K/m/A–D）+ 屏缓冲渲染 |
+| TTY | `/dev/tty0` 读写环 + `ioctl(TCGETS)` |
+| fbdev | `/dev/fb0` + `FBIOGET_VSCREENINFO` + `mmap` 线性 FB |
+| 合同 | 有 GOP 时串口 `ONBOX_GUIUX_PASS`（CI 不强制） |
+
+**不宣称**：X11/Wayland、完整 termios、硬件加速。
+
+### 9. 验证与工程面
 
 | 面 | 内容 |
 |---|---|
 | 默认验收 | `cmake --build build/uefi --target qemu-test` → `SELF_TEST_PASS` + `ONBOX_CCDRV_PASS` + `peer_ok=1` |
+| 可选 GUI | 有 GOP 时串口另见 `ONBOX_GUIFB_PASS` / `ONBOX_GUIKBD_PASS` / `ONBOX_IDE_PASS` / `ONBOX_GUIUX_PASS`（默认 CI **不**强制） |
 | 合同脚本 | `tools/contract_test.py`（主机协议 + 镜像混沌/边缘；CCDRV 种子 `0xC2C6`） |
 | 主机单测 | `tests/host` + `ctest`（`cxc::net` 等） |
 | CI | Linux QEMU 矩阵 + Windows MSYS2 构建（见根 [`README.md`](../README.md)） |
@@ -162,6 +191,8 @@ fn score(){
 | 机上 mini-cc | M92–M134 | 方言加深、`#lib`、as/ld 起步 | `ONBOX_*` · [中场 9–13](midpoint-assessment-9.md) |
 | 整链加深 | M135–M254 | musl 叶子闭包、as 加厚、布局/ctype | `ONBOX_DEEP/MCLS/…` · [`a2-mini-cc.md`](a2-mini-cc.md) |
 | TCAP/TDRV/CCDRV | M255–M284 | 容量还债 → 外部 as/ld → **`disk/cc` argv** | `ONBOX_CCDRV_PASS` · [中场 28](midpoint-assessment-28.md) |
+| 迷你 IDE | M285 | GOP/PS2 + 编辑→disk→cc | 可选 `ONBOX_IDE_PASS` · [中场 29](midpoint-assessment-29.md) |
+| GUIUX | M286 | 鼠标/多窗/字号/VT100/`/dev/fb0`/`tty0` | 可选 `ONBOX_GUIUX_PASS` · [中场 30](midpoint-assessment-30.md) |
 
 更细的逐里程碑对照见各 `midpoint-assessment-*.md` 与 git 历史；本文不再逐条展开 M0–M284。
 
@@ -350,6 +381,7 @@ Windows 构建由 CI 配置覆盖；当前本机实测为 Linux + QEMU/OVMF，�
 - **无**动态链接、按需分页、GUI、抢占式多用户调度；
 - 机上工具链是 **CXC_A2 方言 + mini as/ld + `disk/cc` argv**，不是 ISO C / 真 gcc·gas·ld；
 - HARD 作业中部分 musl/叶子 `.o` 为宿主预编译种植；嵌套 `cc -c` 与外部 as/ld 由内核 `execve` 审计；
-- **未宣称 A2**（完整机上 g++/gcc 自举）；当前合同终点是 `ONBOX_CCDRV_PASS`。
+- 迷你 IDE 为可选 GOP 文本编辑闭环（无鼠标/多窗口）；默认 CI 不强制 GUI PASS；
+- **未宣称 A2**（完整机上 g++/gcc 自举）；串口合同终点仍是 `ONBOX_CCDRV_PASS`。
 
-**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前主线停在 CCDRV（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-28.md`](midpoint-assessment-28.md)）；下一刀继续加深机上工具链/musl 闭包，合同只增不减，保持 `SELF_TEST_PASS` + `peer_ok=1` + `ONBOX_CCDRV_PASS` 不回退。
+**组织目标**：① **A2** 不依赖宿主的机上完整编译器；② **B** 生产级 OS。当前基线含 CCDRV + 可选迷你 IDE（见 [`a2-mini-cc.md`](a2-mini-cc.md)、[`midpoint-assessment-29.md`](midpoint-assessment-29.md)）；合同只增不减，保持 `SELF_TEST_PASS` + `peer_ok=1` + `ONBOX_CCDRV_PASS` 不回退。

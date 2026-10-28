@@ -134,6 +134,17 @@ def main() -> int:
         default=180.0,
         help="seconds to wait for serial/network evidence (M260 fat I/O needs ~180s)",
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="enable QEMU display (GOP/mini-IDE visible); default remains -display none",
+    )
+    parser.add_argument(
+        "--display",
+        default="",
+        help="QEMU -display backend when --gui (gtk|sdl|vnc=127.0.0.1:0). "
+        "Default: sdl on Linux/WSL, gtk elsewhere.",
+    )
     arguments = parser.parse_args()
 
     if not arguments.qemu:
@@ -223,12 +234,25 @@ def main() -> int:
         "-drive", f"if=pflash,format=raw,readonly=on,file={code}",
         "-drive", f"if=pflash,format=raw,file={variables_copy}",
         "-drive", f"if=ide,format=raw,file={image},snapshot=on",
-        "-display", "none",
         "-serial", "stdio",
         "-monitor", "none",
         "-net", "none",
         "-no-reboot",
     ]
+    if arguments.gui:
+        # WSL/WSLg gtk often shows a blank "[WARN:COPY MODE]" window.
+        # Default sdl; use --display vnc for a localhost:5900 client.
+        backend = arguments.display.strip() or "sdl"
+        if backend == "vnc" or backend.startswith("vnc="):
+            # QEMU 8 on Ubuntu: VNC is via -vnc, not -display vnc=...
+            listen = "127.0.0.1:0"
+            if backend.startswith("vnc=") and backend[4:]:
+                listen = backend[4:]
+            command += ["-display", "none", "-vnc", listen]
+        else:
+            command += ["-display", backend]
+    else:
+        command += ["-display", "none"]
     if not arguments.no_edu:
         command += ["-device", "edu"]
     if not arguments.no_e1000e:

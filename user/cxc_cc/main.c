@@ -42,11 +42,32 @@ static int write_all(int fd, const unsigned char* buf, size_t n) {
     return 0;
 }
 
-/* Debug兜底: DMSG:NN + DHINT:TAG on serial before exit 4. */
+static void write_dec(int fd, unsigned v) {
+    char tmp[16];
+    char out[16];
+    int n = 0;
+    int i = 0;
+    if (v == 0) {
+        tmp[n++] = '0';
+    } else {
+        while (v > 0 && n < 15) {
+            tmp[n++] = (char)('0' + (v % 10));
+            v /= 10;
+        }
+    }
+    while (n > 0) {
+        out[i++] = tmp[--n];
+    }
+    (void)write(fd, out, (size_t)i);
+}
+
+/* Debug兜底: DMSG:NN + DHINT:TAG (+ M296 DLOC) on serial before exit 4. */
 static void write_dmsg(int code) {
     char msg[8];
     const char* hint;
     int c;
+    int line;
+    int col;
     if (code < 0) {
         code = 0;
     }
@@ -94,11 +115,30 @@ static void write_dmsg(int code) {
     case 50:
         hint = "DHINT:LNK\n";
         break;
+    case 60:
+        hint = "DHINT:HASH\n";
+        break;
     default:
         hint = "DHINT:UNK\n";
         break;
     }
     c = write(1, hint, 10);
+    (void)c;
+    line = cc_last_fail_line();
+    col = cc_last_fail_col();
+    if (line < 0) {
+        line = 0;
+    }
+    if (col < 0) {
+        col = 0;
+    }
+    c = write(1, "DLOC:", 5);
+    (void)c;
+    write_dec(1, (unsigned)line);
+    c = write(1, ":", 1);
+    (void)c;
+    write_dec(1, (unsigned)col);
+    c = write(1, "\n", 1);
     (void)c;
 }
 
