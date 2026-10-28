@@ -1,231 +1,186 @@
-// PMFS file/KV vs xv6 fs: latency medians + throughput (ops/s).
-// Usage: pmfs_bench [N]     default N=32, max 48
+// Matched operation-count smoke benchmark, NOT a physical PMEM performance claim.
+// Usage: pmfs_bench [N], 1 <= N <= 32; ticks are xv6 r_time(), not cycles.
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
 #include "user/user.h"
 
-enum {
-  TRIALS = 5,
-  VAL_LEN = 8,
-  N_DEFAULT = 32,
-  N_MAX = 48,
-};
+enum { TRIALS = 5, VAL_LEN = 8, N_DEFAULT = 32, N_MAX = 32 };
 
 struct pmfs_wa {
-  unsigned long logical_bytes;
-  unsigned long phys_bytes;
-  unsigned long bloom_skips;
-  unsigned long fence_skips;
-  unsigned long page_reads;
-  unsigned long splits;
-  unsigned long compacts;
-  unsigned long budget;
+  unsigned long logical_bytes, phys_bytes, bloom_skips, fence_skips;
+  unsigned long page_reads, splits, compacts, budget;
 };
 
 static void
 mkname(char *b, int i)
 {
-  strcpy(b, "b");
-  b[1] = '0' + (i / 100) % 10;
-  b[2] = '0' + (i / 10) % 10;
-  b[3] = '0' + i % 10;
-  b[4] = 0;
+  b[0] = 'b';
+  b[1] = '/';
+  b[2] = '0' + (i / 100) % 10;
+  b[3] = '0' + (i / 10) % 10;
+  b[4] = '0' + i % 10;
+  b[5] = 0;
 }
 
 static void
 mkpath(char *b, int i)
 {
-  strcpy(b, "/p/");
-  b[3] = '0' + (i / 100) % 10;
-  b[4] = '0' + (i / 10) % 10;
-  b[5] = '0' + i % 10;
-  b[6] = 0;
+  b[0] = '/';
+  b[1] = 'p';
+  b[2] = 'm';
+  b[3] = '/';
+  b[4] = 'p';
+  b[5] = '/';
+  b[6] = '0' + (i / 100) % 10;
+  b[7] = '0' + (i / 10) % 10;
+  b[8] = '0' + i % 10;
+  b[9] = 0;
 }
 
-static void
-sort_u64(unsigned long *a, int n)
+static unsigned long
+median(unsigned long *a)
 {
   int i, j;
   unsigned long t;
-  for(i = 0; i < n; i++){
-    for(j = i + 1; j < n; j++){
-      if(a[j] < a[i]){
+  for (i = 0; i < TRIALS; i++)
+    for (j = i + 1; j < TRIALS; j++)
+      if (a[j] < a[i]) {
         t = a[i];
         a[i] = a[j];
         a[j] = t;
       }
-    }
+  return a[TRIALS / 2];
+}
+
+static int
+kv_trial(int n, unsigned long base, const char *payload)
+{
+  int i;
+  char buf[VAL_LEN];
+  unsigned int len;
+  for (i = 0; i < n; i++)
+    if (pmfs_put(base + i, payload, VAL_LEN) != 0)
+      return -1;
+  if (pmfs_seal() != 0)
+    return -2;
+  for (i = 0; i < n; i++)
+    if (pmfs_get(base + i, buf, sizeof(buf), &len) != 1 || len != VAL_LEN ||
+        memcmp(buf, payload, VAL_LEN) != 0)
+      return -3;
+  return 0;
+}
+
+// Each operation is checked, including the bytes read back. Both file paths
+// perform N create/write/sync/close/reopen/read/close/unlink transactions.
+static int
+pmfile_trial(int n, const char *payload)
+{
+  int i, fd;
+  char path[12], buf[VAL_LEN];
+  for (i = 0; i < n; i++) {
+    mkpath(path, i);
+    if ((fd = open(path, O_CREATE | O_RDWR)) < 0 ||
+        write(fd, payload, VAL_LEN) != VAL_LEN || fsync(fd) != 0 ||
+        close(fd) != 0 || (fd = open(path, O_RDONLY)) < 0 ||
+        read(fd, buf, sizeof(buf)) != VAL_LEN ||
+        memcmp(buf, payload, VAL_LEN) != 0 || close(fd) != 0 ||
+        unlink(path) != 0)
+      return -1;
   }
+  return 0;
+}
+
+static int
+xv6_trial(int n, const char *payload)
+{
+  int i, fd;
+  char path[8], buf[VAL_LEN];
+  for (i = 0; i < n; i++) {
+    mkname(path, i);
+    if ((fd = open(path, O_CREATE | O_RDWR)) < 0 ||
+        write(fd, payload, VAL_LEN) != VAL_LEN || fsync(fd) != 0 ||
+        close(fd) != 0 || (fd = open(path, O_RDONLY)) < 0 ||
+        read(fd, buf, sizeof(buf)) != VAL_LEN ||
+        memcmp(buf, payload, VAL_LEN) != 0 || close(fd) != 0 ||
+        unlink(path) != 0)
+      return -1;
+  }
+  return 0;
 }
 
 static unsigned long
-median_u64(unsigned long *a, int n)
+timed_file(int n, int is_pmfs, const char *payload)
 {
-  sort_u64(a, n);
-  return a[n / 2];
-}
-
-static int
-run_pmfs_kv_trial(int n, unsigned long key_base, char *payload)
-{
-  int i;
-  unsigned int len = 0;
-
-  for(i = 0; i < n; i++){
-    if(pmfs_put(key_base + (unsigned long)i, payload, VAL_LEN) != 0)
-      return -2;
-  }
-  if(pmfs_seal() != 0)
-    return -3;
-  for(i = 0; i < n; i++){
-    if(pmfs_get(key_base + (unsigned long)i, payload, 16, &len) != 1)
-      return -4;
-  }
-  return 0;
-}
-
-static int
-run_pmfs_file_trial(int n, int name_base, char *payload)
-{
-  int i, fd;
-  char path[12];
-  unsigned int len = 0;
-
-  // Cap concurrent PMFS files to inode table budget (root+/p + files).
-  {
-    int nfile = n;
-    if(nfile > 24)
-      nfile = 24;
-    for(i = 0; i < nfile; i++){
-      mkpath(path, name_base + i);
-      pmfs_funlink(path);
-      if(pmfs_create(path) != 0)
-        return -10;
-      fd = pmfs_fopen(path);
-      if(fd < 0)
-        return -11;
-      if(pmfs_fwrite(fd, payload, VAL_LEN) != VAL_LEN)
-        return -12;
-      {
-        int sy = pmfs_fsync(fd);
-        if(sy != 0)
-          return sy == -2 ? -132 : (sy == -3 ? -133 : -13);
-      }
-      if(pmfs_fread(fd, payload, 16, &len) != 1)
-        return -14;
-      if(pmfs_fclose(fd) != 0)
-        return -15;
-    }
-  }
-  return 0;
-}
-
-static int
-run_xv6_trial(int n, int name_base, char *payload)
-{
-  int i, fd;
-  char name[8];
-
-  for(i = 0; i < n; i++){
-    mkname(name, name_base + i);
-    unlink(name);
-    fd = open(name, O_CREATE | O_RDWR);
-    if(fd < 0)
-      return -5;
-    if(write(fd, payload, VAL_LEN) != VAL_LEN){
-      close(fd);
-      return -6;
-    }
-    close(fd);
-  }
-  sync();
-  return 0;
+  unsigned long start = cycles(), end;
+  int rc = is_pmfs ? pmfile_trial(n, payload) : xv6_trial(n, payload);
+  end = cycles();
+  if (rc != 0)
+    return 0;
+  return end > start ? end - start : 1;
 }
 
 int
 main(int argc, char *argv[])
 {
-  int t, rc, n;
-  char payload[16];
-  struct pmfs_wa wa;
-  unsigned long pmfs_c[TRIALS], file_c[TRIALS], xv6_c[TRIALS];
-  unsigned long t0, t1, med_p, med_f, med_x, ratio_x100, fratio_x100;
-  unsigned long key_base = 50000;
-  unsigned long wa_ratio_x100;
-  unsigned long thr_file, thr_xv6;
+  int t, n = argc >= 2 ? atoi(argv[1]) : N_DEFAULT;
+  unsigned long kv[TRIALS], file[TRIALS], xv6[TRIALS], start, end;
+  unsigned long med_kv, med_file, med_xv6, logical, phys, wa;
+  struct pmfs_wa before, after;
+  const char payload[VAL_LEN] = {'p', 'm', 'f', 's', 'd', 'a', 't', 'a'};
 
-  n = N_DEFAULT;
-  if(argc >= 2){
-    n = atoi(argv[1]);
-    if(n < 1)
-      n = 1;
-    if(n > N_MAX)
-      n = N_MAX;
+  if (n < 1 || n > N_MAX) {
+    printf("ONBOX_PMFS_BENCH_FAIL stage=ARGS code=1 valid_N=1..32\n");
+    exit(1);
   }
-
-  memset(payload, 'x', sizeof(payload));
-  memset(&wa, 0, sizeof(wa));
-
-  pmfs_mkdir("/p");
-
-  for(t = 0; t < TRIALS; t++){
-    t0 = cycles();
-    rc = run_pmfs_kv_trial(n, key_base + (unsigned long)(t * n + n * 100), payload);
-    if(rc != 0){
-      printf("ONBOX_PMFS_BENCH_FAIL stage=BENCH code=%d\n", -rc);
-      exit(1);
-    }
-    t1 = cycles();
-    pmfs_c[t] = t1 - t0;
-    if(pmfs_c[t] == 0)
-      pmfs_c[t] = 1;
-
-    t0 = cycles();
-    // Reuse path namespace so inode table stays within PMFILE_MAX_INO.
-    rc = run_pmfs_file_trial(n, 0, payload);
-    if(rc != 0){
-      printf("ONBOX_PMFS_BENCH_FAIL stage=BENCH code=%d\n", -rc);
-      exit(1);
-    }
-    t1 = cycles();
-    file_c[t] = t1 - t0;
-    if(file_c[t] == 0)
-      file_c[t] = 1;
-
-    t0 = cycles();
-    rc = run_xv6_trial(n, t * n, payload);
-    if(rc != 0){
-      printf("ONBOX_PMFS_BENCH_FAIL stage=BENCH code=%d\n", -rc);
-      exit(1);
-    }
-    t1 = cycles();
-    xv6_c[t] = t1 - t0;
-    if(xv6_c[t] == 0)
-      xv6_c[t] = 1;
-
-    printf("BENCH_TRIAL N=%d t=%d kv=%d file=%d xv6=%d\n",
-           n, t, (int)pmfs_c[t], (int)file_c[t], (int)xv6_c[t]);
+  // The directory may already exist; all individual benchmark names must not.
+  mkdir("/pm/p");
+  mkdir("b");
+  if (pmfs_stat(&before) != 0) {
+    printf("ONBOX_PMFS_BENCH_FAIL stage=STAT code=1\n");
+    exit(1);
   }
-
-  pmfs_stat(&wa);
-  med_p = median_u64(pmfs_c, TRIALS);
-  med_f = median_u64(file_c, TRIALS);
-  med_x = median_u64(xv6_c, TRIALS);
-  ratio_x100 = (med_x * 100) / med_p;
-  fratio_x100 = (med_x * 100) / med_f;
-  wa_ratio_x100 = 0;
-  if(wa.logical_bytes)
-    wa_ratio_x100 = (wa.phys_bytes * 100) / wa.logical_bytes;
-
-  // Throughput in relative ops/s units: N files / median_time * scale
-  // (r_time units; report as ops_x1000_per_tick for machine parse)
-  thr_file = (med_f > 0) ? ((unsigned long)n * 1000000ULL) / med_f : 0;
-  thr_xv6 = (med_x > 0) ? ((unsigned long)n * 1000000ULL) / med_x : 0;
-
-  printf("ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%d median_file=%d median_xv6=%d ratio=%d fratio=%d thr_file=%d thr_xv6=%d logical=%d phys=%d wa_x100=%d\n",
-         TRIALS, n, (int)med_p, (int)med_f, (int)med_x, (int)ratio_x100, (int)fratio_x100,
-         (int)thr_file, (int)thr_xv6,
-         (int)wa.logical_bytes, (int)wa.phys_bytes, (int)wa_ratio_x100);
+  for (t = 0; t < TRIALS; t++) {
+    start = cycles();
+    if (kv_trial(n, 50000UL + (unsigned long)(t * n), payload) != 0) {
+      printf("ONBOX_PMFS_BENCH_FAIL stage=KV code=%d\n", t);
+      exit(1);
+    }
+    end = cycles();
+    kv[t] = end > start ? end - start : 1;
+    // Alternate order to reduce systematic first/second bias.
+    if (t % 2 == 0) {
+      file[t] = timed_file(n, 1, payload);
+      xv6[t] = timed_file(n, 0, payload);
+    } else {
+      xv6[t] = timed_file(n, 0, payload);
+      file[t] = timed_file(n, 1, payload);
+    }
+    if (file[t] == 0 || xv6[t] == 0) {
+      printf("ONBOX_PMFS_BENCH_FAIL stage=FILE code=%d\n", t);
+      exit(1);
+    }
+    printf(
+      "BENCH_TRIAL N=%d t=%d kv=%d file=%d xv6=%d count_pmfs=%d count_xv6=%d\n",
+      n, t, (int)kv[t], (int)file[t], (int)xv6[t], n, n);
+  }
+  if (pmfs_stat(&after) != 0) {
+    printf("ONBOX_PMFS_BENCH_FAIL stage=STAT code=2\n");
+    exit(1);
+  }
+  med_kv = median(kv);
+  med_file = median(file);
+  med_xv6 = median(xv6);
+  logical = after.logical_bytes - before.logical_bytes;
+  phys = after.phys_bytes - before.phys_bytes;
+  wa = logical ? phys * 100 / logical : 0;
+  // Rates are operations per million r_time ticks, not ops/s or CPU cycles.
+  printf(
+    "ONBOX_PMFS_BENCH_PASS trials=%d N=%d median_pmfs=%d median_file=%d median_xv6=%d ratio=%d fratio=%d thr_file=%d thr_xv6=%d logical=%d phys=%d wa_x100=%d count_pmfs=%d count_xv6=%d units=r_time_ticks\n",
+    TRIALS, n, (int)med_kv, (int)med_file, (int)med_xv6,
+    (int)(med_xv6 * 100 / med_kv), (int)(med_xv6 * 100 / med_file),
+    (int)((unsigned long)n * 1000000UL / med_file),
+    (int)((unsigned long)n * 1000000UL / med_xv6), (int)logical, (int)phys,
+    (int)wa, n, n);
   exit(0);
 }

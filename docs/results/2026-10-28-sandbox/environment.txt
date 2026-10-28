@@ -1,0 +1,76 @@
+Date (UTC):
+2026-10-28T07:17:11+00:00
+Repository baseline:
+d22596aec697b85c34e560921df4571ce6f60f7f
+Platform:
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+OS:
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+VERSION_ID="12"
+Host visible CPU count:
+2
+Python:
+Python 3.11.2
+Zig:
+0.13.0
+Zig clang frontend:
+clang version 18.1.6 (https://github.com/ziglang/zig-bootstrap 98bc6bf4fc4009888d33941daf6b600d20a42a56)
+Target: x86_64-unknown-linux-musl
+Thread model: posix
+LLD:
+LLD 18.1.6 (compatible with GNU linkers)
+GNU objdump:
+GNU objdump (GNU Binutils) 2.42
+GNU objcopy:
+GNU objcopy (GNU Binutils) 2.42
+QEMU:
+QEMU emulator version 9.2.0
+bc:
+bc 6.7.6
+
+gcc wrapper:
+#!/bin/bash
+args=()
+for arg in "$@"; do
+  case "$arg" in -march=rv64gc) ;; *) args+=("$arg");; esac
+done
+exec /home/user/.cache/pmfs-sandbox/py/ziglang/zig cc -target riscv64-freestanding -mcpu=generic_rv64+m+a+f+d+c+zicsr+zifencei -Wno-typedef-redefinition "${args[@]}" -fno-sanitize=all
+
+ld wrapper:
+#!/bin/bash
+extra=()
+for arg in "$@"; do
+  if [[ "$arg" == user/user.ld ]]; then
+    extra=(--no-rosegment -e start)
+    break
+  fi
+done
+exec /home/user/.cache/pmfs-sandbox/py/ziglang/zig ld.lld "${extra[@]}" "$@"
+
+Binary sha256 (binaries not committed):
+7f9e3a661e909d5188d1b8b14f082b98a19c323a30d43bfdd1b2893ed37273e0  /home/user/.cache/pmfs-sandbox/py/ziglang/zig
+9b7e2abf6332d72f01c82766deca35f46ba4fd9171f6818cf16c423039e1458d  /home/user/.cache/pmfs-sandbox/qemu-build/qemu-system-riscv64
+b6a556d466e0a209adbf2168b24315b5f10be37c943fe0d3cb5b32d28370fd88  /home/user/.cache/pmfs-sandbox/binutils-build/binutils/objcopy
+1b3ad528a87104a7e6479562b0472861925e17c4eda5fb70666992362e214d31  /home/user/.cache/pmfs-sandbox/binutils-build/binutils/objdump
+66e2409264dfbf327e2ae077a8e50629c28fdaac6534eff795944f882bea17b6  /home/user/.cache/pmfs-sandbox/xv6/kernel/kernel
+485d2bb431f71f60a92387063b9c7dd1030da40a396dc5c38311ff2f56c7f0a2  /home/user/.cache/pmfs-sandbox/xv6-map/kernel/kernel
+64f35df1cc0dbf6de4e2009b30d39cc76c002b686840f8516621a9892dee4cb6  /home/user/.cache/pmfs-sandbox/xv6-reboot-diagnostic/kernel/kernel
+7e371c4b12fb99732fc7633f49edf8f11833c49186611228fb03dac08e6b46c4  /home/user/.cache/pmfs-sandbox/xv6-reboot-probe/user/_pmreboot
+
+Selected source archive sha256 (archives not committed):
+4ebf2c9b14fddcb882bfc88114dfca77bb96223120b2a69a6a4c6a8b30231510  /home/user/.cache/pmfs-sandbox/src/qemu-9.2.0.tgz
+25457ee2e2ee6365868f9e6682403151863a4dde0b19920318919cbcb77262aa  /home/user/.cache/pmfs-sandbox/src/binutils-2.42.tgz
+ccdc78f608777adbfaa9cae066a612e5b2436dab1209f538bfba76f8db5579e7  /home/user/.cache/pmfs-sandbox/src/bc-6.7.6.tgz
+bb484e81393465084b6ce7f82ccb92caf81316fad8e1c962cc8b35da8372caf8  /home/user/.cache/pmfs-sandbox/src/glib-2.74.6.tgz
+bc229a1751e56361307e462171eaa725400142da48bede5c2487b3d6eaf4b788  /home/user/.cache/pmfs-sandbox/src/gvdb.tgz
+70d9c156ec86d63de0f7bdae50540ffa492b25ec1d69491c7520845c860b9a62  /home/user/.cache/pmfs-sandbox/src/dtc-1.7.0.tgz
+d014b53382dbb17b8196ad12f50de7f20d0ef1b9f7d54b0be51a6cbb14209195  /home/user/.cache/pmfs-sandbox/src/keycodemapdb.tgz
+faae889814ea6a292f7ca03d9b36e6c7e95bab2a64777804883cc822b8d48757  /home/user/.cache/pmfs-sandbox/src/berkeley-softfloat-3.tgz
+e7a09d51dc7e96cb8422c919c85fc3833d4f788567638c9162ef5cd7db59b1df  /home/user/.cache/pmfs-sandbox/src/berkeley-testfloat-3.tgz
+
+Identical-kernel cross-check for test copies:
+485d2bb431f71f60a92387063b9c7dd1030da40a396dc5c38311ff2f56c7f0a2  /home/user/.cache/pmfs-sandbox/xv6-map/kernel/kernel
+485d2bb431f71f60a92387063b9c7dd1030da40a396dc5c38311ff2f56c7f0a2  /home/user/.cache/pmfs-sandbox/xv6-reboot-probe/kernel/kernel
+66e2409264dfbf327e2ae077a8e50629c28fdaac6534eff795944f882bea17b6  /home/user/.cache/pmfs-sandbox/xv6/kernel/kernel
+66e2409264dfbf327e2ae077a8e50629c28fdaac6534eff795944f882bea17b6  /home/user/.cache/pmfs-sandbox/xv6-smp/kernel/kernel
+66e2409264dfbf327e2ae077a8e50629c28fdaac6534eff795944f882bea17b6  /home/user/.cache/pmfs-sandbox/xv6-crash/kernel/kernel

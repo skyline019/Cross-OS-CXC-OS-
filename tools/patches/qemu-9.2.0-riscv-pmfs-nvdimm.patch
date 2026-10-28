@@ -1,0 +1,117 @@
+--- a/hw/riscv/Kconfig
++++ b/hw/riscv/Kconfig
+@@ -44,6 +44,9 @@
+     select DEVICE_TREE
+     select RISCV_NUMA
+     select GOLDFISH_RTC
++    # PMFS research prototype: one cold-plugged DIMM-backed NVDIMM.
++    select DIMM
++    select NVDIMM
+     select PCI
+     select PCI_EXPRESS_GENERIC_BRIDGE
+     select PFLASH_CFI01
+--- a/hw/riscv/virt.c
++++ b/hw/riscv/virt.c
+@@ -24,6 +24,9 @@
+ #include "qemu/guest-random.h"
+ #include "qapi/error.h"
+ #include "hw/boards.h"
++#include "hw/mem/pc-dimm.h"
++#include "hw/mem/nvdimm.h"
++#include "hw/mem/memory-device.h"
+ #include "hw/loader.h"
+ #include "hw/sysbus.h"
+ #include "hw/qdev-properties.h"
+@@ -1598,6 +1601,18 @@
+     memory_region_add_subregion(system_memory, memmap[VIRT_DRAM].base,
+         machine->ram);
+ 
++    /* Research-only cold-plug configuration; fixed address is the xv6 ABI.
++     * Keep ordinary RAM separate from the 32 MiB memory-device container. */
++    if (machine->nvdimms_state->is_enabled) {
++        if (machine->ram_size != 128 * MiB || machine->maxram_size != 160 * MiB ||
++            machine->ram_slots != 1 || machine->dtb) {
++            error_report("PMFS NVDIMM requires -m 128M,maxmem=160M,slots=1 "
++                         "and the generated FDT");
++            exit(1);
++        }
++        machine_memory_devices_init(machine, 0x88000000ULL, 32 * MiB);
++    }
++
+     /* boot rom */
+     memory_region_init_rom(mask_rom, NULL, "riscv_virt_board.mrom",
+                            memmap[VIRT_MROM].size, &error_fatal);
+@@ -1762,7 +1777,8 @@
+ {
+     MachineClass *mc = MACHINE_GET_CLASS(machine);
+ 
+-    if (device_is_dynamic_sysbus(mc, dev) ||
++    if (object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM) ||
++        device_is_dynamic_sysbus(mc, dev) ||
+         object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_IOMMU_PCI) ||
+         object_dynamic_cast(OBJECT(dev), TYPE_RISCV_IOMMU_PCI)) {
+         return HOTPLUG_HANDLER(machine);
+@@ -1771,11 +1787,47 @@
+     return NULL;
+ }
+ 
++static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
++                                            DeviceState *dev, Error **errp)
++{
++    MachineState *ms = MACHINE(hotplug_dev);
++    if (!object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM)) {
++        return;
++    }
++    if (dev->hotplugged || !ms->nvdimms_state->is_enabled || !ms->device_memory) {
++        error_setg(errp, "PMFS NVDIMM requires nvdimm=on and cold-plug");
++        return;
++    }
++    pc_dimm_pre_plug(PC_DIMM(dev), ms, errp);
++}
++
+ static void virt_machine_device_plug_cb(HotplugHandler *hotplug_dev,
+                                         DeviceState *dev, Error **errp)
+ {
+     RISCVVirtState *s = RISCV_VIRT_MACHINE(hotplug_dev);
+ 
++    if (object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM)) {
++        MachineState *ms = MACHINE(hotplug_dev);
++        PCDIMMDevice *dimm = PC_DIMM(dev);
++        Error *local_err = NULL;
++        uint64_t size = memory_device_get_region_size(MEMORY_DEVICE(dev), &local_err);
++        if (local_err) {
++            error_propagate(errp, local_err);
++            return;
++        }
++        if (dimm->addr != 0x88000000ULL || size != 32 * MiB) {
++            error_setg(errp, "PMFS NVDIMM must occupy 0x88000000+32MiB");
++            return;
++        }
++        pc_dimm_plug(dimm, ms);
++        qemu_fdt_add_subnode(ms->fdt, "/pmem@88000000");
++        qemu_fdt_setprop_string(ms->fdt, "/pmem@88000000", "compatible",
++                                "xv6,pmfs-nvdimm");
++        qemu_fdt_setprop_sized_cells(ms->fdt, "/pmem@88000000", "reg",
++                                     2, dimm->addr, 2, size);
++        return;
++    }
++
+     if (s->platform_bus_dev) {
+         MachineClass *mc = MACHINE_GET_CLASS(s);
+ 
+@@ -1800,6 +1852,7 @@
+     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
+ 
+     mc->desc = "RISC-V VirtIO board";
++    mc->nvdimm_supported = true;
+     mc->init = virt_machine_init;
+     mc->max_cpus = VIRT_CPUS_MAX;
+     mc->default_cpu_type = TYPE_RISCV_CPU_BASE;
+@@ -1816,6 +1869,7 @@
+     assert(!mc->get_hotplug_handler);
+     mc->get_hotplug_handler = virt_machine_get_hotplug_handler;
+ 
++    hc->pre_plug = virt_machine_device_pre_plug_cb;
+     hc->plug = virt_machine_device_plug_cb;
+ 
+     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);

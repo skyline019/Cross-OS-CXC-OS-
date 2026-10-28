@@ -16,6 +16,7 @@ main()
     printk("\n");
     printk("xv6 kernel is booting\n");
     printk("\n");
+    pmem_early_probe(); // inspect firmware FDT before kalloc reuses its RAM
     kinit();            // physical page allocator
     kvminit();          // create kernel page table
     kvminithart();      // turn on paging

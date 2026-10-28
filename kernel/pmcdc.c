@@ -17,26 +17,27 @@ rol(uint64 x, int n)
 }
 
 void
-pmcdc_init(struct pmcdc *c, int mode, uint32 min_sz, uint32 avg_sz, uint32 max_sz)
+pmcdc_init(struct pmcdc *c, int mode, uint32 min_sz, uint32 avg_sz,
+           uint32 max_sz)
 {
   memset(c, 0, sizeof(*c));
   c->mode = mode;
   c->min_sz = min_sz ? min_sz : PMCDC_MIN_DEF;
   c->avg_sz = avg_sz ? avg_sz : PMCDC_AVG_DEF;
   c->max_sz = max_sz ? max_sz : PMCDC_MAX_DEF;
-  if(c->max_sz > PM_VAL_MAX)
+  if (c->max_sz > PM_VAL_MAX)
     c->max_sz = PM_VAL_MAX;
-  if(c->min_sz > c->max_sz)
+  if (c->min_sz > c->max_sz)
     c->min_sz = c->max_sz;
-  if(c->avg_sz < c->min_sz)
+  if (c->avg_sz < c->min_sz)
     c->avg_sz = c->min_sz;
-  if(c->avg_sz > c->max_sz)
+  if (c->avg_sz > c->max_sz)
     c->avg_sz = c->max_sz;
   // Power-of-two mask ≈ 1/avg cut probability after min.
   {
     uint32 a = c->avg_sz;
     uint32 m = 1;
-    while(m < a)
+    while (m < a)
       m <<= 1;
     c->mask = m - 1;
   }
@@ -67,8 +68,8 @@ pmcdc_feed(struct pmcdc *c, uint8 b)
   c->nbytes_in++;
   c->since++;
 
-  if(c->mode == PMCDC_MODE_FIXED){
-    if(c->since >= c->avg_sz){
+  if (c->mode == PMCDC_MODE_FIXED) {
+    if (c->since >= c->avg_sz) {
       c->ncuts++;
       c->sum_chunk += c->since;
       c->since = 0;
@@ -78,7 +79,7 @@ pmcdc_feed(struct pmcdc *c, uint8 b)
   }
 
   // Rolling window + polynomial hash (full state machine, not toy).
-  if(c->wlen < PMCDC_WIN){
+  if (c->wlen < PMCDC_WIN) {
     c->win[c->wpos] = b;
     c->hash = c->hash * PMCDC_BASE + b;
     c->hash ^= rol(c->hash, 13);
@@ -94,15 +95,15 @@ pmcdc_feed(struct pmcdc *c, uint8 b)
     c->hash ^= PMCDC_POLY;
   }
 
-  if(c->since < c->min_sz)
+  if (c->since < c->min_sz)
     return 0;
-  if(c->since >= c->max_sz){
+  if (c->since >= c->max_sz) {
     c->ncuts++;
     c->sum_chunk += c->since;
     c->since = 0;
     return 1;
   }
-  if((c->hash & c->mask) == 0){
+  if ((c->hash & c->mask) == 0) {
     c->ncuts++;
     c->sum_chunk += c->since;
     c->since = 0;
@@ -123,7 +124,7 @@ pmcdc_content_fp(const void *buf, uint32 len)
   const uint8 *p = (const uint8 *)buf;
   uint64 h = 1469598103934665603ULL;
   uint32 i;
-  for(i = 0; i < len; i++){
+  for (i = 0; i < len; i++) {
     h ^= p[i];
     h *= 1099511628211ULL;
   }
@@ -140,32 +141,32 @@ pmcdc_selftest(void)
 
   // POS: CDC produces multiple cuts on patterned input.
   pmcdc_init(&c, PMCDC_MODE_CDC, 64, 128, 512);
-  for(i = 0; i < sizeof(buf); i++)
+  for (i = 0; i < sizeof(buf); i++)
     buf[i] = (uint8)(i * 17 + (i % 7));
-  for(i = 0; i < sizeof(buf); i++){
-    if(pmcdc_feed(&c, buf[i])){
+  for (i = 0; i < sizeof(buf); i++) {
+    if (pmcdc_feed(&c, buf[i])) {
       cuts++;
-      if(i + 1 - last < 64 && i + 1 != sizeof(buf)){
+      if (i + 1 - last < 64 && i + 1 != sizeof(buf)) {
         // min respected except possibly at EOF force
       }
       last = i + 1;
     }
   }
-  if(pmcdc_should_force(&c)){
+  if (pmcdc_should_force(&c)) {
     cuts++;
     forced = 1;
   }
-  if(cuts < 2){
+  if (cuts < 2) {
     pmcontract_fail("CDC", 1);
     return -1;
   }
-  printk("ONBOX_PMFS_POS_CDC_PASS cuts=%d forced=%d avg_mask=%d\n",
-         cuts, forced, (int)c.mask);
+  printk("ONBOX_PMFS_POS_CDC_PASS cuts=%d forced=%d avg_mask=%d\n", cuts,
+         forced, (int)c.mask);
   pmcontract_mark("POS_CDC", 1);
 
   // NEG: empty feed should not claim success without force path misuse
   pmcdc_init(&c, PMCDC_MODE_CDC, 64, 128, 512);
-  if(pmcdc_feed(&c, 0) && c.since == 0 && c.ncuts > 1){
+  if (pmcdc_feed(&c, 0) && c.since == 0 && c.ncuts > 1) {
     pmcontract_fail("CDC", 2);
     return -2;
   }
@@ -177,11 +178,11 @@ pmcdc_selftest(void)
   // Fixed mode ablation sanity
   pmcdc_init(&c, PMCDC_MODE_FIXED, 64, 128, 512);
   cuts = 0;
-  for(i = 0; i < 512; i++){
-    if(pmcdc_feed(&c, (uint8)i))
+  for (i = 0; i < 512; i++) {
+    if (pmcdc_feed(&c, (uint8)i))
       cuts++;
   }
-  if(cuts != 4){ // 512/128
+  if (cuts != 4) { // 512/128
     pmcontract_fail("CDC", 4);
     return -4;
   }

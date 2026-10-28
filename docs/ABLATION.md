@@ -1,4 +1,6 @@
-# 公平消融 A0–A4（CDC / Seal / Fixed）+ 效应量
+# A0–A4 消融实验（历史草稿）
+
+> 以下为历史单次原型观测，`cycles` 实为 time CSR 计数；设备、刷写与持久语义尚未充分验证，不能当作统计显著的公平结论。新实验设计见[优秀毕设路线图](EXCELLENCE-ROADMAP.md)。
 
 同一 payload、同一 PMFS 页设备与 KV 核；仅切换切分与刷写策略。
 

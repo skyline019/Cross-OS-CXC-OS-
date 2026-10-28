@@ -57,3 +57,7 @@ entry("pmfs_funlink");
 entry("pmfs_fclose");
 entry("pmfs_mkdir");
 entry("pmfs_readdir");
+entry("pmfs_format");
+entry("pmfs_fstat");
+entry("pmfs_fault");
+entry("fsync");

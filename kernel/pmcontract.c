@@ -6,18 +6,16 @@
 // Peer stages: core + CDC/STREAM + POS/NEG/CHAOS + remount/fault + ablation.
 enum { NREQ = 16 };
 
-static char *required[NREQ] = {
-  "PMEM0", "MOUNT", "STORE", "INDEX", "ALGO", "CRASH", "PERSIST",
-  "FILE", "CDC", "STREAM",
-  "POS_FILE", "NEG_FILE", "CHAOS_FILE", "ABLATION",
-  "REMOUNT", "FAULT"
-};
+static char *required[NREQ] = {"PMEM0",      "MOUNT",    "STORE",    "INDEX",
+                               "ALGO",       "CRASH",    "PERSIST",  "FILE",
+                               "CDC",        "STREAM",   "POS_FILE", "NEG_FILE",
+                               "CHAOS_FILE", "ABLATION", "REMOUNT",  "FAULT"};
 static int req_ok[NREQ];
 
 static int
 streq(char *a, char *b)
 {
-  while(*a && *b && *a == *b){
+  while (*a && *b && *a == *b) {
     a++;
     b++;
   }
@@ -28,8 +26,8 @@ static int
 stage_idx(char *stage)
 {
   int i;
-  for(i = 0; i < NREQ; i++){
-    if(streq(stage, required[i]))
+  for (i = 0; i < NREQ; i++) {
+    if (streq(stage, required[i]))
       return i;
   }
   return -1;
@@ -39,14 +37,14 @@ void
 pmcontract_mark(char *stage, int ok)
 {
   int i = stage_idx(stage);
-  if(i >= 0 && ok)
+  if (i >= 0 && ok)
     req_ok[i] = 1;
 }
 
 void
 pmcontract_pass(char *stage, char *fields)
 {
-  if(fields && fields[0])
+  if (fields && fields[0])
     printk("ONBOX_PMFS_%s_PASS %s\n", stage, fields);
   else
     printk("ONBOX_PMFS_%s_PASS\n", stage);
@@ -63,8 +61,8 @@ void
 pmcontract_gate(void)
 {
   int i;
-  for(i = 0; i < NREQ; i++){
-    if(!req_ok[i]){
+  for (i = 0; i < NREQ; i++) {
+    if (!req_ok[i]) {
       printk("ONBOX_PMFS_GATE_FAIL missing=%s\n", required[i]);
       return;
     }

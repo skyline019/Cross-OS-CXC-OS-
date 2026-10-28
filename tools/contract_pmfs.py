@@ -65,6 +65,7 @@ def main():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=env,
+        start_new_session=True,
     )
     os.set_blocking(proc.stdout.fileno(), False)
     out = ""
@@ -123,11 +124,10 @@ def main():
                         probe_ok = (not args.probe) or ("ONBOX_PMFS_SYSCALL_PASS" in out)
                         posix_ok = (not args.posix) or ("ONBOX_PMFS_POSIX_PASS" in out)
                         file_ok = (not args.file) or ("ONBOX_PMFS_FILEUSER_PASS" in out)
-                        bench_ok = (not args.bench) or (
-                            "ONBOX_PMFS_BENCH_PASS" in out
-                            and "median_xv6=" in out
-                            and "phys=" in out
-                        )
+                        bench_ok = (not args.bench) or bool(re.search(
+                            r"ONBOX_PMFS_BENCH_PASS trials=5 N=32 [^\r\n]*"
+                            r"count_pmfs=32 count_xv6=32 units=r_time_ticks\r?\n", out
+                        ))
                         if probe_ok and posix_ok and file_ok and bench_ok:
                             time.sleep(0.3)
                             break
@@ -137,21 +137,11 @@ def main():
             if proc.poll() is not None and not saw_gate:
                 break
     finally:
-        try:
-            ps = subprocess.run(
-                ["ps", "-opid", "--no-headers", "--ppid", str(proc.pid)],
-                stdout=subprocess.PIPE,
-                encoding="utf8",
-                check=False,
-            )
-            for line in ps.stdout.splitlines():
-                try:
-                    os.kill(int(line.strip()), signal.SIGKILL)
-                except OSError:
-                    pass
-            proc.terminate()
-        except Exception:
-            pass
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        proc.stdin.close()
+        proc.stdout.close()
 
     missing = [pat for pat in REQUIRED if not re.search(pat, out)]
     if missing:
@@ -175,8 +165,9 @@ def main():
     if args.file and "ONBOX_PMFS_FILEUSER_PASS" not in out:
         print("contract: missing FILEUSER_PASS", file=sys.stderr)
         return 1
-    if args.bench and (
-        "ONBOX_PMFS_BENCH_PASS" not in out or "median_xv6=" not in out
+    if args.bench and not re.search(
+        r"ONBOX_PMFS_BENCH_PASS trials=5 N=32 [^\r\n]*"
+        r"count_pmfs=32 count_xv6=32 units=r_time_ticks\r?\n", out
     ):
         print("contract: missing complete BENCH_PASS line", file=sys.stderr)
         return 1

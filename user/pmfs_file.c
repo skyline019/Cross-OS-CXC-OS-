@@ -15,24 +15,24 @@ main(int argc, char *argv[])
 
   pmfs_mkdir("/u");
   pmfs_funlink("/u/a.txt");
-  if(pmfs_create("/u/a.txt") != 0){
+  if (pmfs_create("/u/a.txt") != 0) {
     printf("ONBOX_PMFS_FILEUSER_FAIL code=1\n");
     exit(1);
   }
   fd = pmfs_fopen("/u/a.txt");
-  if(fd < 0){
+  if (fd < 0) {
     printf("ONBOX_PMFS_FILEUSER_FAIL code=2\n");
     exit(1);
   }
-  if(pmfs_fwrite(fd, "file-api", 8) != 8){
+  if (pmfs_fwrite(fd, "file-api", 8) != 8) {
     printf("ONBOX_PMFS_FILEUSER_FAIL code=3\n");
     exit(1);
   }
-  if(pmfs_fsync(fd) != 0){
+  if (pmfs_fsync(fd) != 0) {
     printf("ONBOX_PMFS_FILEUSER_FAIL code=4\n");
     exit(1);
   }
-  if(pmfs_fread(fd, buf, sizeof(buf), &len) != 1 || len != 8){
+  if (pmfs_fread(fd, buf, sizeof(buf), &len) != 1 || len != 8) {
     printf("ONBOX_PMFS_FILEUSER_FAIL code=5\n");
     exit(1);
   }

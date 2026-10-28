@@ -1,0 +1,104 @@
+/bin/sh: 1: qemu-system-riscv64: not found
+riscv64-test-ld -z max-page-size=4096 -T kernel/kernel.ld -o kernel/kernel kernel/entry.o kernel/start.o kernel/console.o kernel/printk.o kernel/uart.o kernel/kalloc.o kernel/spinlock.o kernel/string.o kernel/main.o kernel/vm.o kernel/proc.o kernel/swtch.o kernel/trampoline.o kernel/trap.o kernel/syscall.o kernel/sysproc.o kernel/bio.o kernel/fs.o kernel/log.o kernel/sleeplock.o kernel/file.o kernel/pipe.o kernel/exec.o kernel/sysfile.o kernel/kernelvec.o kernel/plic.o kernel/virtio_disk.o kernel/pmem.o kernel/pmfile.o kernel/syspmfile.o kernel/pmcdc.o kernel/pmstream.o kernel/pmdev.o kernel/pmfs.o kernel/pmalgo.o kernel/pmindex.o kernel/pmcontract.o kernel/syspmfs.o 
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_cat user/cat.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_cat > user/cat.asm
+riscv64-test-objdump -t user/_cat | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/cat.sym
+riscv64-test-objdump -S kernel/kernel > kernel/kernel.asm
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_echo user/echo.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_echo > user/echo.asm
+riscv64-test-objdump -t user/_echo | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/echo.sym
+# forktest has less library code linked in - needs to be small
+# in order to be able to max out the proc table.
+riscv64-test-ld -z max-page-size=4096 -N -e main -Ttext 0 -o user/_forktest user/forktest.o user/ulib.o user/usys.o
+riscv64-test-objdump -S user/_forktest > user/forktest.asm
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_grep user/grep.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_grep > user/grep.asm
+riscv64-test-objdump -t user/_grep | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/grep.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_init user/init.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_init > user/init.asm
+riscv64-test-objdump -t user/_init | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/init.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_kill user/kill.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_kill > user/kill.asm
+riscv64-test-objdump -t user/_kill | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/kill.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_ln user/ln.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_ln > user/ln.asm
+riscv64-test-objdump -t user/_ln | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/ln.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_ls user/ls.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_ls > user/ls.asm
+riscv64-test-objdump -t user/_ls | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/ls.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_mkdir user/mkdir.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_mkdir > user/mkdir.asm
+riscv64-test-objdump -t user/_mkdir | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/mkdir.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_rm user/rm.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-objdump -t kernel/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > kernel/kernel.sym
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_rm > user/rm.asm
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_sh user/sh.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-objdump -t user/_rm | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/rm.sym
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_sh > user/sh.asm
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_stressfs user/stressfs.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_stressfs > user/stressfs.asm
+riscv64-test-objdump -t user/_sh | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/sh.sym
+riscv64-test-objdump -t user/_stressfs | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/stressfs.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_usertests user/usertests.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_grind user/grind.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_usertests > user/usertests.asm
+riscv64-test-objdump -S user/_grind > user/grind.asm
+riscv64-test-objdump -t user/_grind | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/grind.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_wc user/wc.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_wc > user/wc.asm
+riscv64-test-objdump -t user/_wc | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/wc.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_zombie user/zombie.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_zombie > user/zombie.asm
+riscv64-test-objdump -t user/_zombie | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/zombie.sym
+riscv64-test-objdump -t user/_usertests | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/usertests.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_logstress user/logstress.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_forphan user/forphan.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_logstress > user/logstress.asm
+riscv64-test-objdump -S user/_forphan > user/forphan.asm
+riscv64-test-objdump -t user/_logstress | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/logstress.sym
+riscv64-test-objdump -t user/_forphan | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/forphan.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_dorphan user/dorphan.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_sync user/sync.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_dorphan > user/dorphan.asm
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_sync > user/sync.asm
+riscv64-test-objdump -t user/_dorphan | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/dorphan.sym
+riscv64-test-objdump -t user/_sync | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/sync.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_pmfs_probe user/pmfs_probe.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_pmfs_bench user/pmfs_bench.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_pmfs_probe > user/pmfs_probe.asm
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_pmfs_bench > user/pmfs_bench.asm
+riscv64-test-objdump -t user/_pmfs_probe | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/pmfs_probe.sym
+riscv64-test-objdump -t user/_pmfs_bench | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/pmfs_bench.sym
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_pmfs_posix user/pmfs_posix.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+riscv64-test-ld -z max-page-size=4096 -T user/user.ld -o user/_pmfs_file user/pmfs_file.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_pmfs_posix > user/pmfs_posix.asm
+ld.lld: warning: cannot find entry symbol _start; not setting start address
+riscv64-test-objdump -S user/_pmfs_file > user/pmfs_file.asm
+riscv64-test-objdump -t user/_pmfs_posix | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/pmfs_posix.sym
+riscv64-test-objdump -t user/_pmfs_file | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/pmfs_file.sym
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+mkfs: mkfs/mkfs.c:273: iappend: Assertion `fbn < MAXFILE' failed.
+make: *** [Makefile:171: fs.img] Aborted
+make: *** Deleting file 'fs.img'

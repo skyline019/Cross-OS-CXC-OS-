@@ -21,7 +21,7 @@ pm_key_coarse(uint64 key)
 void
 pm_post_set(struct pm_posting *p, uint32 rid)
 {
-  if(p == 0 || rid >= PM_POST_RUNS)
+  if (p == 0 || rid >= PM_POST_RUNS)
     return;
   p->bits[rid >> 6] |= (1ULL << (rid & 63u));
 }
@@ -29,7 +29,7 @@ pm_post_set(struct pm_posting *p, uint32 rid)
 int
 pm_post_test(const struct pm_posting *p, uint32 rid)
 {
-  if(p == 0 || rid >= PM_POST_RUNS)
+  if (p == 0 || rid >= PM_POST_RUNS)
     return 0;
   return (p->bits[rid >> 6] & (1ULL << (rid & 63u))) != 0;
 }
@@ -37,7 +37,7 @@ pm_post_test(const struct pm_posting *p, uint32 rid)
 void
 pmindex_init(struct pm_index *ix)
 {
-  if(ix == 0)
+  if (ix == 0)
     return;
   memset(ix, 0, sizeof(*ix));
 }
@@ -51,8 +51,10 @@ pmindex_clear(struct pm_index *ix)
 static int
 key_cmp(uint64 a, uint64 b)
 {
-  if(a < b) return -1;
-  if(a > b) return 1;
+  if (a < b)
+    return -1;
+  if (a > b)
+    return 1;
   return 0;
 }
 
@@ -61,18 +63,18 @@ int
 pmindex_lower_bound(struct pm_index *ix, uint64 key)
 {
   int lo, hi, mid;
-  if(ix == 0 || ix->nkeys == 0)
+  if (ix == 0 || ix->nkeys == 0)
     return -1;
   lo = 0;
   hi = (int)ix->nkeys;
-  while(lo < hi){
+  while (lo < hi) {
     mid = lo + (hi - lo) / 2;
-    if(key_cmp(ix->keys[mid].key, key) < 0)
+    if (key_cmp(ix->keys[mid].key, key) < 0)
       lo = mid + 1;
     else
       hi = mid;
   }
-  if(lo >= (int)ix->nkeys)
+  if (lo >= (int)ix->nkeys)
     return -1;
   return lo;
 }
@@ -83,28 +85,25 @@ pmindex_upsert(struct pm_index *ix, uint64 key, uint32 rid, uint32 page)
   int pos, i;
   uint32 c;
 
-  if(ix == 0 || rid >= PM_POST_RUNS)
+  if (ix == 0 || rid >= PM_POST_RUNS)
     return -1;
 
   // Binary posting at coarse quant bucket (二值化倒排).
   c = pm_key_coarse(key);
   pm_post_set(&ix->coarse[c], rid);
 
-  // Sorted key table (prefix / exact) — like RbTree insert.
-  if(ix->nkeys >= PM_IDX_KEYS){
-    // Table full: still keep posting bits for filtering.
-    return 0;
-  }
+  // Always allow an existing entry to be refreshed even at capacity.
   pos = pmindex_lower_bound(ix, key);
-  if(pos >= 0 && ix->keys[pos].key == key){
-    // Newer rid wins (like Aurora upsert).
+  if (pos >= 0 && ix->keys[pos].key == key) {
     ix->keys[pos].rid = rid;
     ix->keys[pos].page = page;
     return 0;
   }
-  if(pos < 0)
+  if (ix->nkeys >= PM_IDX_KEYS)
+    return 0; // posting hints are optional; reads still search all runs
+  if (pos < 0)
     pos = (int)ix->nkeys;
-  for(i = (int)ix->nkeys; i > pos; i--)
+  for (i = (int)ix->nkeys; i > pos; i--)
     ix->keys[i] = ix->keys[i - 1];
   ix->keys[pos].key = key;
   ix->keys[pos].rid = rid;
@@ -114,18 +113,19 @@ pmindex_upsert(struct pm_index *ix, uint64 key, uint32 rid, uint32 page)
 }
 
 int
-pmindex_hint_runs(struct pm_index *ix, uint64 key, uint32 *out_rids, uint32 maxn)
+pmindex_hint_runs(struct pm_index *ix, uint64 key, uint32 *out_rids,
+                  uint32 maxn)
 {
   uint32 c, rid, n = 0;
   const struct pm_posting *p;
 
-  if(ix == 0 || out_rids == 0 || maxn == 0)
+  if (ix == 0 || out_rids == 0 || maxn == 0)
     return 0;
 
   // Exact key in sorted table first (prefix-index style hit).
   {
     int pos = pmindex_lower_bound(ix, key);
-    if(pos >= 0 && ix->keys[pos].key == key){
+    if (pos >= 0 && ix->keys[pos].key == key) {
       out_rids[0] = ix->keys[pos].rid;
       ix->prefix_hits++;
       return 1;
@@ -134,11 +134,11 @@ pmindex_hint_runs(struct pm_index *ix, uint64 key, uint32 *out_rids, uint32 maxn
 
   c = pm_key_coarse(key);
   p = &ix->coarse[c];
-  for(rid = 0; rid < PM_POST_RUNS && n < maxn; rid++){
-    if(pm_post_test(p, rid))
+  for (rid = 0; rid < PM_POST_RUNS && n < maxn; rid++) {
+    if (pm_post_test(p, rid))
       out_rids[n++] = rid;
   }
-  if(n == 0)
+  if (n == 0)
     ix->buck_skip++;
   return (int)n;
 }
@@ -148,18 +148,18 @@ pmindex_cache_get(struct pm_index *ix, uint64 key, void *dst, uint32 dstcap,
                   uint32 *len, int *found)
 {
   uint32 i;
-  if(ix == 0)
+  if (ix == 0)
     return 0;
-  for(i = 0; i < PM_QCACHE; i++){
+  for (i = 0; i < PM_QCACHE; i++) {
     struct pm_qcent *e = &ix->cache[i];
-    if(e->used && e->key == key){
+    if (e->used && e->key == key) {
       ix->qhits++;
-      if(found)
+      if (found)
         *found = e->found;
-      if(e->found){
-        if(len)
+      if (e->found) {
+        if (len)
           *len = e->len;
-        if(dst && e->len <= dstcap)
+        if (dst && e->len <= dstcap)
           memmove(dst, e->val, e->len);
       }
       return 1;
@@ -175,19 +175,25 @@ pmindex_cache_put(struct pm_index *ix, uint64 key, const void *val, uint32 len,
 {
   struct pm_qcent *e;
   uint32 i;
-  if(ix == 0)
+  if (ix == 0)
     return;
+  // A positive entry must include the complete value. Never cache a truncated
+  // or unavailable buffer as a successful zero-length result.
+  if (found && (len > sizeof(ix->cache[0].val) || (len && val == 0))) {
+    pmindex_cache_invalidate(ix, key);
+    return;
+  }
   // Update in place if key already cached (avoid stale duplicate entries).
-  for(i = 0; i < PM_QCACHE; i++){
-    if(ix->cache[i].used && ix->cache[i].key == key){
+  for (i = 0; i < PM_QCACHE; i++) {
+    if (ix->cache[i].used && ix->cache[i].key == key) {
       e = &ix->cache[i];
       memset(e, 0, sizeof(*e));
       e->used = 1;
       e->key = key;
       e->found = found ? 1 : 0;
-      if(found && val && len <= 64){
+      if (found && val && len <= 64) {
         e->len = len;
-        memmove(e->val, (void*)val, len);
+        memmove(e->val, (void *)val, len);
       }
       return;
     }
@@ -198,9 +204,9 @@ pmindex_cache_put(struct pm_index *ix, uint64 key, const void *val, uint32 len,
   e->used = 1;
   e->key = key;
   e->found = found ? 1 : 0;
-  if(found && val && len <= 64){
+  if (found && val && len <= 64) {
     e->len = len;
-    memmove(e->val, (void*)val, len);
+    memmove(e->val, (void *)val, len);
   }
 }
 
@@ -208,10 +214,10 @@ void
 pmindex_cache_invalidate(struct pm_index *ix, uint64 key)
 {
   uint32 i;
-  if(ix == 0)
+  if (ix == 0)
     return;
-  for(i = 0; i < PM_QCACHE; i++){
-    if(ix->cache[i].used && ix->cache[i].key == key)
+  for (i = 0; i < PM_QCACHE; i++) {
+    if (ix->cache[i].used && ix->cache[i].key == key)
       ix->cache[i].used = 0;
   }
 }
@@ -219,7 +225,8 @@ pmindex_cache_invalidate(struct pm_index *ix, uint64 key)
 int
 pmindex_selftest(void)
 {
-  struct pm_index ix;
+  // The index exceeds the boot stack after the posting bitmap grew to 256 runs.
+  static struct pm_index ix;
   uint32 rids[8];
   int n, found = 0;
   uint32 len = 0;
@@ -228,36 +235,58 @@ pmindex_selftest(void)
   pmindex_init(&ix);
 
   // Quantization: nearby keys share coarse bucket.
-  if(pm_key_coarse(0x1000000000000ULL) != pm_key_coarse(0x1000000000001ULL)){
-    pmcontract_fail("INDEX", 1); return -1;
+  if (pm_key_coarse(0x1000000000000ULL) != pm_key_coarse(0x1000000000001ULL)) {
+    pmcontract_fail("INDEX", 1);
+    return -1;
   }
 
-  if(pmindex_upsert(&ix, 10, 0, 0) != 0){ pmcontract_fail("INDEX", 2); return -2; }
-  if(pmindex_upsert(&ix, 20, 1, 0) != 0){ pmcontract_fail("INDEX", 3); return -3; }
-  if(pmindex_upsert(&ix, 30, 0, 1) != 0){ pmcontract_fail("INDEX", 4); return -4; }
+  if (pmindex_upsert(&ix, 10, 0, 0) != 0) {
+    pmcontract_fail("INDEX", 2);
+    return -2;
+  }
+  if (pmindex_upsert(&ix, 20, 1, 0) != 0) {
+    pmcontract_fail("INDEX", 3);
+    return -3;
+  }
+  if (pmindex_upsert(&ix, 30, 0, 1) != 0) {
+    pmcontract_fail("INDEX", 4);
+    return -4;
+  }
 
   n = pmindex_hint_runs(&ix, 20, rids, 8);
-  if(n < 1 || rids[0] != 1){ pmcontract_fail("INDEX", 5); return -5; }
+  if (n < 1 || rids[0] != 1) {
+    pmcontract_fail("INDEX", 5);
+    return -5;
+  }
 
-  if(!pm_post_test(&ix.coarse[pm_key_coarse(10)], 0)){
-    pmcontract_fail("INDEX", 6); return -6;
+  if (!pm_post_test(&ix.coarse[pm_key_coarse(10)], 0)) {
+    pmcontract_fail("INDEX", 6);
+    return -6;
   }
 
   pmindex_cache_put(&ix, 20, "ok", 2, 1);
-  if(!pmindex_cache_get(&ix, 20, buf, sizeof(buf), &len, &found)){
-    pmcontract_fail("INDEX", 7); return -7;
+  if (!pmindex_cache_get(&ix, 20, buf, sizeof(buf), &len, &found)) {
+    pmcontract_fail("INDEX", 7);
+    return -7;
   }
-  if(!found || len != 2 || buf[0] != 'o'){ pmcontract_fail("INDEX", 8); return -8; }
+  if (!found || len != 2 || buf[0] != 'o') {
+    pmcontract_fail("INDEX", 8);
+    return -8;
+  }
 
   pmindex_cache_put(&ix, 99, 0, 0, 0);
   found = 1;
-  if(!pmindex_cache_get(&ix, 99, buf, sizeof(buf), &len, &found)){
-    pmcontract_fail("INDEX", 9); return -9;
+  if (!pmindex_cache_get(&ix, 99, buf, sizeof(buf), &len, &found)) {
+    pmcontract_fail("INDEX", 9);
+    return -9;
   }
-  if(found != 0){ pmcontract_fail("INDEX", 10); return -10; }
+  if (found != 0) {
+    pmcontract_fail("INDEX", 10);
+    return -10;
+  }
 
-  printk("ONBOX_PMFS_INDEX_PASS keys=%d qhits=%d buck_skip=%d\n",
-         ix.nkeys, (int)ix.qhits, (int)ix.buck_skip);
+  printk("ONBOX_PMFS_INDEX_PASS keys=%d qhits=%d buck_skip=%d\n", ix.nkeys,
+         (int)ix.qhits, (int)ix.buck_skip);
   pmcontract_mark("INDEX", 1);
   return 0;
 }

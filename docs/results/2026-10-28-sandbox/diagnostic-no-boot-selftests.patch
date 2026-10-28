@@ -1,0 +1,77 @@
+--- a/kernel/pmfs.c
++++ b/kernel/pmfs.c
+@@ -363,8 +363,6 @@
+   void *base = 0;
+   uint64 nbytes = 0;
+   int emul = 0;
+-  int rc;
+-
+   memset(&g_fs, 0, sizeof(g_fs));
+ 
+   if(pmem_ready()){
+@@ -400,63 +398,10 @@
+          (int)g_fs.epoch, g_fs.sb_slot, emul);
+   pmcontract_mark("MOUNT", 1);
+ 
+-  rc = pmfs_storage_selftest();
+-  if(rc != 0)
+-    ; // already FAIL-lined
+-
+-  rc = pmindex_selftest();
+-  if(rc != 0)
+-    ; // already FAIL-lined
+-
++  // Isolation-only diagnostic: preserve stored metadata by omitting boot tests.
+   pm_algo_init(pm_algo_global(), &g_fs);
+-  rc = pm_algo_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  // Prove index is rebuildable from sealed runs (Aurora remount path).
+   if(pm_algo_rebuild_index(pm_algo_global()) != 0)
+     pmcontract_fail("INDEX", 20);
+-
+-  rc = pmfs_crash_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmem_persist_selftest();
+-  if(rc != 0)
+-    ;
+-
+   pmfile_init();
+-  rc = pmfile_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmcdc_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmstream_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmfile_chaos_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmfile_edge_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmfile_ablation_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmfile_remount_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  rc = pmfile_fault_selftest();
+-  if(rc != 0)
+-    ;
+-
+-  pmcontract_gate();
++  printk("PROBE_BOOT_NO_SELFTEST\n");
+ }

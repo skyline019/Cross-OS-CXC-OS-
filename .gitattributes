@@ -1,0 +1,5 @@
+# Serial/test evidence and unified patch contexts intentionally preserve raw
+# trailing whitespace; do not rewrite logs or invalidate patches to appease
+# whitespace checks. Source code remains subject to the normal checks.
+docs/results/** -whitespace
+*.patch -whitespace

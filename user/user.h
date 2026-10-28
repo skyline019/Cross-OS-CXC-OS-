@@ -25,6 +25,7 @@ char *sys_sbrk(int, int);
 int pause(int);
 int uptime(void);
 int sync(void);
+int fsync(int fd);
 int pmfs_put(unsigned long key, const void *val, int len);
 int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
 int pmfs_seal(void);
@@ -39,6 +40,9 @@ int pmfs_funlink(const char *);
 int pmfs_fclose(int fd);
 int pmfs_mkdir(const char *);
 int pmfs_readdir(const char *, char *dst, int cap);
+int pmfs_format(void);
+int pmfs_fault(int stage, int skip);
+int pmfs_fstat(const char *path, unsigned int *size, unsigned int *type);
 
 // ulib.c
 int stat(const char *, struct stat *);

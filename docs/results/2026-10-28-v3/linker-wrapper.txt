@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+extra=()
+out=''
+prev=''
+for arg in "$@"; do
+  if [[ "$arg" == user/user.ld ]]; then extra=(--no-rosegment -e start); fi
+  if [[ "$prev" == '-o' ]]; then out="$arg"; fi
+  prev="$arg"
+done
+/home/user/.cache/pmfs-sandbox/py/ziglang/zig ld.lld "${extra[@]}" "$@"
+if [[ "$out" == user/_* ]]; then
+  /home/user/.cache/pmfs-sandbox/binutils-build/binutils/objcopy --strip-debug "$out"
+fi
