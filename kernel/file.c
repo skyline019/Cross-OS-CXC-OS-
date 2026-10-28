@@ -12,6 +12,10 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "pmfs.h"
+#include "pmfile.h"
+
+extern uint64 sys_sync(void);
 
 struct devsw devsw[NDEV];
 struct {
@@ -34,6 +38,7 @@ filealloc(void)
   acquire(&ftable.lock);
   for (f = ftable.file; f < ftable.file + NFILE; f++) {
     if (f->ref == 0) {
+      memset(f, 0, sizeof(*f));
       f->ref = 1;
       release(&ftable.lock);
       return f;
@@ -55,18 +60,90 @@ filedup(struct file *f)
   return f;
 }
 
-// Close file f.  (Decrement ref count, close when reaches 0.)
+// Flush a PMFS buffered file under the global PMFS lock. On failure the
+// buffer remains dirty and a live descriptor may retry fsync.
+static int
+pmfile_commit_locked(struct file *f)
+{
+  if (!pmfs_mounted())
+    return -1;
+  if (!f->pmdirty)
+    return 0;
+  if (pmfile_shared_sync(f->pmfd, f->pmdata, f->pmlen) != 0)
+    return -1;
+  f->pmdirty = 0;
+  return 0;
+}
+
+int
+filefsync(struct file *f)
+{
+  int rc;
+  if (f->type == FD_PMFS) {
+    pmfs_lock();
+    rc = pmfile_commit_locked(f);
+    pmfs_unlock();
+    return rc;
+  }
+  if (f->type == FD_INODE)
+    return (int)sys_sync(); // xv6 exposes only global log sync
+  return -1;
+}
+
+// Publish an initialized PMFS file atomically with respect to global sync.
 void
+filepm_init(struct file *f, int handle, int ino, char *data, uint len,
+            int readable, int writable)
+{
+  acquire(&ftable.lock);
+  f->readable = readable;
+  f->writable = writable;
+  f->off = 0;
+  f->pmfd = handle;
+  f->pmino = ino;
+  f->pmdata = data;
+  f->pmlen = len;
+  f->pmdirty = 0;
+  f->type = FD_PMFS;
+  release(&ftable.lock);
+}
+
+// Pin a snapshot before sleeping: never hold ftable's spinlock while flushing.
+int
+filepm_sync_all(void)
+{
+  struct file *f, *snapshot[NFILE];
+  int n = 0, i, rc = 0;
+  acquire(&ftable.lock);
+  for (f = ftable.file; f < ftable.file + NFILE; f++) {
+    if (f->ref && f->type == FD_PMFS) {
+      f->ref++;
+      snapshot[n++] = f;
+    }
+  }
+  release(&ftable.lock);
+  for (i = 0; i < n; i++) {
+    if (filefsync(snapshot[i]) != 0)
+      rc = -1;
+    if (fileclose(snapshot[i]) != 0)
+      rc = -1;
+  }
+  return rc;
+}
+
+// Close file f; the last PMFS reference commits and reports errors.
+int
 fileclose(struct file *f)
 {
   struct file ff;
+  int rc = 0;
 
   acquire(&ftable.lock);
   if (f->ref < 1)
     panic("fileclose");
   if (--f->ref > 0) {
     release(&ftable.lock);
-    return;
+    return 0;
   }
   ff = *f;
   f->ref = 0;
@@ -79,7 +156,18 @@ fileclose(struct file *f)
     begin_op();
     iput(ff.ip);
     end_op();
+  } else if (ff.type == FD_PMFS) {
+    pmfs_lock();
+    if (pmfile_commit_locked(&ff) != 0)
+      rc = -1;
+    if (pmfile_shared_close(ff.pmfd, rc != 0) != 0) {
+      pmfile_shared_close(ff.pmfd, 1);
+      rc = -1;
+    }
+    pmfs_unlock();
+    kfree(ff.pmdata);
   }
+  return rc;
 }
 
 // Get metadata about file f.
@@ -90,6 +178,22 @@ filestat(struct file *f, uint64 addr)
   struct proc *p = myproc();
   struct stat st;
 
+  if (f->type == FD_PMFS) {
+    pmfs_lock();
+    if (!pmfs_mounted()) {
+      pmfs_unlock();
+      return -1;
+    }
+    memset(&st, 0, sizeof(st));
+    st.dev = 2;
+    st.ino = f->pmino;
+    st.type = T_FILE;
+    st.nlink = 1;
+    st.size = f->pmlen;
+    pmfs_unlock();
+    return copyout(p->pagetable, p->sz, addr, (char *)&st, sizeof(st)) < 0 ? -1
+                                                                           : 0;
+  }
   if (f->type == FD_INODE || f->type == FD_DEVICE) {
     ilock(f->ip);
     stati(f->ip, &st);
@@ -111,7 +215,22 @@ fileread(struct file *f, uint64 addr, int n)
   if (f->readable == 0 || n < 0)
     return -1;
 
-  if (f->type == FD_PIPE) {
+  if (f->type == FD_PMFS) {
+    struct proc *p = myproc();
+    pmfs_lock();
+    if (!pmfs_mounted()) {
+      pmfs_unlock();
+      return -1;
+    }
+    r = f->off < f->pmlen ? f->pmlen - f->off : 0;
+    if (r > n)
+      r = n;
+    if (r && copyout(p->pagetable, p->sz, addr, f->pmdata + f->off, r) < 0)
+      r = -1;
+    if (r > 0)
+      f->off += r;
+    pmfs_unlock();
+  } else if (f->type == FD_PIPE) {
     r = piperead(f->pipe, addr, n);
   } else if (f->type == FD_DEVICE) {
     if (f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
@@ -139,7 +258,28 @@ filewrite(struct file *f, uint64 addr, int n)
   if (f->writable == 0 || n < 0)
     return -1;
 
-  if (f->type == FD_PIPE) {
+  if (f->type == FD_PMFS) {
+    char tmp[PMFILE_MAX_SIZE];
+    struct proc *p = myproc();
+    if (n > PMFILE_MAX_SIZE ||
+        (n && copyin(p->pagetable, p->sz, tmp, addr, n) < 0))
+      return -1;
+    pmfs_lock();
+    if (!pmfs_mounted() || f->off > PMFILE_MAX_SIZE ||
+        (uint)n > PMFILE_MAX_SIZE - f->off) {
+      ret = -1;
+    } else {
+      if (n) {
+        memmove(f->pmdata + f->off, tmp, n);
+        f->off += n;
+        if (f->off > f->pmlen)
+          f->pmlen = f->off;
+        f->pmdirty = 1;
+      }
+      ret = n;
+    }
+    pmfs_unlock();
+  } else if (f->type == FD_PIPE) {
     ret = pipewrite(f->pipe, addr, n);
   } else if (f->type == FD_DEVICE) {
     if (f->major < 0 || f->major >= NDEV || !devsw[f->major].write)

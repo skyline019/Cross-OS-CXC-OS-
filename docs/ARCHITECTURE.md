@@ -1,58 +1,47 @@
-# PMFS 架构（字节寻址文件子系统）
+# PMFS v3 架构与发布顺序
 
-## 0. 产品形态
+> 这是受限 xv6 实验系统。普通 MAP 是 QEMU RAM；另有需打补丁的独立实验性 NVDIMM，默认持久操作不提供硬件写回。验收证据见[修复报告](PMFS-REPAIR-REPORT.md)，精确 API 限制见[语义](SEMANTICS.md)。
 
-- **是**：并行于 virtio 根 FS 的 PMEM **文件子系统**（inode/dentry + `create/open/read/write/fsync`）与 KV 引擎（`put/get/seal`）。
-- **不是**：替换 `/` 的完整 POSIX VFS。
-
-## 1. 物理与虚拟地址（NVDIMM 仿真）
-
-```
-KERNBASE ─────────── 0x80000000
-  │  kernel + user pages（易失 DRAM）
-PHYSTOP  ─────────── KERNBASE + 128MiB
-PMEMBASE ─────────── PHYSTOP          ← QEMU NVDIMM 仿真窗
-  │  双槽 SB / inode / dentry / run
-PMEMEND  ─────────── PMEMBASE + 32MiB
-```
-
-| 模式 | 构建 | 运行 | backend 字段 |
-|------|------|------|--------------|
-| EMUL | 默认 | `-m 128M`，8MiB 缓冲 | `emul` |
-| MAP | `-DPMEM_MAP` | `-m 160M` | `map` |
-| PMEM2 | `-DPMEM_MAP` | `memory-backend-file,share=on` | `map` + 掉电 |
-
-## 2. 软件分层
-
-```
-用户 create/mkdir/fopen/fread/fwrite/fsync  |  put/get/seal/stat
-        │                                    │
-   pmfile（dir + extent 元数据）              │
-        │                                    │
-   pmstream（滑窗）→ pmcdc（Rabin/Fixed）     │
-        │                                    │
-   pmalgo（chunk→mem→run、B*、fuse_*）◄───────┘
-        │
-   pmindex（量化/posting/qcache）
-        │
-   pmfs（双槽 SB + commit）
-        │
-   pmdev → pmem_flush(行) → pmem_fence → MAP/EMUL
+```text
+用户程序：/pm 绝对路径 open/read/write/fsync/close/mkdir/unlink
+        |                         专用 pmfs 文件/KV syscall
+xv6 struct file + 工作缓冲                   |
+        +--------------- pmfile -------------+
+                   COW inode/dentry 快照
+                          |
+               pmstream → pmcdc → pmalgo
+                         |         追加 run、重建索引
+                      pmindex（有界缓存/索引）
+                          |
+             pmfs：双槽 checkpoint、追加分配
+                          |
+          pmdev：页布局与 dirty bitmap（不走 bio/log/virtio）
+                          |
+            pmem：窗口内存、可选 CBO.CLEAN / fence
 ```
 
-融合证明：`fuse_puts` / `fuse_seals`；消融 A0–A4 见 `docs/ABLATION.md`；契约平级 POS/NEG/CHAOS 见 `docs/CONTRACT.md`。
+这是专用 PMFS 页布局和内存地址复制，不是直接把文件数据交给 xv6 块缓冲/virtio；但实现仍以 4 KiB 页组织并复制数据，不等于已经消除了所有块/页抽象。普通 xv6 根文件系统依然经 virtio 和日志。
 
-## 3. 盘上布局
+## 地址及容量
 
-| 页 | 内容 |
-|---|---|
-| 0 / 1 | SB 双槽 |
-| 2 | inode 表 |
-| 3 | dentry 表 |
-| ≥4 | 不可变 run 数据页 |
+- QEMU virt 普通 DRAM `[0x80000000, 0x88000000)` 供 xv6 分配；MAP 的名义窗口为 `[0x88000000, 0x8a000000)`，首 4 KiB 为保留探针区，后续为 PMFS。内核将 DTB 起始向下页对齐，截去 DTB 及其后的窗口，以免覆盖固件在启动时重写的区域。
+- 对本次 QEMU 9.2 `-m 160M`，DTB 从 `0x89e00000` 开始，窗口可用 30 MiB、PMFS 使用 30 MiB 减 4 KiB。该近似只针对已观察的 virt 连续 DRAM，不是通用内存或 NVDIMM 设备发现。MAP 缺少足够 RAM 时拒绝启动该文件系统，不降级为 EMUL。
+- EMUL 是静态 8 MiB 易失缓冲。共享 RAM 测试将**全部 160 MiB guest RAM**映射到 `memory-backend-file,share=on`，不是独立设备。实验补丁 QEMU 则提供独立的 32 MiB `nvdimm` 冷插拔设备及私有 FDT 节点，guest 在页分配前发现并校验它；不支持通用设备发现或动态热插拔。更多说明见[QEMU 后端](QEMU-NVDIMM.md)。
 
-## 4. 崩溃与刷写契约
+## 介质布局与关键不变量
 
-- 协议：`store → flush(64B lines) → fence → store SB → flush → fence`
-- 文件：`fsync` = 写 inode/dentry 页 + `pmfs_commit`
-- 验收：`PERSIST_PASS` / `FILE_PASS` / `CRASH_PASS` / `PMEM2_PASS`
+PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留，后续页按 tail 追加。checkpoint 记录 epoch、tail、run 链头、inode 和 dentry 快照根；元数据、run 页有边界和校验。已提交数据和旧根不被后续操作原地覆盖。没有安全回收或 compaction，耗尽即失败。
+
+一次根发布的设计顺序：
+
+1. 追加内容/run 和必要的 inode/dentry 页；请求各页持久化并执行屏障。
+2. 对非当前 checkpoint 槽的对齐 8 B 状态/校验词写零并持久化；写入新头（仍未提交）并持久化。
+3. 一次 8 B store 写入提交状态及校验，请求持久化并执行屏障；随后在内存更新 epoch/槽号并返回。
+
+`pmem_persist` 的**语义取决于平台**：默认实现是 touch+fence；只有可选 Zicbom 路径真正发出 `CBO.CLEAN`，且仍需平台保证持久域。协议还依赖 8 B store 故障原子性、正确屏障和校验未碰撞，不能从双槽本身推导普适掉电安全。
+
+恢复时选择通过范围、格式和校验的最高 epoch checkpoint，重建 run/index，校验文件元数据及关联；失败时拒绝挂载、不自动清空。单个无效 checkpoint 可以回退另一个；有效头引用的数据损坏会使挂载失败，而不是悄悄假装旧数据正确。
+
+## 并发与接口
+
+专用 syscall 和普通 `/pm` fd 适配器经同一 sleep lock 串行操作 PMFS；独立打开同一文件会失败，`fork`/`dup` 共享同一 `struct file` 和偏移。这是保守的教学设计，不是多写者可扩展文件系统。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。

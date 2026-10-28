@@ -1,41 +1,34 @@
-# 毕设课题：XV6 上面向持久内存的文件子系统（PMFS）
+# 毕设课题：xv6 上的持久内存文件系统
 
-## 题目表述（合题原题四要件）
+> **当前状态：已完成一轮可运行的 v3 软件修复与回归，但不能声称题面四项已全部完成。** 具体结果、命令和证据见[修复与验证报告](docs/PMFS-REPAIR-REPORT.md)；原基线、设计取舍及 12 周计划保留在[优秀毕设路线图](docs/EXCELLENCE-ROADMAP.md)。
 
-在 xv6-riscv 内核中设计并实现一套**原生支持持久化内存的文件子系统（PMFS）**，与 virtio 根文件系统**并行**（不替换 `/`）。核心任务：
+## 原题目标
 
-1. **改造内存管理**：映射 QEMU 模拟的 NVDIMM 窗口 `[PMEMBASE,PMEMEND)`（`-DPMEM_MAP` / `memory-backend-file`）。
-2. **重构元数据与数据布局**：定长 inode/dentry + 双槽超级块 + 不可变 run，**消除块设备 bio/log 路径**。
-3. **轻量崩溃一致性**：缓存行粒度 `pmem_flush` + `fence` 有序协议（store→flush→fence→SB），掉电安全可契约验收。
-4. **QEMU 集成与对比**：相对 xv6 原生 `fs+log`，报告**延迟中位数与相对吞吐**。
+在 xv6 内核设计原生支持持久内存的文件系统：映射 QEMU 模拟的 NVDIMM、用字节寻址组织数据与元数据、通过缓存行刷写保证崩溃一致性，并与 xv6 原生 FS 比较延迟及吞吐。当前 `/pm` 是保留原根文件系统的受限子集；应与导师确认这一产品形态是否满足题意。
 
-## 摘要
+## 已实现的软件工作
 
-> 针对块设备日志路径延迟高、写放大显著的问题，本文在 xv6-riscv 上实现字节寻址 PMEM 文件子系统 PMFS：映射 QEMU NVDIMM 仿真窗口；以双槽超级块、inode/dentry 页与有序行级刷写保障崩溃一致性；KV run 引擎并行提供批量 seal 路径。系统保留 virtio 根文件系统，通过串口契约 `ONBOX_PMFS_*`（含 `PERSIST`/`FILE`/`PMEM2`）自动化验收，并与原生小文件写路径对比延迟与吞吐。**不可替代点：教学 OS 上可机器判定的崩溃与掉电契约套件。**
+- v3 以追加的、可校验的 KV run 和 COW inode/dentry 为对象图，双槽 checkpoint 发布根；恢复重建索引，普通启动不运行破坏性自测。空白、v2、不兼容或损坏镜像失败关闭；显式 `pmformat --force` 才会格式化。v2 与 v3 不兼容，**没有迁移工具**。
+- `/pm` 的绝对路径支持受限的普通 `open/read/write/fsync/close/unlink/mkdir`，保留专用文件/KV syscall；有全局串行锁、错误传播和有界资源。它不是通用 VFS 或完整 POSIX，目录枚举仍通过专用接口，详细边界见[语义](docs/SEMANTICS.md)。
+- 为 QEMU 9.2.0 RISC-V `virt` 提供实验性补丁：冷插拔一个独立 `nvdimm`，以私有设备树节点告知 xv6 物理地址；QMP 检查设备类型、地址和独立后端。未修改的上游 QEMU 普通 MAP 仍不是 NVDIMM。
+- 多次 QEMU 进程重启和软件故障切点 oracle 验证文件、KV 与元数据，另有一个独立的有界**协议规格模型**及删除刷写/提前发布等负控；前者不是模拟硬件掉电，后者也不是对内核指令流的形式化证明。
+- 文件基准两侧统一普通 API、读回字节、实际操作数和路径深度，保留原始 ticks。KV 路径另列；原生 xv6 的 `fsync` 是全局日志同步且未协商设备 flush，持久语义仍不等价，不能据此声称真实性能优势。
 
-**诚实边界**：并行根上的**文件对象子集**（非完整 VFS 挂载替换）；真物理 NVDIMM 见附录。
+## 尚未完成或未证实
 
-## 创新尖刺（答辩 15 秒）
+1. **实验性 NVDIMM 的限制：** 独立设备只在本仓 QEMU 9.2.0 补丁、固定单设备布局和私有 FDT 描述下工作，不是上游通用 `virt` 支持，也没有 ACPI/NFIT、热插拔或通用设备发现；普通 MAP/整机共享 RAM 仍不是 NVDIMM。导师是否接受该设备模型需确认。
+2. **物理持久域：** 默认 `pmem_flush` 是遍历与屏障，不是缓存写回。可选 Zicbom 路径发出 `CBO.CLEAN`，假定 64 B 缓存块及正确权限；QEMU TCG 不模拟缓存层级，不能证明硬件断电持久性。必须在实际平台确认持久域与原子性。
+3. **更强验证和功能：** 规格模型未追踪真实内核 store/flush，校验和碰撞、任意硬件故障、无限并发及完整 POSIX 均不在当前证明范围。未实现安全回收/compaction，长期写入会耗尽容量。
+4. **正式论文实验：** 需要对齐可验证的持久边界、补足原始样本与置信区间、路径/写入统计和消融；旧论文 PDF、旧图表和历史不等量基准不得作为新结果。
 
-> **教学 OS 上可机器判定的崩溃/掉电契约套件**（`ONBOX_PMFS_*` 含 remount 内容等价与故障注入 + `contract-pmem2`）——相对 NOVA/PMFS/同类教学移植，不可替代的是**方法学验收**，不是又一个双槽结构。
+## 文档入口
 
-## 里程碑 ↔ 契约
-
-| 阶段 | 交付 | 验收 |
-|---|---|---|
-| M0 | 契约 + EMUL | `ONBOX_PMFS_PASS`（含 PERSIST/FILE） |
-| M1 | NVDIMM 仿真 MAP | `mode=MAP backend=map` + PMEM1 |
-| M1b | 掉电二次启动 | `contract-pmem2` |
-| M2 | 文件 API + KV syscall | FILE / SYSCALL |
-| M3 | 崩溃语义 | CRASH |
-| M4 | 延迟+吞吐 bench | BENCH（`thr_file`/`median_file`） |
-
-## 文档地图
-
-| 文档 | 用途 |
-|------|------|
-| `docs/CONTRIBUTIONS.md` | C1–C3 + 尖刺 |
-| `docs/BENCH.md` / `docs/figures/` | 数据与图 |
-| `docs/PITFALLS.md` | 踩坑 |
-| `docs/QEMU-NVDIMM.md` | NVDIMM 仿真 |
-| `thesis/latex/main.pdf` | 论文 PDF |
+| 文档 | 内容 |
+|---|---|
+| [修复与验证报告](docs/PMFS-REPAIR-REPORT.md) | 实际代码、测试命令、通过结果和残余风险 |
+| [语义与限制](docs/SEMANTICS.md) | API、持久边界、失败行为及不支持项 |
+| [QEMU 后端](docs/QEMU-NVDIMM.md) | 普通 RAM、共享文件、Zicbom 与真正 NVDIMM 的区别 |
+| [契约与故障矩阵](docs/CONTRACT.md) | 自测、真实进程重启 oracle、协议模型的覆盖与限制 |
+| [旧基准](docs/BENCH.md) | 历史数字，只留档，不能用作性能结论 |
+| [基线审计和计划](docs/EXCELLENCE-ROADMAP.md)、[基线沙箱记录](docs/LOCAL-SANDBOX-TESTS.md) | 修复前的证据和规划，不应误读为当前状态 |
+| [`thesis/latex/`](thesis/latex/README.md) | 旧论文草稿，仍须依据实际证据整体重写 |

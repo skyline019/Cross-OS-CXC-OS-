@@ -1,12 +1,14 @@
-# 实施切片 ↔ 契约（PMFS 文件子系统）
+# 旧实施切片 ↔ 原型契约
+
+> 以下是旧 smoke 阶段，不表示题面要求已完成。当前 12 周计划与强验收门见[优秀毕设路线图](EXCELLENCE-ROADMAP.md)。
 
 | ID | 内容 | 判据 |
 |---|---|---|
 | M0–M4 | 契约 / MAP / CRASH / syscall / bench | `CONTRACT.md` |
-| M1b | PMEM2 掉电 | `contract-pmem2` |
+| M1b | PMEM2 进程重启魔数（非掉电） | `contract-pmem2` |
 | M5 | CDC/stream 融合 + 消融效应量 | `ABLATION.md` |
 | M6 | Remount 字节等价 + 故障注入 | `SEMANTICS.md` / `REMOUNT`/`FAULT` |
-| 深度 | N 扫参 + MAP/EMUL + 实验分析 | `make bench-sweep` → `BENCH.md` |
+| 深度 | 历史 N 扫参 + MAP/EMUL | 旧表 `BENCH.md`；新 `make bench-sweep` 只打印原始输出 |
 | 贡献 | C1–C3 口答 | `CONTRIBUTIONS.md` |
 | 加分 | 深化 POSIX 子集 / NVDIMM 附录 / CI | `pmfs_posix` · `APPENDIX-NVDIMM` |
 

@@ -1,0 +1,63 @@
+Namespace(testrex='crash', q=False)
+Test recovery of log
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 45128
+log attempt  1
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 45238
+log attempt  2
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 45306
+log attempt  3
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 45374
+recovering tail 0 dst 879
+recovering tail 1 dst 46
+recovering tail 2 dst 881
+recovering tail 3 dst 372
+recovering tail 4 dst 882
+recovering tail 5 dst 35
+recovering tail 6 dst 844
+recovering tail 7 dst 883
+recovering tail 8 dst 884
+recovering tail 9 dst 392
+recovering tail 10 dst 885
+recovering tail 11 dst 886
+f5             2 33 102000
+OK
+Test recovery of an orphaned file
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+wait for kill and reclaim 28
+kill 45452
+ireclaim: orphaned inode 28
+OK
+Test recovery of an orphaned file
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 326 blocks have been allocated
+balloc: write bitmap block at sector 46
+wait for kill and reclaim
+kill 45596
+ireclaim: orphaned inode 28
+OK

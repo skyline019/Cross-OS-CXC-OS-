@@ -15,6 +15,74 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "pmfs.h"
+#include "pmfile.h"
+
+// Explicit absolute-path prefix adapter, not a general mount/VFS layer.
+// The exact "/pm" name is reserved even if xv6's block FS contains one.
+static const char *
+pm_path(const char *path)
+{
+  if (path[0] == '/' && path[1] == 'p' && path[2] == 'm' &&
+      (path[3] == 0 || path[3] == '/'))
+    return path[3] ? path + 3 : "/";
+  return 0;
+}
+
+static int fdalloc(struct file *f);
+
+static int
+pm_open_fd(const char *path, int omode)
+{
+  struct file *f;
+  char *data;
+  uint32 size = 0, type = 0, len = 0;
+  int handle = -1, fd, writable;
+
+  if ((omode & ~(O_WRONLY | O_RDWR | O_CREATE | O_TRUNC)) || (omode & 3) == 3)
+    return -1;
+  writable = (omode & (O_WRONLY | O_RDWR)) != 0;
+  if ((omode & O_TRUNC) && !writable)
+    return -1;
+  if ((f = filealloc()) == 0)
+    return -1;
+  if ((data = kalloc()) == 0) {
+    fileclose(f);
+    return -1;
+  }
+
+  pmfs_lock();
+  if (pmfile_stat(path, &size, &type) != 0) {
+    if (!(omode & O_CREATE) || pmfile_create(path) != 0 ||
+        pmfile_stat(path, &size, &type) != 0)
+      goto bad;
+  }
+  if (type != PMFILE_TYPE_REG || (handle = pmfile_shared_open(path)) < 0 ||
+      pmfile_shared_read(handle, data, PMFILE_MAX_SIZE, &len) != 1 ||
+      len != size)
+    goto bad;
+  if (omode & O_TRUNC) {
+    if (pmfile_shared_sync(handle, data, 0) != 0)
+      goto bad;
+    len = 0;
+  }
+  filepm_init(f, handle, pmfile_shared_ino(handle), data, len,
+              !(omode & O_WRONLY), writable);
+  pmfs_unlock();
+  if ((fd = fdalloc(f)) < 0) {
+    fileclose(f);
+    return -1;
+  }
+  return fd;
+
+bad:
+  if (handle >= 0)
+    pmfile_shared_close(handle, 1);
+  pmfs_unlock();
+  kfree(data);
+  fileclose(f);
+  return -1;
+}
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -103,8 +171,16 @@ sys_close(void)
   if (argfd(0, &fd, &f) < 0)
     return -1;
   myproc()->ofile[fd] = 0;
-  fileclose(f);
-  return 0;
+  return fileclose(f);
+}
+
+uint64
+sys_fsync(void)
+{
+  struct file *f;
+  if (argfd(0, 0, &f) < 0)
+    return -1;
+  return filefsync(f);
 }
 
 uint64
@@ -128,6 +204,8 @@ sys_link(void)
 
   if (argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
     return -1;
+  if (pm_path(old) || pm_path(new))
+    return -1; // hard links/cross-filesystem links are unsupported
 
   begin_op();
   if ((ip = namei(old)) == 0) {
@@ -208,6 +286,13 @@ sys_unlink(void)
 
   if (argstr(0, path, MAXPATH) < 0)
     return -1;
+  if (pm_path(path)) {
+    int rc;
+    pmfs_lock();
+    rc = pmfile_unlink(pm_path(path));
+    pmfs_unlock();
+    return rc;
+  }
 
   begin_op();
   if ((dp = nameiparent(path, name)) == 0) {
@@ -337,6 +422,8 @@ sys_open(void)
   argint(1, &omode);
   if ((n = argstr(0, path, MAXPATH)) < 0)
     return -1;
+  if (pm_path(path))
+    return pm_open_fd(pm_path(path), omode);
 
   begin_op();
 
@@ -400,8 +487,17 @@ sys_mkdir(void)
   char path[MAXPATH];
   struct inode *ip;
 
+  if (argstr(0, path, MAXPATH) < 0)
+    return -1;
+  if (pm_path(path)) {
+    int rc;
+    pmfs_lock();
+    rc = pmfile_mkdir(pm_path(path));
+    pmfs_unlock();
+    return rc;
+  }
   begin_op();
-  if (argstr(0, path, MAXPATH) < 0 || (ip = create(path, T_DIR, 0, 0)) == 0) {
+  if ((ip = create(path, T_DIR, 0, 0)) == 0) {
     end_op();
     return -1;
   }
@@ -420,7 +516,7 @@ sys_mknod(void)
   begin_op();
   argint(1, &major);
   argint(2, &minor);
-  if ((argstr(0, path, MAXPATH)) < 0 ||
+  if ((argstr(0, path, MAXPATH)) < 0 || pm_path(path) ||
       (ip = create(path, T_DEVICE, major, minor)) == 0) {
     end_op();
     return -1;
@@ -438,7 +534,8 @@ sys_chdir(void)
   struct proc *p = myproc();
 
   begin_op();
-  if (argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0) {
+  if (argstr(0, path, MAXPATH) < 0 || pm_path(path) ||
+      (ip = namei(path)) == 0) {
     end_op();
     return -1;
   }
@@ -463,7 +560,7 @@ sys_exec(void)
   uint64 uargv, uarg;
 
   argaddr(1, &uargv);
-  if (argstr(0, path, MAXPATH) < 0) {
+  if (argstr(0, path, MAXPATH) < 0 || pm_path(path)) {
     return -1;
   }
   memset(argv, 0, sizeof(argv));

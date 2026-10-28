@@ -1,5 +1,5 @@
 struct file {
-  enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
+  enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE, FD_PMFS } type;
   int ref; // reference count
   char readable;
   char writable;
@@ -7,6 +7,11 @@ struct file {
   struct inode *ip;  // FD_INODE and FD_DEVICE
   uint off;          // FD_INODE
   short major;       // FD_DEVICE
+  int pmfd;          // FD_PMFS: shared internal handle
+  int pmino;
+  char *pmdata; // one allocated page, first 1024 bytes used
+  uint pmlen;
+  int pmdirty;
 };
 
 #define major(dev)  ((dev) >> 16 & 0xFFFF)

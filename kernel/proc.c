@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "pmfs.h"
+#include "pmfile.h"
 
 struct cpu cpus[NCPU];
 
@@ -329,6 +331,13 @@ kexit(int status)
 
   if (p == initproc)
     panic("init exiting");
+
+  // Dedicated PMFS handles are process-owned and not inherited on fork.
+  // Unsynced handles are discarded; only an explicit successful sync is a
+  // durability acknowledgement. Do this before the process becomes ZOMBIE.
+  pmfs_lock();
+  pmfile_close_owner(p->pid);
+  pmfs_unlock();
 
   // Close all open files.
   for (int fd = 0; fd < NOFILE; fd++) {

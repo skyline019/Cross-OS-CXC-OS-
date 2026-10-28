@@ -1,0 +1,6 @@
+#!/bin/bash
+args=()
+for arg in "$@"; do
+  case "$arg" in -march=rv64gc) ;; *) args+=("$arg");; esac
+done
+exec /home/user/.cache/pmfs-sandbox/py/ziglang/zig cc -target riscv64-freestanding -mcpu=generic_rv64+m+a+f+d+c+zicsr+zifencei -Wno-typedef-redefinition "${args[@]}" -fno-sanitize=all

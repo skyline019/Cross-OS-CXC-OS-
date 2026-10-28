@@ -1,0 +1,11 @@
+=== fresh backing file trial 1 ===
+PROBE_WRITE_OK kvlen=18 filelen=20 sameboot=1 sync=0
+ONBOX_PMFS_PMEM2_PASS persist=ok
+PROBE_READ_RESULT khit=0 klen=0 kmatch=0 fd=-1 fhit=-9 flen=0 fmatch=0
+PROBE_READ_FAIL
+=== fresh backing file trial 2 ===
+PROBE_WRITE_OK kvlen=18 filelen=20 sameboot=1 sync=0
+ONBOX_PMFS_PMEM2_PASS persist=ok
+PROBE_READ_RESULT khit=0 klen=0 kmatch=0 fd=-1 fhit=-9 flen=0 fmatch=0
+PROBE_READ_FAIL
+REBOOT_READBACK_TRIALS=2 FAILED=2

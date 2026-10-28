@@ -1,0 +1,52 @@
+qemu-system-riscv64 -machine virt -bios none -kernel kernel/kernel -m 160M -smp 1 -nographic -global virtio-mmio.force-legacy=false -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
+xv6 kernel is booting
+
+pmem: MAP ready base=0x88000000 size=0x2000000 backend=map (NVDIMM sim)
+ONBOX_PMFS_PMEM0_PASS mode=MAP backend=map size=33550336
+ONBOX_PMFS_PMEM1_PASS magic=ok
+pmfs: no valid SB — formatting
+ONBOX_PMFS_MOUNT_PASS epoch=2 slot=1 emul=0
+pmfs: mount ok epoch=3 slot=0 tail=5 pages=8191
+pmfs: mount ok epoch=3 slot=0 tail=5 pages=8191
+ONBOX_PMFS_STORE_PASS epoch=4 pid=4
+ONBOX_PMFS_INDEX_PASS keys=3 qhits=2 buck_skip=0
+ONBOX_PMFS_ALGO_PASS logical=20 phys=8192 bloom_skip=1 fence_skip=0 splits=0 qhits=1
+pmfs: mount ok epoch=5 slot=0 tail=6 pages=8191
+pmfs: mount ok epoch=6 slot=1 tail=6 pages=8191
+ONBOX_PMFS_CRASH_PASS epoch=6
+ONBOX_PMFS_PERSIST_PASS flush_lines=6 line=64 proto=store_flush_fence
+ONBOX_PMFS_POS_FILE_PASS size=140 fuse_puts=5 dents_ok=1
+ONBOX_PMFS_FILE_FAIL stage=FILE code=12
+ONBOX_PMFS_NEG_FILE_PASS expect_code=12
+ONBOX_PMFS_FILE_PASS fused=1 dirs=1 extents=1
+ONBOX_PMFS_POS_CDC_PASS cuts=9 forced=1 avg_mask=127
+ONBOX_PMFS_CDC_FAIL stage=CDC code=3
+ONBOX_PMFS_NEG_CDC_PASS expect_code=3
+ONBOX_PMFS_CDC_PASS mode=cdc+fixed cuts_ok=1
+ONBOX_PMFS_POS_STREAM_PASS chunks=3 fuse_puts=8 fuse_seals=4
+ONBOX_PMFS_STREAM_FAIL stage=STREAM code=9
+ONBOX_PMFS_NEG_STREAM_PASS expect_code=9
+ONBOX_PMFS_STREAM_PASS fused=1
+ONBOX_PMFS_CHAOS_FILE_PASS midstream_nosync=1
+ONBOX_PMFS_EDGE_FILE_PASS multi_chunk=1
+ONBOX_PMFS_ABLATION_A0_PASS cdc=1 batch=1 dputs=3 dseals=1 cycles=328190 wa_x100=1600
+ONBOX_PMFS_ABLATION_A1_PASS cdc=0 batch=1 dputs=2 dseals=1 cycles=252247 wa_x100=1600
+ONBOX_PMFS_ABLATION_A2_PASS cdc=1 batch=0 dputs=3 dseals=3 cycles=483516 wa_x100=4800
+ONBOX_PMFS_ABLATION_A3_PASS cdc=0 batch=0 dputs=2 dseals=2 cycles=352224 wa_x100=3200
+ONBOX_PMFS_ABLATION_A4_PASS cdc=1 batch=1 dputs=3 dseals=1 cycles=250693 wa_x100=1600
+ONBOX_PMFS_ABLATION_PASS variants=5 fair=1 effects=1
+ONBOX_PMFS_REMOUNT_PASS bytes=24 equal=1
+ONBOX_PMFS_FAULT_SEALMID_PASS invisible=1
+ONBOX_PMFS_FAULT_HALFPAGE_PASS chk_reject=1
+ONBOX_PMFS_FAULT_POSIXSMOKE_PASS bytes=11
+ONBOX_PMFS_FAULT_PASS injects=2
+ONBOX_PMFS_PASS
+init: starting sh
+$ pmfs_probe
+pmfs_posix
+pmfs_file
+ONBOX_PMFS_SYSCALL_PASS ops=6
+$ ONBOX_PMFS_POSIX_PASS ops=7 note=file_api_deepened dirs=1 readdir=1 remount_lite=1
+$ ONBOX_PMFS_FILEUSER_PASS fd=0 len=8
+$ contract: OK (strict)

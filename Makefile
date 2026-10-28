@@ -90,6 +90,8 @@ CFLAGS += -fno-builtin-free
 CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I.
+# Opt-in experimental modes; rebuild cleanly after changing these flags.
+CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -164,6 +166,8 @@ UPROGS=\
 	$U/_sync\
 	$U/_pmfs_probe\
 	$U/_pmfs_bench\
+	$U/_pmformat\
+	$U/_pmfs_regress\
 	$U/_pmfs_posix\
 	$U/_pmfs_file\
 
@@ -229,40 +233,73 @@ qemu-pmem: check-qemu-version
 	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS_PMEM)
 
-# Strict ONBOX_PMFS_* serial contract (EMUL by default).
-contract: $K/kernel fs.img
+# The historical boot contracts deliberately overwrite test data. These
+# targets rebuild with selftests enabled; use only in a disposable checkout.
+contract-build:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMFS_SELFTEST" $K/kernel fs.img
+
+contract: contract-build
 	python3 tools/contract_pmfs.py
 
-# Peer POS/NEG/CHAOS + A0–A4 extras.
-contract-strict: $K/kernel fs.img
-	python3 tools/contract_pmfs.py --strict
+contract-strict: contract-build
+	python3 tools/contract_pmfs.py --strict --probe --posix --file
 
 contract-pmem:
 	$(MAKE) clean
-	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
-	python3 tools/contract_pmfs.py --pmem
-	# Restore default EMUL kernel so subsequent -m 128M targets stay safe.
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMFS_SELFTEST" $K/kernel fs.img
+	python3 tools/contract_pmfs.py --pmem --strict --probe --posix --file
 	$(MAKE) clean
 	$(MAKE) $K/kernel fs.img
 
-# Kill+reboot same memory-backend-file → ONBOX_PMFS_PMEM2_PASS
+# Only tests shared guest-RAM magic, not physical power failure or NVDIMM.
 contract-pmem2:
 	$(MAKE) clean
-	$(MAKE) CFLAGS="$(CFLAGS) -DPMEM_MAP" $K/kernel fs.img
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMFS_SELFTEST" $K/kernel fs.img
 	python3 tools/contract_pmem2.py
 	$(MAKE) clean
 	$(MAKE) $K/kernel fs.img
 
-contract-full: $K/kernel fs.img
-	python3 tools/contract_pmfs.py --probe --posix --bench
+contract-full: contract-build
+	python3 tools/contract_pmfs.py --strict --probe --posix --file --bench
 
-# Rebuild bench numbers into docs/BENCH.md
-bench-fill: $K/kernel fs.img
+# These targets rebuild fs.img: use a disposable checkout. They print raw
+# operation counts and r_time ticks; no historical document is overwritten.
+bench-fill: kernel-emul
 	python3 tools/run_bench_fill.py
 
-# N-sweep EMUL + MAP vs EMUL depth tables
-bench-sweep: $K/kernel fs.img
+bench-sweep: kernel-emul
 	python3 tools/run_bench_sweep.py
+
+# Independent protocol specification model with three mutation controls.
+test-model:
+	python3 tools/check_persist_model.py
+
+# Software-boundary fault injection is test-only and can hang the guest.
+# The harness uses temporary copies of fs.img and the shared guest-RAM file.
+recovery-build:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMFS_FAULT_INJECT" $K/kernel fs.img
+
+test-recovery: recovery-build
+	python3 tools/pmfs_recovery.py --cpus $(CPUS) $(RECOVERY_ARGS)
+
+test-recovery-zicbom:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMFS_FAULT_INJECT -DPMEM_ZICBOM" $K/kernel fs.img
+	python3 tools/pmfs_recovery.py --cpus $(CPUS) --zicbom $(RECOVERY_ARGS)
+
+# Requires the experimental QEMU 9.2.0 patch in tools/patches. The backend
+# is an independent file-backed nvdimm; process kill is not physical power loss.
+test-recovery-nvdimm:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMEM_NVDIMM -DPMFS_FAULT_INJECT" $K/kernel fs.img
+	python3 tools/pmfs_recovery.py --cpus $(CPUS) --nvdimm --qemu $(QEMU) $(RECOVERY_ARGS)
+
+test-recovery-nvdimm-zicbom:
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DPMEM_MAP -DPMEM_NVDIMM -DPMFS_FAULT_INJECT -DPMEM_ZICBOM" $K/kernel fs.img
+	python3 tools/pmfs_recovery.py --cpus $(CPUS) --nvdimm --zicbom --qemu $(QEMU) $(RECOVERY_ARGS)
 
 # Explicit rebuild helpers for sweep / CI
 kernel-pmem:

@@ -1,16 +1,28 @@
-# PMFS 文件子系统 vs xv6 fs 对比评测（合题深度版）
+# PMFS vs xv6 评测：新冒烟方法及历史数据
+
+> 以下历史表**不得作为论文性能结论**。N=32 时旧 PMFS 实际只做 24 个文件，读操作与同步语义也不对齐；MAP/PMEM2 不是 NVDIMM。最新运行和原始日志见[修复报告](PMFS-REPAIR-REPORT.md)。
+
+## 当前可复现冒烟（不是正式性能结论）
+
+`make bench-sweep` 在 disposable checkout 中重建内核和 `fs.img`，分别测试 EMUL 的 N=8/16/32 及 MAP 的 N=32，每项 5 次。两条文件路径均用普通 fd、同深度目录和 N 个已检查的 `open/write/fsync/close/reopen/read/close/unlink`，逐字节校验并输出各次实际计数及 `r_time_ticks`，交替先后顺序；KV 路径独立列出。脚本不再覆盖本历史文档。`thr_*` 是每百万 tick 的相对操作数，不是 ops/s、MB/s 或 CPU cycles。`wa_x100` 是 run 页统计/逻辑字节，不含完整元数据和介质写放大。
+
+虽然调用和数量已对齐，原生 xv6 inode `fsync` 实际等待全局日志，驱动未协商设备 flush；PMFS 默认 touch+fence 也不是持久写回。故两边的**物理持久语义仍不等价**，QEMU TCG 单次环境及 5 个样本也不能支撑真实硬件性能、持久性能优势或统计显著性的结论。
+
+---
+
+## 历史实验记录
 
 ## 1. 方法与为何「不对等」
 
-本实验对比三条路径，目的是量级说明而非绝对公平微基准：
+旧脚本对比三条路径；由于操作数、读操作与耐久语义不一致，下表只保留历史记录：
 
 | 维度 | PMFS-KV | PMFS-File | xv6 `fs+log` |
 |------|---------|-----------|--------------|
 | API | `put`×N + 1×`seal` + `get`×N | `create/write/fsync`×N | `open/write`×N + `sync` |
-| 持久语义 | 双槽 SB | inode 页 + SB | 块日志检查点 |
+| 原型提交路径（非耐久保证） | 双槽 SB | inode 页 + SB | 块日志检查点 |
 | I/O 栈 | 字节寻址 / EMUL | 同左 | virtio-blk + bio + log |
 
-**解读约束：** ratio≫1 主要反映「避免 virtio 日志与目录更新」的架构差。
+**解读约束：** 工作量与持久语义未对齐，旧 ratio 不能证明加速，也不能用于归因。
 吞吐 `thr_*` 为相对单位（`N×1e6/median_r_time`），不作墙钟 MB/s。
 
 计时：`cycles()` → 内核 `r_time()`；每 N 做 5 trial 取**中位数**。
@@ -19,15 +31,15 @@
 make bench-sweep
 ```
 
-## 2. EMUL / NVDIMM 仿真边界
+## 2. EMUL / MAP / PMEM2 边界
 
 - 默认 EMUL：算法与契约快回归。
-- MAP / PMEM2（`memory-backend-file`）= QEMU **NVDIMM 仿真**主路径。
+- MAP 为额外普通 RAM；PMEM2 将整个 guest RAM 放到共享文件，两者都不是 NVDIMM 设备。
 - EMUL **不**代表真 NVDIMM 延迟。
 
 ## 3. 写放大 WA
 
-`wa_x100 = phys*100/logical`（KV 路径）。小 value 对 4KiB 页必然放大。
+`wa_x100 = phys*100/logical`（KV run 累计计数），不包含完整文件元数据和提交流量，也不代表物理介质写放大。
 
 ## 4. 随 N 变化（EMUL，中位数）
 
@@ -39,8 +51,8 @@ make bench-sweep
 
 ### 观察
 
-- xv6 随 N 近似线性；PMFS-File 每文件 fsync 仍避免块日志栈。
-- `thr_file` / `thr_xv6` 给出吞吐相对量级（合题「延迟与吞吐」）。
+- 两边实际操作数和读操作不一致，不能从旧表推导同工作量的延迟变化。
+- `thr_file` / `thr_xv6` 使用相对时间单位；N=32 时 PMFS 分子还按 32 计而非实际 24，不能作为吞吐结论。
 
 ## 5. MAP vs EMUL（N=32）
 
@@ -49,19 +61,19 @@ make bench-sweep
 | EMUL | 53065 | 659056 | 25648605 | 3891 | 48 |
 | MAP | 113804 | 4301198 | 24439543 | 568 | 7 |
 
-若 EMUL/MAP 同量级，瓶颈在软件提交路径。
+仅凭这组 EMUL/MAP 数字不能判断瓶颈或真实 NVDIMM 行为。
 
 ## 6. 两套结论（勿混读）
 
 | 平面 | 证据 | 可说 | 不可说 |
 |------|------|------|--------|
-| 架构面 | `median_*` / `thr_*` vs xv6 | 去日志栈的量级差 | 同等 POSIX 千倍加速 |
-| 公平面 | `ABLATION_* cycles/wa_x100` | 切分/刷写策略效应 | 未重扫前用旧表外推 |
+| 架构面 | `median_*` / `thr_*` vs xv6 | 历史原型观测，需重测 | 加速倍数或因果归因 |
+| 消融草稿 | `ABLATION_* cycles/wa_x100` | 历史单次策略观测，需重测 | 公平且统计显著的效应量 |
 
-CDC 融合后本表由 `make bench-sweep` 重填；消融效应量见 `docs/ABLATION.md`。
+本表由旧版 `make bench-sweep` 生成；新脚本已修正操作数及 API 不一致，但不会覆盖或修复这些历史数据，也未消除持久语义差异。
 
 ## 7. 答辩一句话
 
-> 合题四要件均有落点；不可替代点是可机器判定的契约套件（含 remount 字节等价）。
-> 架构面看量级，公平面看消融效应量。
+> 旧表仅为历史原型数据；新代码已有更强的软件回归和匹配调用的冒烟，独立设备、真实持久域及持久语义等价的正式基准仍待验证。
+> 不要用旧数字或单一契约宣称题面完成或性能优势。
 

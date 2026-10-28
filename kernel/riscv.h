@@ -210,8 +210,9 @@ w_stimecmp(uint64 x)
 
 // Machine Environment Configuration Register
 
-#define MENVCFG_STCE (1L << 63)
-#define MENVCFG_ADUE (1L << 61)
+#define MENVCFG_STCE  (1ULL << 63)
+#define MENVCFG_ADUE  (1ULL << 61)
+#define MENVCFG_CBCFE (1ULL << 6)
 
 static inline uint64
 r_menvcfg()

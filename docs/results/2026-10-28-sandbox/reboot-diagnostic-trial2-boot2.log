@@ -1,0 +1,15 @@
+
+xv6 kernel is booting
+
+pmem: MAP ready base=0x88000000 size=0x2000000 backend=map (NVDIMM sim)
+ONBOX_PMFS_PMEM2_PASS persist=ok
+ONBOX_PMFS_PMEM0_PASS mode=MAP backend=map size=33550336
+ONBOX_PMFS_PMEM1_PASS magic=ok
+pmfs: mount ok epoch=6 slot=1 tail=6 pages=8191
+ONBOX_PMFS_MOUNT_PASS epoch=6 slot=1 emul=0
+PROBE_BOOT_NO_SELFTEST
+init: starting sh
+$ pmreboot read
+PROBE_READ_RESULT khit=0 klen=0 kmatch=0 fd=0 fhit=1 flen=0 fmatch=0
+PROBE_READ_FAIL
+$ 

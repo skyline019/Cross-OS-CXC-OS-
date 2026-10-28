@@ -1,0 +1,5 @@
+python3 tools/check_persist_model.py
+MODEL_PASS protocol=cow checkpoints=64 early_eviction=all_subsets
+MODEL_NEGATIVE_PASS mutation=no_data_flush checks=987 counterexample=(17, 'store', ('word',), 'corrupt-new-root', False)
+MODEL_NEGATIVE_PASS mutation=early_publish checks=13 counterexample=(7, 'store', ('word',), 'corrupt-new-root', False)
+MODEL_NEGATIVE_PASS mutation=no_commit_flush checks=63 counterexample=(25, 'ack', (), 'old', True)

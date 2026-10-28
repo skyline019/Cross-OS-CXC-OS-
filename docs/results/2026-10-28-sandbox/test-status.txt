@@ -1,0 +1,13 @@
+# Observed host test-process exit codes, 2026-10-28
+# Detailed commands, modes, constraints and logs: ../../LOCAL-SANDBOX-TESTS.md
+contract-emul-strict-probe-posix-file, CPUS=1: 0
+contract-map-strict-probe-posix-file, CPUS=1, independent confirmation: 0
+usertests-quick-emul, CPUS=1: 0
+usertests-quick-emul, CPUS=3: 0
+usertests-full-emul, CPUS=3: 0
+native-xv6-crash-recovery-emul, CPUS=1: 0 (log recovery observed on fourth attempt)
+contract-pmem2-map, CPUS=1: 0
+reboot-readback-normal-map, CPUS=1, two trials: 1 (both readbacks failed)
+reboot-readback-diagnostic-map, CPUS=1, two trials: 1 (both readbacks failed)
+reproduction-recipe-normal, CPUS=1, one additional trial: 1 (readback failed)
+reproduction-recipe-diagnostic, CPUS=1, one additional trial: 1 (readback failed)

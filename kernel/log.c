@@ -257,5 +257,6 @@ sys_sync(void)
     }
   }
   release(&log.lock);
-  return 0;
+  // Flush PMFS open-file buffers as well; no xv6 log spinlock is held here.
+  return filepm_sync_all();
 }

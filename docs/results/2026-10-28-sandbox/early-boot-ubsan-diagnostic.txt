@@ -1,0 +1,27 @@
+
+----------------
+IN: start
+0x80000072:  453d              addi                    a0,zero,15
+0x80000074:  3a051073          csrrw                   zero,pmpcfg0,a0
+
+----------------
+IN: start
+0x80000078:  30a02573          csrrs                   a0,0x30a,zero
+
+----------------
+IN: start
+0x8000007c:  1676              slli                    a2,a2,61
+0x8000007e:  8d51              or                      a0,a0,a2
+0x80000080:  30a51073          csrrw                   zero,0x30a,a0
+
+----------------
+IN: start
+0x80000084:  30a02573          csrrs                   a0,0x30a,zero
+
+----------------
+IN: start
+0x80000088:  0000              illegal                 
+
+riscv_cpu_do_interrupt: hart:0, async:0, cause:0000000000000002, epc:0x0000000080000088, tval:0x0000000000000000, desc=illegal_instruction
+Invalid read at addr 0x0, size 2, region '(null)', reason: rejected
+riscv_cpu_do_interrupt: hart:0, async:0, cause:0000000000000001, epc:0x0000000000000000, tval:0x0000000000000000, desc=fault_fetch

@@ -1,0 +1,63 @@
+Namespace(testrex='crash', q=False)
+Test recovery of log
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 133134
+log attempt  1
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 133597
+log attempt  2
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 134060
+log attempt  3
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+kill 134286
+recovering tail 0 dst 1845
+recovering tail 1 dst 46
+recovering tail 2 dst 1846
+recovering tail 3 dst 1355
+recovering tail 4 dst 1847
+recovering tail 5 dst 35
+recovering tail 6 dst 1812
+recovering tail 7 dst 1848
+recovering tail 8 dst 1849
+recovering tail 9 dst 1364
+recovering tail 10 dst 1850
+recovering tail 11 dst 1851
+f5             2 35 142000
+OK
+Test recovery of an orphaned file
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+wait for kill and reclaim 30
+kill 134384
+ireclaim: orphaned inode 30
+OK
+Test recovery of an orphaned file
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 1245 blocks have been allocated
+balloc: write bitmap block at sector 46
+wait for kill and reclaim
+kill 134767
+ireclaim: orphaned inode 30
+OK

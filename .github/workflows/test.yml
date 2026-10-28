@@ -1,31 +1,104 @@
-on: [push, pull_request]
+name: xv6 and PMFS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   linux:
     runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    env:
+      CPUS: 3
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu qemu-system-riscv clang-format bc
-      - run: make fmt && git diff --exit-code
-      - run: make kernel/kernel fs.img
-      # Baseline xv6 regression (must stay green beside PMFS-KV)
-      - name: usertests regression
+      - name: Install RISC-V toolchain and QEMU
+        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu qemu-system-riscv bc
+      - name: Install pinned formatter
+        run: |
+          python3 -m venv "$RUNNER_TEMP/formatter"
+          "$RUNNER_TEMP/formatter/bin/pip" install clang-format==21.1.8
+          echo "$RUNNER_TEMP/formatter/bin" >> "$GITHUB_PATH"
+      - name: Format and whitespace
+        run: |
+          make fmt
+          git diff --exit-code
+          git diff --check
+      - name: Build default kernel
+        run: make -j2 kernel/kernel fs.img
+      - name: xv6 usertests, three harts
         run: ./test-xv6.py usertests
-      - name: crash regression
-        run: ./test-xv6.py crash
-      - run: make contract
-      - name: contract probe+posix+bench
-        run: make contract-full
-      - name: bench-sweep depth tables
-        run: make bench-sweep
-      - name: contract-pmem
-        run: make contract-pmem
-      - name: contract-pmem2
-        run: make contract-pmem2
+      - name: xv6 block-log recovery
+        run: CPUS=1 ./test-xv6.py crash
+      - name: Destructive EMUL selftests and matched-workload smoke
+        run: CPUS=1 make contract-full
+      - name: Destructive MAP selftests
+        run: CPUS=1 make contract-pmem
+      - name: Shared-RAM magic smoke (not hardware power loss)
+        run: CPUS=1 make contract-pmem2
+      - name: Matched-count benchmark smoke
+        run: CPUS=1 make bench-sweep
+      - name: Bounded persist specification model and negative controls
+        run: make test-model
+      - name: PMFS restart, corruption and software fault-boundary oracle
+        run: make test-recovery RECOVERY_ARGS="--log-dir .ci-logs/recovery"
+      - name: Zicbom instruction-path oracle on QEMU TCG
+        run: make test-recovery-zicbom RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
+      - name: Upload PMFS serial logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmfs-serial-logs
+          path: .ci-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  nvdimm:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      CPUS: 3
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install QEMU build dependencies and RISC-V toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu bc ninja-build meson python3-venv \
+            libglib2.0-dev libpixman-1-dev libfdt-dev
+      - name: Build experimental QEMU 9.2.0 virt NVDIMM patch
+        run: |
+          curl --fail --location --retry 3 https://download.qemu.org/qemu-9.2.0.tar.xz -o "$RUNNER_TEMP/qemu.tar.xz"
+          tar -xJf "$RUNNER_TEMP/qemu.tar.xz" -C "$RUNNER_TEMP"
+          patch -d "$RUNNER_TEMP/qemu-9.2.0" -p1 < tools/patches/qemu-9.2.0-riscv-pmfs-nvdimm.patch
+          mkdir "$RUNNER_TEMP/qemu-build"
+          cd "$RUNNER_TEMP/qemu-build"
+          "$RUNNER_TEMP/qemu-9.2.0/configure" --target-list=riscv64-softmmu --disable-docs \
+            --disable-werror --disable-tools --disable-user --disable-guest-agent \
+            --disable-gtk --disable-sdl --disable-vnc --disable-slirp --disable-plugins
+          ninja -j2 qemu-system-riscv64
+      - name: Verify distinct QEMU NVDIMM via QMP
+        run: python3 tools/check_nvdimm_device.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64"
+      - name: NVDIMM process-restart and fault-boundary oracle
+        run: make test-recovery-nvdimm QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm"
+      - name: NVDIMM with Zicbom instruction path
+        run: make test-recovery-nvdimm-zicbom QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm-zicbom"
+      - name: Upload NVDIMM serial logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvdimm-serial-logs
+          path: .ci-logs/
+          if-no-files-found: ignore
+          retention-days: 14
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - run: brew install riscv64-elf-gcc
-      - run: make kernel/kernel fs.img
+      - run: make -j2 kernel/kernel fs.img

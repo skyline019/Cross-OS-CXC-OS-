@@ -1,9 +1,10 @@
-# 图：PMEM2 掉电前后串口对照
+# 图：PMEM2 进程重启串口对照（历史草稿）
 
-> 插入论文时可将本页导出为截图，或直接引用下列原文块。  
-> 复现：`make contract-pmem2`
+> 仅为整机共享 RAM 文件的重启探针，不证明 NVDIMM、文件恢复或物理掉电安全；参见[优秀毕设路线图](../EXCELLENCE-ROADMAP.md)。
 
-## Boot1（种植耐久魔数，尚无「二次启动存活」行）
+> 下列内容是旧文档示意，并非本次核验日志；当前 `make contract-pmem2` 使用临时 RAM 文件，但构建仍会重建 `fs.img`。如需论文引用，应重新运行并保存原始日志。
+
+## Boot1（写入探针魔数）
 
 ```text
 pmem: MAP ready base=0x88000000 size=0x2000000
@@ -15,7 +16,7 @@ ONBOX_PMFS_PASS
 
 说明：`PMEM1` 成功后写入 durable word（`PMEM2_DURABLE`）；本趟**不应**出现 `PMEM2_PASS`（首次启动无「存活」语义）。
 
-## 杀进程（模拟掉电）
+## 杀 QEMU 进程（并非宿主掉电）
 
 ```text
 # contract_pmem2.py: SIGKILL QEMU；guest-ram.img 保留 share=on 内容
@@ -25,7 +26,7 @@ ONBOX_PMFS_PASS
 
 ```text
 pmem: MAP ready base=0x88000000 size=0x2000000
-ONBOX_PMFS_PMEM2_PASS persist=ok          ← 尖刺证据行
+ONBOX_PMFS_PMEM2_PASS persist=ok          ← 重启魔数探针
 ONBOX_PMFS_PMEM0_PASS mode=MAP …
 ONBOX_PMFS_PMEM1_PASS magic=ok
 …
@@ -33,6 +34,6 @@ ONBOX_PMFS_PASS
 ONBOX_PMFS_PMEM2_CONTRACT_PASS boots=2
 ```
 
-## 论文一句
+## 合理解读
 
-> 同一文件后端、杀 QEMU 再启后，串口出现 `ONBOX_PMFS_PMEM2_PASS persist=ok`，证明窗口级 persist 跨「掉电」仍可机器判定。
+> 在该共享文件后端上，杀 QEMU 进程并重启后可检查一个探针魔数；这不验证文件内容恢复、缓存持久顺序或宿主断电安全。

@@ -7,14 +7,20 @@
 void main();
 void timerinit();
 
+// Physical firmware DTB pointer, passed in a1 at reset (hart 0).
+uint64 boot_fdt_pa;
+
 // entry.S needs one stack per CPU.
 // 16KiB per hart: pmfs boot selftests need headroom beyond classic 4KiB.
 __attribute__((aligned(16))) char stack0[16384 * NCPU];
 
 // entry.S jumps here in machine mode on stack0.
 void
-start()
+start(uint64 fdt_pa)
 {
+  if (r_mhartid() == 0)
+    boot_fdt_pa = fdt_pa;
+
   // set M Previous Privilege mode to Supervisor, for mret.
   unsigned long x = r_mstatus();
   x &= ~MSTATUS_MPP_MASK;
@@ -40,6 +46,11 @@ start()
 
   // enable hardware updates of page table A and D bits
   w_menvcfg(r_menvcfg() | MENVCFG_ADUE);
+#ifdef PMEM_ZICBOM
+  // Opt-in only: platform must advertise Zicbom and the assumed block size.
+  // Allow supervisor-mode CBO.CLEAN/CBO.FLUSH on every hart.
+  w_menvcfg(r_menvcfg() | MENVCFG_CBCFE);
+#endif
 
   // ask for clock interrupts.
   timerinit();

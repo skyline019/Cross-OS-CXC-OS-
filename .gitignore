@@ -10,6 +10,9 @@ user/usys.S
 user/_*
 .gdbinit
 test-xv6.out
+__pycache__/
+*.pyc
+.ci-logs/
 
 # LaTeX build junk (keep *.pdf)
 thesis/latex/*.aux

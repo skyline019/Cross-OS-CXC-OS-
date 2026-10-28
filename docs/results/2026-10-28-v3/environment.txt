@@ -1,0 +1,18 @@
+2026-10-28T08:20:23Z
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+0.13.0
+QEMU emulator version 9.2.0
+GNU objdump (GNU Binutils) 2.42
+bc 6.7.6
+clang-format version 21.1.8
+Builds: Zig/Clang and LLD wrappers; --strip-debug on user executables
+QEMU source: v9.2.0; GLib gvdb main was not pinned
+9b7e2abf6332d72f01c82766deca35f46ba4fd9171f6818cf16c423039e1458d  /home/user/.cache/pmfs-sandbox/qemu-original-riscv64
+7f9e3a661e909d5188d1b8b14f082b98a19c323a30d43bfdd1b2893ed37273e0  /home/user/.cache/pmfs-sandbox/py/ziglang/zig
+314aa6b3293faa6e89daa23dba2891d69dade9b96c283783d737f4f8a7fee2a0  /home/user/.cache/pmfs-sandbox/final-source/kernel/kernel
+a5c7b98e68eca7a77449bd082f54a38b69253b1700e3469f6134f9e9ebcbffd2  /home/user/.cache/pmfs-sandbox/final-source-zicbom/kernel/kernel
+
+After PMEM_NVDIMM FDT discovery and QEMU patch:
+fee334662b21f0eadae03411cd777518e099bdab5ac17a9a2f329a07eb65b229  /home/user/.cache/pmfs-sandbox/qemu-build/qemu-system-riscv64
+db59965e41cd6c7e5de3be96dddb95fb61e4f2d26eccc1ede1a951f0571fb1f6  /home/user/.cache/pmfs-sandbox/final2-nvdimm-zicbom/kernel/kernel
+ce397a09f39a242812ad42610d117d9228587c1c23829e2bc42007eb6a0b422d  /home/user/.cache/pmfs-sandbox/final2-recovery/kernel/kernel

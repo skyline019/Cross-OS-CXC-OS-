@@ -1,218 +1,113 @@
 #!/usr/bin/env python3
-"""Sweep N∈{8,16,32} EMUL + N=32 MAP; rewrite docs/BENCH.md depth tables."""
+"""Run matched-count xv6/PMFS smoke workloads; print raw ticks, not conclusions.
+
+Rebuilds kernels and fs.img, so run only in a disposable checkout. MAP is
+ordinary QEMU RAM, not a persistent-memory/NVDIMM device. No results or
+historical tables are overwritten. The two backends have different durability
+contracts; the printed ratios are not a physical-media performance claim.
+"""
+import argparse
 import os
+from pathlib import Path
 import re
+import selectors
 import signal
 import subprocess
 import sys
 import time
 
-NS = [8, 16, 32]
-TIMEOUT = 180.0
+TIMEOUT = 180
 
 
-def kill_tree(proc):
+def run_one(env, target, n, mode):
+    proc = subprocess.Popen(["make", target], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, env=env, start_new_session=True)
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    output = bytearray()
+    deadline = time.monotonic() + TIMEOUT
+    sent_format = sent_bench = False
+    last_prompt = 0
     try:
-        ps = subprocess.run(
-            ["ps", "-opid", "--no-headers", "--ppid", str(proc.pid)],
-            stdout=subprocess.PIPE,
-            encoding="utf8",
-            check=False,
-        )
-        for line in ps.stdout.splitlines():
-            try:
-                os.kill(int(line.strip()), signal.SIGKILL)
-            except OSError:
-                pass
-        proc.terminate()
-    except Exception:
-        pass
-
-
-def run_one(env, make_target: str, n: int, mode: str) -> dict:
-    proc = subprocess.Popen(
-        ["make", make_target],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-    os.set_blocking(proc.stdout.fileno(), False)
-    out = ""
-    deadline = time.time() + TIMEOUT
-    sent = False
-    try:
-        while time.time() < deadline:
-            try:
-                chunk = os.read(proc.stdout.fileno(), 4096)
-            except BlockingIOError:
-                chunk = b""
-            if chunk:
-                text = chunk.decode("utf-8", errors="replace")
-                sys.stdout.write(text)
-                out += text
-                if (not sent) and ("init: starting sh" in out or "$ " in out):
+        while time.monotonic() < deadline:
+            for key, _ in selector.select(0.2):
+                chunk = os.read(key.fd, 8192)
+                if chunk:
+                    output.extend(chunk)
+                    sys.stdout.write(chunk.decode("utf-8", "replace"))
+                    sys.stdout.flush()
+            if b"panic:" in output or b"ONBOX_PMFS_BENCH_FAIL" in output:
+                raise RuntimeError(f"{mode} N={n}: guest reported failure")
+            prompts = output.count(b"$ ")
+            if prompts > last_prompt:
+                last_prompt = prompts
+                if mode == "MAP" and not sent_format:
+                    proc.stdin.write(b"pmformat --force\n")
+                    proc.stdin.flush()
+                    sent_format = True
+                elif not sent_bench:
+                    if mode == "MAP" and b"pmformat: v3 ready" not in output:
+                        raise RuntimeError("MAP initialization failed")
                     proc.stdin.write(f"pmfs_bench {n}\n".encode())
                     proc.stdin.flush()
-                    sent = True
-                if (
-                    sent
-                    and "ONBOX_PMFS_BENCH_PASS" in out
-                    and f" N={n} " in out
-                    and "wa_x100=" in out
-                    and "thr_file=" in out
-                ):
-                    time.sleep(0.25)
-                    break
-            else:
-                time.sleep(0.05)
-            if proc.poll() is not None:
+                    sent_bench = True
+            summary = output.find(b"ONBOX_PMFS_BENCH_PASS")
+            if sent_bench and summary >= 0 and output.find(b"\n", summary) >= 0:
                 break
+            if proc.poll() is not None:
+                raise RuntimeError(f"{mode} N={n}: QEMU exited {proc.returncode}")
+        else:
+            raise RuntimeError(f"{mode} N={n}: timed out")
     finally:
-        kill_tree(proc)
-
-    m = re.search(
-        rf"ONBOX_PMFS_BENCH_PASS trials=(\d+) N={n} "
-        rf"median_pmfs=(\d+) median_file=(\d+) median_xv6=(\d+) "
-        rf"ratio=(\d+) fratio=(\d+) thr_file=(\d+) thr_xv6=(\d+) "
-        rf"logical=(\d+) phys=(\d+) wa_x100=(\d+)",
-        out,
-    )
-    if not m:
-        raise RuntimeError(f"parse failed for N={n} mode={mode}\n---\n{out[-2500:]}")
-    return {
-        "n": n,
-        "trials": int(m.group(1)),
-        "median_pmfs": int(m.group(2)),
-        "median_file": int(m.group(3)),
-        "median_xv6": int(m.group(4)),
-        "ratio": int(m.group(5)),
-        "fratio": int(m.group(6)),
-        "thr_file": int(m.group(7)),
-        "thr_xv6": int(m.group(8)),
-        "logical": int(m.group(9)),
-        "phys": int(m.group(10)),
-        "wa_x100": int(m.group(11)),
-        "mode": mode,
-    }
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        selector.close()
+        proc.stdin.close()
+        proc.stdout.close()
+    text = output.decode("utf-8", "replace")
+    trials = re.findall(rf"BENCH_TRIAL N={n} t=(\d+) kv=(\d+) file=(\d+) xv6=(\d+) "
+                        rf"count_pmfs={n} count_xv6={n}", text)
+    if len(trials) != 5 or sorted(int(t[0]) for t in trials) != list(range(5)):
+        raise RuntimeError(f"{mode} N={n}: missing trial or unequal operation counts")
+    if not re.search(rf"ONBOX_PMFS_BENCH_PASS trials=5 N={n} .*"
+                     rf"count_pmfs={n} count_xv6={n} units=r_time_ticks", text):
+        raise RuntimeError(f"{mode} N={n}: missing validated summary")
+    return trials
 
 
-def write_bench_md(emul_rows, map_row):
-    lines = [
-        "# PMFS 文件子系统 vs xv6 fs 对比评测（合题深度版）",
-        "",
-        "## 1. 方法与为何「不对等」",
-        "",
-        "本实验对比三条路径，目的是量级说明而非绝对公平微基准：",
-        "",
-        "| 维度 | PMFS-KV | PMFS-File | xv6 `fs+log` |",
-        "|------|---------|-----------|--------------|",
-        "| API | `put`×N + 1×`seal` + `get`×N | `create/write/fsync`×N | `open/write`×N + `sync` |",
-        "| 持久语义 | 双槽 SB | inode 页 + SB | 块日志检查点 |",
-        "| I/O 栈 | 字节寻址 / EMUL | 同左 | virtio-blk + bio + log |",
-        "",
-        "**解读约束：** ratio≫1 主要反映「避免 virtio 日志与目录更新」的架构差。",
-        "吞吐 `thr_*` 为相对单位（`N×1e6/median_r_time`），不作墙钟 MB/s。",
-        "",
-        "计时：`cycles()` → 内核 `r_time()`；每 N 做 5 trial 取**中位数**。",
-        "",
-        "```bash",
-        "make bench-sweep",
-        "```",
-        "",
-        "## 2. EMUL / NVDIMM 仿真边界",
-        "",
-        "- 默认 EMUL：算法与契约快回归。",
-        "- MAP / PMEM2（`memory-backend-file`）= QEMU **NVDIMM 仿真**主路径。",
-        "- EMUL **不**代表真 NVDIMM 延迟。",
-        "",
-        "## 3. 写放大 WA",
-        "",
-        "`wa_x100 = phys*100/logical`（KV 路径）。小 value 对 4KiB 页必然放大。",
-        "",
-        "## 4. 随 N 变化（EMUL，中位数）",
-        "",
-        "| N | median_kv | median_file | median_xv6 | fratio×100 | thr_file | thr_xv6 | wa_x100 |",
-        "|---|-----------|-------------|------------|------------|----------|---------|---------|",
-    ]
-    for r in emul_rows:
-        lines.append(
-            f"| {r['n']} | {r['median_pmfs']} | {r['median_file']} | {r['median_xv6']} | "
-            f"{r['fratio']} | {r['thr_file']} | {r['thr_xv6']} | {r['wa_x100']} |"
-        )
-    lines += [
-        "",
-        "### 观察",
-        "",
-        "- xv6 随 N 近似线性；PMFS-File 每文件 fsync 仍避免块日志栈。",
-        "- `thr_file` / `thr_xv6` 给出吞吐相对量级（合题「延迟与吞吐」）。",
-        "",
-        "## 5. MAP vs EMUL（N=32）",
-        "",
-        "| mode | median_kv | median_file | median_xv6 | fratio×100 | thr_file |",
-        "|------|-----------|-------------|------------|------------|----------|",
-    ]
-    e32 = next((x for x in emul_rows if x["n"] == 32), None)
-    if e32:
-        lines.append(
-            f"| EMUL | {e32['median_pmfs']} | {e32['median_file']} | {e32['median_xv6']} | "
-            f"{e32['fratio']} | {e32['thr_file']} |"
-        )
-    if map_row:
-        lines.append(
-            f"| MAP | {map_row['median_pmfs']} | {map_row['median_file']} | {map_row['median_xv6']} | "
-            f"{map_row['fratio']} | {map_row['thr_file']} |"
-        )
-    lines += [
-        "",
-        "若 EMUL/MAP 同量级，瓶颈在软件提交路径。",
-        "",
-        "## 6. 两套结论（勿混读）",
-        "",
-        "| 平面 | 证据 | 可说 | 不可说 |",
-        "|------|------|------|--------|",
-        "| 架构面 | `median_*` / `thr_*` vs xv6 | 去日志栈的量级差 | 同等 POSIX 千倍加速 |",
-        "| 公平面 | `ABLATION_* cycles/wa_x100` | 切分/刷写策略效应 | 未重扫前用旧表外推 |",
-        "",
-        "CDC 融合后本表由 `make bench-sweep` 重填；消融效应量见 `docs/ABLATION.md`。",
-        "",
-        "## 7. 答辩一句话",
-        "",
-        "> 合题四要件均有落点；不可替代点是可机器判定的契约套件（含 remount 字节等价）。",
-        "> 架构面看量级，公平面看消融效应量。",
-        "",
-    ]
-    with open("docs/BENCH.md", "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-    print("wrote docs/BENCH.md")
-
-
-def main():
-    os.chdir(os.path.join(os.path.dirname(__file__), ".."))
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sizes", default="8,16,32", help="comma-separated N values, each 1..32")
+    parser.add_argument("--emul-only", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        sizes = [int(s) for s in args.sizes.split(",")]
+    except ValueError:
+        parser.error("sizes must be integers")
+    if not sizes or any(n < 1 or n > 32 for n in sizes):
+        parser.error("sizes must be in 1..32")
+    os.chdir(Path(__file__).resolve().parent.parent)
     env = os.environ.copy()
     env["CPUS"] = "1"
-
     subprocess.run(["make", "kernel/kernel", "fs.img"], check=True, env=env)
-    emul_rows = []
-    for n in NS:
+    for n in sizes:
         print(f"=== EMUL N={n} ===", flush=True)
-        emul_rows.append(run_one(env, "qemu", n, "EMUL"))
-
-    print("=== MAP rebuild ===", flush=True)
-    subprocess.run(["make", "kernel-pmem"], check=True, env=env)
-    map_row = run_one(env, "qemu-pmem-run", 32, "MAP")
-
-    write_bench_md(emul_rows, map_row)
-
-    print("=== restore EMUL ===", flush=True)
-    subprocess.run(["make", "kernel-emul"], check=True, env=env)
-    print("bench-sweep: OK")
+        run_one(env, "qemu", n, "EMUL")
+    if not args.emul_only:
+        try:
+            subprocess.run(["make", "kernel-pmem"], check=True, env=env)
+            print("=== MAP N=32 (ordinary RAM, explicitly formatted) ===", flush=True)
+            run_one(env, "qemu-pmem-run", 32, "MAP")
+        finally:
+            subprocess.run(["make", "kernel-emul"], check=True, env=env)
+    print("BENCH_SWEEP_PASS raw_ticks=1 matched_counts=1 durability_equivalent=0", flush=True)
     return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as e:
-        print("bench-sweep:", e, file=sys.stderr)
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        print(f"BENCH_SWEEP_FAIL: {exc}", file=sys.stderr, flush=True)
         sys.exit(1)

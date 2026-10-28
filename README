@@ -47,20 +47,46 @@ https://github.com/riscv/riscv-gnu-toolchain, and qemu compiled for
 riscv64-softmmu.  Once they are installed, and in your shell
 search path, you can run "make qemu".
 
-THESIS PMFS-KV (branch thesis/pmem-fs)
-=====================================
+THESIS PMFS PROTOTYPE (v3)
+=========================
 
-Byte-addressable PMEM key-value store beside the virtio root fs
-(NOT a POSIX inode filesystem). Strict serial contract: docs/CONTRACT.md
-Title/abstract: THESIS.md
+Current status, test evidence and limits: THESIS.md and
+  docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
+  docs/SEMANTICS.md                   exact supported subset and error semantics
+  docs/QEMU-NVDIMM.md                 device and persistence-domain limits
+  docs/EXCELLENCE-ROADMAP.md          original planning/baseline audit
+  docs/LOCAL-SANDBOX-TESTS.md         historical pre-repair evidence
 
-  make contract          # EMUL → ONBOX_PMFS_PASS
-  make contract-pmem     # MAP → mode=MAP + PMEM1
-  make contract-pmem2    # memory-backend-file kill+reboot → PMEM2_PASS
-  make contract-full     # probe + posix shim + bench
-  make bench-sweep       # N=8/16/32 + MAP vs EMUL → docs/BENCH.md
-  make bench-fill        # single-point N=32 snapshot
+The kernel has an absolute /pm path adapter for ordinary file descriptors,
+plus dedicated file/KV calls. v3 uses checksummed append-only data and COW
+metadata, two checkpoints, explicit formatting, and a serialized writer.
+It is a bounded teaching prototype, not a general VFS or full POSIX FS.
 
-Shell: pmfs_probe, pmfs_posix, pmfs_bench
-Docs: CONTRIBUTIONS (spike), PRIOR-ART-OWN (FCS/Aurora), PITFALLS, figures/, EXPERIMENT
-WSL: gcc-riscv64-linux-gnu, qemu-system-riscv64, python3, bc
+Unpatched MAP is ordinary guest RAM, NOT an NVDIMM. An experimental QEMU
+9.2.0 patch supports one separately backed cold-plugged NVDIMM on virt and
+advertises a private FDT node. See docs/QEMU-NVDIMM.md for build and limits.
+The default cache-line touch is instrumentation, NOT hardware writeback.
+Optional Zicbom emits CBO.CLEAN under explicit platform assumptions; QEMU
+TCG does not simulate cache persistence. Process kills are not physical
+power failures. v3 is incompatible with v2; there is no automatic migration.
+
+  make qemu                 # volatile EMUL, a new empty PMFS each boot
+  make kernel-pmem          # rebuild MAP with ordinary 160 MiB guest RAM
+  make test-model           # bounded specification + mutation controls
+  make test-recovery        # MAP restart/fault oracle; software boundaries
+  make test-recovery-zicbom # same oracle, QEMU CPU with Zicbom enabled
+  make test-recovery-nvdimm QEMU=/path/to/patched/qemu-system-riscv64
+  make contract-full        # destructive legacy selftests on disposable data
+  make contract-pmem2       # two-boot shared-RAM magic smoke, not power loss
+  make bench-sweep          # matched operation counts; prints raw tick samples
+
+IMPORTANT: kernel-pmem, contracts, benchmark and recovery targets call
+make clean and rebuild fs.img. test-xv6.py can also recreate fs.img. Run in a
+disposable checkout and back up any data. Normal MAP startup refuses blank,
+v2 or corrupted media without formatting it. Only when intentional, in the
+guest run `pmformat --force` to destroy and format an unmounted PMFS image.
+The recovery harness creates temporary disk/RAM images; its build still
+recreates fs.img. Existing old thesis figures/PDF must not be submitted as
+new performance or power-failure evidence.
+
+Dependencies: RISC-V GCC/binutils, qemu-system-riscv64, Python 3 and bc.

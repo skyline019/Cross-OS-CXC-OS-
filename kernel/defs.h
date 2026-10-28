@@ -28,11 +28,14 @@ int             kexec(char*, char**);
 
 // file.c
 struct file*    filealloc(void);
-void            fileclose(struct file*);
+int             fileclose(struct file*);
 struct file*    filedup(struct file*);
 void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
+int             filefsync(struct file*);
+void            filepm_init(struct file*, int, int, char*, uint, int, int);
+int             filepm_sync_all(void);
 int             filewrite(struct file*, uint64, int n);
 
 // fs.c
@@ -79,6 +82,7 @@ void            panic(char*) __attribute__((noreturn));
 void            printkinit(void);
 
 // pmem.c (thesis PMFS)
+void            pmem_early_probe(void);
 void            pmem_init(void);
 int             pmem_ready(void);
 void            pmem_persist(void*, uint64);
@@ -87,7 +91,7 @@ int             pmem_persist_selftest(void);
 // pmfs.c (thesis PMFS)
 void            pmfs_init(void);
 int             pmfs_mounted(void);
-void            pmfile_init(void);
+int             pmfile_init(void);
 int             pmfile_selftest(void);
 int             pmfile_chaos_selftest(void);
 int             pmfile_edge_selftest(void);
