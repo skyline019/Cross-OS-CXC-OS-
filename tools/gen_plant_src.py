@@ -8,12 +8,18 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "user" / "plant_src"
 HDR = ROOT / "include" / "cxc" / "plant_asm_texts.hpp"
 
-# short job name -> (filename_stem, primary symbol, asm body without header)
-LEAVES: list[tuple[str, str, str, str]] = []
+# short, stem, primary_sym, body (labels+insns), optional musl-style aliases
+LEAVES: list[tuple[str, str, str, str, tuple[str, ...]]] = []
 
 
-def leaf(short: str, stem: str, sym: str, body: str) -> None:
-    LEAVES.append((short, stem, sym, body))
+def leaf(
+    short: str,
+    stem: str,
+    sym: str,
+    body: str,
+    aliases: tuple[str, ...] = (),
+) -> None:
+    LEAVES.append((short, stem, sym, body, aliases))
 
 
 leaf(
@@ -498,6 +504,198 @@ leaf(
 \tret
 """,
 )
+# M300 batch3: shallow string/mem — drop host .o plants
+leaf(
+    "mset",
+    "memset",
+    "memset",
+    """memset:
+\tpush %rdi
+\tmov %esi, %eax
+\tand $255, %eax
+\tmov %rdx, %rcx
+\ttest %rcx, %rcx
+\tjz .Ld
+\trep stosb
+.Ld:
+\tpop %rax
+\tret
+""",
+)
+leaf(
+    "mcmp",
+    "memcmp",
+    "memcmp",
+    """memcmp:
+\ttest %rdx, %rdx
+\tjz .Lz
+.L:
+\tmovzbl (%rdi), %eax
+\tmovzbl (%rsi), %ecx
+\tcmp %ecx, %eax
+\tjne .Ld
+\tadd $1, %rdi
+\tadd $1, %rsi
+\tsub $1, %rdx
+\tjnz .L
+.Lz:
+\txor %eax, %eax
+\tret
+.Ld:
+\tsub %ecx, %eax
+\tret
+""",
+)
+leaf(
+    "scmp",
+    "strcmp",
+    "strcmp",
+    """strcmp:
+.L:
+\tmovzbl (%rdi), %eax
+\tmovzbl (%rsi), %ecx
+\tcmp %ecx, %eax
+\tjne .Ld
+\ttest %eax, %eax
+\tjz .Lz
+\tadd $1, %rdi
+\tadd $1, %rsi
+\tjmp .L
+.Ld:
+\tsub %ecx, %eax
+\tret
+.Lz:
+\txor %eax, %eax
+\tret
+""",
+)
+leaf(
+    "sncmp",
+    "strncmp",
+    "strncmp",
+    """strncmp:
+\ttest %rdx, %rdx
+\tjz .Lz
+.L:
+\tmovzbl (%rdi), %eax
+\tmovzbl (%rsi), %ecx
+\tcmp %ecx, %eax
+\tjne .Ld
+\ttest %eax, %eax
+\tjz .Lz
+\tadd $1, %rdi
+\tadd $1, %rsi
+\tsub $1, %rdx
+\tjnz .L
+.Lz:
+\txor %eax, %eax
+\tret
+.Ld:
+\tsub %ecx, %eax
+\tret
+""",
+)
+leaf(
+    "scpy",
+    "strcpy",
+    "strcpy",
+    """strcpy:
+\tpush %rdi
+.L:
+\tmovzbl (%rsi), %eax
+\tmov %al, (%rdi)
+\tadd $1, %rsi
+\tadd $1, %rdi
+\ttest %eax, %eax
+\tjnz .L
+\tpop %rax
+\tret
+""",
+)
+leaf(
+    "stpc",
+    "stpcpy",
+    "stpcpy",
+    """__stpcpy:
+stpcpy:
+.L:
+\tmovzbl (%rsi), %eax
+\tmov %al, (%rdi)
+\tadd $1, %rsi
+\tadd $1, %rdi
+\ttest %eax, %eax
+\tjnz .L
+\tsub $1, %rdi
+\tmov %rdi, %rax
+\tret
+""",
+    aliases=("__stpcpy",),
+)
+leaf(
+    "scat",
+    "strcat",
+    "strcat",
+    """strcat:
+\tpush %rdi
+.F:
+\tmovzbl (%rdi), %eax
+\ttest %eax, %eax
+\tjz .C
+\tadd $1, %rdi
+\tjmp .F
+.C:
+\tmovzbl (%rsi), %eax
+\tmov %al, (%rdi)
+\tadd $1, %rsi
+\tadd $1, %rdi
+\ttest %eax, %eax
+\tjnz .C
+\tpop %rax
+\tret
+""",
+)
+leaf(
+    "snul",
+    "strchrnul",
+    "strchrnul",
+    """__strchrnul:
+strchrnul:
+\tmov %esi, %eax
+\tand $255, %eax
+\tmov %eax, %edx
+.L:
+\tmovzbl (%rdi), %eax
+\tcmp %edx, %eax
+\tje .Lf
+\ttest %eax, %eax
+\tjz .Lf
+\tadd $1, %rdi
+\tjmp .L
+.Lf:
+\tmov %rdi, %rax
+\tret
+""",
+    aliases=("__strchrnul",),
+)
+leaf(
+    "atoi",
+    "atoi",
+    "atoi",
+    """atoi:
+\txor %eax, %eax
+.L:
+\tmovzbl (%rdi), %edx
+\tsub $48, %rdx
+\tcmp $9, %rdx
+\tja .D
+\timul $10, %eax
+\tadd %edx, %eax
+\tadd $1, %rdi
+\tjmp .L
+.D:
+\tret
+""",
+)
 
 
 def c_escape(s: str) -> str:
@@ -522,8 +720,18 @@ def main() -> None:
         "",
     ]
     entries = []
-    for short, stem, sym, body in LEAVES:
-        text = f".text\n.globl {sym}\n{body}"
+    for short, stem, sym, body, aliases in LEAVES:
+        # musl internal aliases first (strong), then public name
+        globs = list(aliases) + [sym]
+        # de-dup while preserving order
+        seen: set[str] = set()
+        glob_lines = []
+        for g in globs:
+            if g in seen:
+                continue
+            seen.add(g)
+            glob_lines.append(f".globl {g}")
+        text = ".text\n" + "\n".join(glob_lines) + "\n" + body
         (OUT / f"{stem}.s").write_text(text, encoding="utf-8")
         var = f"plant_asm_{stem}"
         lines.append(f'static const char {var}[] = "{c_escape(text)}";')
@@ -537,7 +745,7 @@ def main() -> None:
     HDR.parent.mkdir(parents=True, exist_ok=True)
     HDR.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {len(LEAVES)} plant_src + {HDR.relative_to(ROOT)}")
-    print("shorts:", ",".join(s for s, _, _, _ in LEAVES))
+    print("shorts:", ",".join(s for s, _, _, _, _ in LEAVES))
 
 
 if __name__ == "__main__":

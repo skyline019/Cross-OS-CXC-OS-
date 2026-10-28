@@ -1,8 +1,8 @@
 # A2 机上迷你编译器（cxc-cc）路线
 
 **目标**：不依赖宿主机，在 CXC/OS 上用**完整内部编译器**编译并运行合理范围内的程序（通向 g++/gcc）。  
-**当前基线**：M297/M298 / v2.91.0 — CCDRV + `planted≤22` + asm_mode 控制流/`-S` 回编；可选迷你 IDE / GUIUX。  
-**A2-SEM（M287–M298）**：host `CC_CONF: pass=59`；`spawn_as==inputs_s` 双窗；中场见 [`midpoint-assessment-31.md`](midpoint-assessment-31.md)。**未宣称 A2。**
+**当前基线**：M299–M302 / v2.92.0 — CCDRV + `planted:13`/`inputs_s:44` + asm_mode 深 CF + Win `CC_CONF mode=qemu`；可选迷你 IDE / GUIUX。  
+**A2-SEM（M287–M302）**：host `CC_CONF: pass=59` + `--require-exec`；`spawn_as==inputs_s` 双窗；中场见 [`midpoint-assessment-32.md`](midpoint-assessment-32.md)。**未宣称 A2。**
 
 ## 1. 语言分期（合同只增不减）
 
@@ -27,6 +27,10 @@
 | **M296** | DLOC + `-E`/`-S` | 失败 `DLOC:L:C`；真预处理；`-S`→as 回编 |
 | **M297** | asm_mode 加深 | S-local/if/while/call → as 回编同构 |
 | **M298** | planted 二批 | ≥8 浅叶；`planted≤22`；`inputs_s=35` |
+| **M299** | asm_mode 深 CF | S-for/do/switch/break/continue/ternary/nested |
+| **M300** | planted 三批 | +9 叶（40 总）；`planted:13`；`inputs_s:44`；`__strchrnul` 别名 |
+| **M301** | Win CC_CONF 真跑 | WSL qemu-user；`--require-exec` 禁 `compile-elf` |
+| **M302** | 中场锁版 | midpoint-32；**v2.92.0** |
 
 **未宣称 A2**。`ONBOX_CCDRV_PASS` 是合同加深标签，不是 A2。
 

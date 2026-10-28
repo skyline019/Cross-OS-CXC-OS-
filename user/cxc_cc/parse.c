@@ -892,6 +892,7 @@ static int loop_push(CcEmit* em, size_t cont_at, int is_switch) {
     lp->nbrk = 0;
     lp->ncont = 0;
     lp->is_switch = is_switch;
+    lp->asm_cont_id = 0;
     return 0;
 }
 
@@ -1000,6 +1001,9 @@ static void parse_stmt(CcParser* p) {
         if (loop_push(p->em, loop, 0) != 0) {
             return;
         }
+        if (p->em->asm_mode) {
+            p->em->loops[p->em->nloops - 1].asm_cont_id = cont_lab;
+        }
         parse_expr(p);
         expect(p, TOK_RPAREN);
         cc_emit_asm_test_rax(p->em);
@@ -1066,6 +1070,7 @@ static void parse_stmt(CcParser* p) {
         CcLexer step_lx;
         CcLexer after_paren;
         int depth;
+        int cond_lab = 0;
         expect(p, TOK_LPAREN);
         if (!accept(p, TOK_SEMI)) {
             if (p->lx->tok != TOK_IDENT) {
@@ -1087,6 +1092,10 @@ static void parse_stmt(CcParser* p) {
         if (loop_push(p->em, 0, 0) != 0) {
             return;
         }
+        if (p->em->asm_mode) {
+            cond_lab = cc_asm_new_label(p->em);
+            cc_asm_def_label(p->em, cond_lab);
+        }
         cond_at = p->em->code_len;
         if (accept(p, TOK_SEMI)) {
             cc_emit_mov_eax_imm(p->em, 1);
@@ -1094,6 +1103,7 @@ static void parse_stmt(CcParser* p) {
             parse_expr(p);
             expect(p, TOK_SEMI);
         }
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         /* Save step clause, skip to ')' then parse body, then emit step. */
@@ -1137,8 +1147,16 @@ static void parse_stmt(CcParser* p) {
             cc_emit_store_local(p->em, slot);
         }
         *p->lx = after_paren;
-        back = emit_jmp32(p->em);
-        patch_rel32(p->em, back, cond_at);
+        if (p->em->asm_mode) {
+            cc_asm_jmp_label(p->em, cond_lab);
+            cc_emit_byte(p->em, 0xE9);
+            back = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+            patch_rel32(p->em, back, cond_at);
+        } else {
+            back = emit_jmp32(p->em);
+            patch_rel32(p->em, back, cond_at);
+        }
         patch_rel32(p->em, je_at, p->em->code_len);
         loop_pop(p->em, p->em->code_len);
         return;
@@ -1175,7 +1193,15 @@ static void parse_stmt(CcParser* p) {
             fail(p);
             return;
         }
-        at = emit_jmp32(p->em);
+        /* M299: while continue uses known loop-top label (not a fresh forward id). */
+        if (p->em->asm_mode && lp->asm_cont_id > 0) {
+            cc_asm_jmp_label(p->em, lp->asm_cont_id);
+            cc_emit_byte(p->em, 0xE9);
+            at = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+        } else {
+            at = emit_jmp32(p->em);
+        }
         lp->cont_patch[lp->ncont++] = at;
         return;
     }
@@ -1203,6 +1229,11 @@ static void parse_stmt(CcParser* p) {
                 cc_lex_next(p->lx);
                 expect(p, TOK_COLON);
                 /* mov rax,[rsp]; cmp rax,imm; jne skip */
+                if (p->em->asm_mode) {
+                    /* pop/push keeps scrutinee; as already accepts these. */
+                    cc_emit_asm_puts(p->em, "\tpop %rax\n\tpush %rax\n");
+                    cc_emit_asm_cmp_rax_imm(p->em, imm);
+                }
                 cc_emit_bytes(p->em, "\x48\x8B\x04\x24", 4);
                 cc_emit_bytes(p->em, "\x48\x3D", 2);
                 cc_emit_u32(p->em, (unsigned)imm);
@@ -1245,6 +1276,9 @@ static void parse_stmt(CcParser* p) {
         }
         expect(p, TOK_RBRACE);
         loop_pop(p->em, p->em->code_len);
+        if (p->em->asm_mode) {
+            cc_emit_asm_puts(p->em, "\tadd $8, %rsp\n");
+        }
         cc_emit_bytes(p->em, "\x48\x83\xC4\x08", 4); /* add rsp, 8 */
         return;
     }

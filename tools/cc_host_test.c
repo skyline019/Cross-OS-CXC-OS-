@@ -4473,7 +4473,7 @@ int main(void) {
         }
     }
 
-    /* M297: S-local / S-if / S-while / S-call — -S → as ET_REL. */
+    /* M297/M299: S-* — -S → as ET_REL isomorphic. */
     {
         struct {
             const char* name;
@@ -4495,8 +4495,52 @@ int main(void) {
              "CXC_A2\nfn add(a,b){return a+b;}\n"
              "fn ans(){return add(40,2);}\n",
              "call add", "pop %rdi"},
+            {"S-for",
+             "CXC_A2\nfn ans(){\nint i;\nint n;\nn=0;\n"
+             "for(i=0;i<3;i=i+1){n=n+1;}\nreturn n;\n}\n",
+             "test %eax", "jmp .Lcc"},
+            {"S-do",
+             "CXC_A2\nfn ans(){\nint i;\ni=0;\ndo{i=i+1;}while(i<3);\n"
+             "return i;\n}\n",
+             "jne .Lcc", "setl %al"},
+            {"S-switch",
+             "CXC_A2\nfn ans(){\nint x;\nx=1;\n"
+             "switch(x){case 1: return 42; case 2: return 0;}\n"
+             "return 0;\n}\n",
+             "cmp $1", "add $8, %rsp"},
+            {"S-break",
+             "CXC_A2\nfn ans(){\nint i;\ni=0;\n"
+             "while(1){i=i+1;if(i>=3){break;}}\nreturn i;\n}\n",
+             "setge %al", "jmp .Lcc"},
+            {"S-continue",
+             "CXC_A2\nfn ans(){\nint i;\nint n;\ni=0;\nn=0;\n"
+             "while(i<5){i=i+1;if(i==3){continue;}n=n+1;}\n"
+             "return n;\n}\n",
+             "sete %al", "jmp .Lcc"},
+            {"S-ternary",
+             "CXC_A2\nfn ans(){\nint a;\na=1;\nreturn a<2?42:0;\n}\n",
+             "setl %al", "je .Lcc"},
+            {"S-nested",
+             "CXC_A2\nfn add(a,b){return a+b;}\n"
+             "fn ans(){return add(20,add(10,12));}\n",
+             "call add", "mov %rdi, %rax"},
         };
         size_t ci;
+        /* M300: musl-style dual .globl same-entry aliases must assemble. */
+        {
+            static const char alias_s[] =
+                ".text\n.globl __strchrnul\n.globl strchrnul\n"
+                "__strchrnul:\nstrchrnul:\n"
+                "\tmov %esi, %eax\n\tand $255, %eax\n\tret\n";
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            if (as_compile(alias_s, sizeof(alias_s) - 1, &rel, &rel_n) != 0 ||
+                !rel || rel_n < 64 || rel[16] != 1) {
+                fprintf(stderr, "FAIL m300-alias-as: code=%d\n",
+                        as_last_fail_code());
+                fails++;
+            }
+        }
         for (ci = 0; ci < sizeof(cases) / sizeof(cases[0]); ci++) {
             char* asm_text = 0;
             size_t asm_n = 0;

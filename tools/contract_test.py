@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -523,8 +524,16 @@ def run_host_checks(seed: int) -> list[HostCheck]:
 
     def cxc_cc_conformance() -> str:
         script = PROJECT_ROOT / "tools" / "cc_conformance.py"
+        conf_argv = [sys.executable, str(script), "--strict", "--elf-check"]
+        # M301: CI forbids compile-elf as the success bar (need run|qemu).
+        if os.environ.get("CXC_REQUIRE_CONF_EXEC", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            conf_argv.append("--require-exec")
         completed = subprocess.run(
-            [sys.executable, str(script), "--strict", "--elf-check"],
+            conf_argv,
             check=False,
             capture_output=True,
             text=True,
@@ -537,7 +546,15 @@ def run_host_checks(seed: int) -> list[HostCheck]:
         assert "bug=0" in completed.stdout
         assert "xpass=0" in completed.stdout
         assert "reject=0" in completed.stdout
-        return completed.stdout.strip().splitlines()[-1]
+        line = completed.stdout.strip().splitlines()[-1]
+        if os.environ.get("CXC_REQUIRE_CONF_EXEC", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            assert "mode=compile-elf" not in line
+            assert ("mode=run" in line) or ("mode=qemu" in line)
+        return line
 
     record(
         "编译器",
@@ -735,8 +752,8 @@ class ContractRunner:
         assert b"hard: 1" in serial
         assert b"fat: 1" in serial
         assert b"as: 1" in serial
-        # M293/M295 dual windows (numbers may drop as planted→as; relational only):
-        # spawn_cc: legacy 3 or 4; spawn_as: legacy 4 OR == inputs_s; planted <= 33
+        # M293/M295/M300 dual windows (numbers may drop as planted→as; relational only):
+        # spawn_cc: legacy 3 or 4; spawn_as: legacy 4 OR == inputs_s; planted <= 22 (M298 lock)
         import re as _re
 
         legacy_as = (
@@ -755,11 +772,11 @@ class ContractRunner:
         relational_ok = False
         if rel_m:
             sas, scc, ins, plant = (int(rel_m.group(i)) for i in range(1, 5))
-            relational_ok = sas == ins and plant <= 33 and scc in (3, 4)
+            relational_ok = sas == ins and plant <= 22 and scc in (3, 4)
         assert legacy_as in serial or relational_cc in serial or relational_ok
         planted_m = _re.search(rb"planted: (\d+)", serial)
         assert planted_m is not None
-        assert int(planted_m.group(1)) <= 33
+        assert int(planted_m.group(1)) <= 22
         inputs_s_m = _re.search(rb"inputs_s: (\d+)", serial)
         spawn_as_m = _re.search(rb"spawn_as: (\d+)", serial)
         assert inputs_s_m is not None and spawn_as_m is not None

@@ -36,9 +36,11 @@
 | 第二十八次 | 约 M275–M284 | [`midpoint-assessment-28.md`](midpoint-assessment-28.md) |
 | 第二十九次 | 约 M285 | [`midpoint-assessment-29.md`](midpoint-assessment-29.md) |
 | 第三十次 | 约 M286 | [`midpoint-assessment-30.md`](midpoint-assessment-30.md) |
+| 第三十一次 | 约 M287–M298 | [`midpoint-assessment-31.md`](midpoint-assessment-31.md) |
+| 第三十二次 | 约 M299–M302 | [`midpoint-assessment-32.md`](midpoint-assessment-32.md) |
 
-当前基线：**M298 / v2.91.0**（GUIUX 仍可选；迷你 IDE + CCDRV 串口主合同；QEMU 验收底线 **256 MiB**）。  
-**A2-SEM（M287–M298）**：语义网 59/59 + `planted≤22` + asm_mode S-* 回编 — 见 [`midpoint-assessment-31.md`](midpoint-assessment-31.md)；方言 [`cxc-a2-dialect.md`](cxc-a2-dialect.md)。
+当前基线：**M302 / v2.92.0**（GUIUX 仍可选；迷你 IDE + CCDRV 串口主合同；QEMU 验收底线 **256 MiB**）。  
+**A2-SEM（M287–M302）**：语义网 59/59 + `planted:13`/`inputs_s:44` + asm_mode 深 CF + Win `CC_CONF --require-exec` — 见 [`midpoint-assessment-32.md`](midpoint-assessment-32.md)；方言 [`cxc-a2-dialect.md`](cxc-a2-dialect.md)。
 
 ## 中场窗口必做
 

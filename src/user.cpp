@@ -2,16 +2,7 @@
 #include <cxc/plant_asm_texts.hpp>
 #include <cxc/host_add_elf.hpp>
 #include <cxc/host_bump_elf.hpp>
-#include <cxc/musl_atoi_elf.hpp>
-#include <cxc/musl_memcmp_elf.hpp>
 #include <cxc/musl_memcpy_elf.hpp>
-#include <cxc/musl_memset_elf.hpp>
-#include <cxc/musl_strcmp_elf.hpp>
-#include <cxc/musl_strcat_elf.hpp>
-#include <cxc/musl_strchrnul_elf.hpp>
-#include <cxc/musl_strcpy_elf.hpp>
-#include <cxc/musl_stpcpy_elf.hpp>
-#include <cxc/musl_strncmp_elf.hpp>
 #include <cxc/musl_strcspn_elf.hpp>
 #include <cxc/musl_strspn_elf.hpp>
 #include <cxc/musl_strpbrk_elf.hpp>
@@ -2471,17 +2462,17 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "disk/a.c\n"
         "disk/b.c\n"
         "disk/lib.c\n"
-        "disk/atoi.o\n"
-        "disk/scmp.o\n"
+        "disk/atoi.s\n"
+        "disk/scmp.s\n"
         "disk/labs.s\n"
         "disk/dig.s\n"
-        "disk/scat.o\n"
+        "disk/scat.s\n"
         "disk/schr.s\n"
-        "disk/snul.o\n"
-        "disk/scpy.o\n"
-        "disk/stpc.o\n"
-        "disk/sncmp.o\n"
-        "disk/mcmp.o\n"
+        "disk/snul.s\n"
+        "disk/scpy.s\n"
+        "disk/stpc.s\n"
+        "disk/sncmp.s\n"
+        "disk/mcmp.s\n"
         "disk/mchr.s\n"
         "disk/tlwr.s\n"
         "disk/tupr.s\n"
@@ -2509,7 +2500,7 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "disk/htnl.s\n"
         "disk/ntns.s\n"
         "disk/ntnl.s\n"
-        "disk/mset.o\n"
+        "disk/mset.s\n"
         "disk/scsp.o\n"
         "disk/sspn.o\n"
         "disk/spbk.o\n"
@@ -2644,25 +2635,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
     }
     {
-        const int64_t cfd2 = fs::open_path(
-            "disk/mcmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (cfd2 < 0) {
-            result.failure = 61;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(cfd2), musl_memcmp_elf,
-                         musl_memcmp_elf_size) !=
-            static_cast<int64_t>(musl_memcmp_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(cfd2));
-            result.failure = 62;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(cfd2)) != 0) {
-            result.failure = 63;
-            return false;
-        }
-    }
-    {
         const int64_t yfd = fs::open_path(
             "disk/mcpy.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (yfd < 0) {
@@ -2681,160 +2653,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             return false;
         }
     }
-    {
-        const int64_t afd = fs::open_path(
-            "disk/atoi.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (afd < 0) {
-            result.failure = 67;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(afd), musl_atoi_elf,
-                         musl_atoi_elf_size) !=
-            static_cast<int64_t>(musl_atoi_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(afd));
-            result.failure = 68;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(afd)) != 0) {
-            result.failure = 69;
-            return false;
-        }
-    }
-    {
-        const int64_t cfd = fs::open_path(
-            "disk/scmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (cfd < 0) {
-            result.failure = 73;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(cfd), musl_strcmp_elf,
-                         musl_strcmp_elf_size) !=
-            static_cast<int64_t>(musl_strcmp_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(cfd));
-            result.failure = 74;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(cfd)) != 0) {
-            result.failure = 75;
-            return false;
-        }
-    }
-    {
-        const int64_t pfd = fs::open_path(
-            "disk/stpc.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (pfd < 0) {
-            result.failure = 76;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(pfd), musl_stpcpy_elf,
-                         musl_stpcpy_elf_size) !=
-            static_cast<int64_t>(musl_stpcpy_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(pfd));
-            result.failure = 77;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(pfd)) != 0) {
-            result.failure = 78;
-            return false;
-        }
-    }
-    {
-        const int64_t yfd2 = fs::open_path(
-            "disk/scpy.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (yfd2 < 0) {
-            result.failure = 79;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(yfd2), musl_strcpy_elf,
-                         musl_strcpy_elf_size) !=
-            static_cast<int64_t>(musl_strcpy_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(yfd2));
-            result.failure = 80;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(yfd2)) != 0) {
-            result.failure = 81;
-            return false;
-        }
-    }
-    {
-        const int64_t nfd = fs::open_path(
-            "disk/sncmp.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (nfd < 0) {
-            result.failure = 82;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(nfd), musl_strncmp_elf,
-                         musl_strncmp_elf_size) !=
-            static_cast<int64_t>(musl_strncmp_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(nfd));
-            result.failure = 83;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(nfd)) != 0) {
-            result.failure = 84;
-            return false;
-        }
-    }
-    {
-        const int64_t tfd = fs::open_path(
-            "disk/scat.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (tfd < 0) {
-            result.failure = 85;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(tfd), musl_strcat_elf,
-                         musl_strcat_elf_size) !=
-            static_cast<int64_t>(musl_strcat_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(tfd));
-            result.failure = 86;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(tfd)) != 0) {
-            result.failure = 87;
-            return false;
-        }
-    }
-    {
-        const int64_t ufd2 = fs::open_path(
-            "disk/snul.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (ufd2 < 0) {
-            result.failure = 91;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(ufd2), musl_strchrnul_elf,
-                         musl_strchrnul_elf_size) !=
-            static_cast<int64_t>(musl_strchrnul_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(ufd2));
-            result.failure = 92;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(ufd2)) != 0) {
-            result.failure = 93;
-            return false;
-        }
-    }
-    {
-        const int64_t mfd3 = fs::open_path(
-            "disk/mset.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (mfd3 < 0) {
-            result.failure = 119;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(mfd3), musl_memset_elf,
-                         musl_memset_elf_size) !=
-            static_cast<int64_t>(musl_memset_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(mfd3));
-            result.failure = 120;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(mfd3)) != 0) {
-            result.failure = 121;
-            return false;
-        }
-    }
-
-
     {
         struct Plant {
             const char* path;
@@ -2993,9 +2811,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             }
         }
     }
-    /* job.rsp: 22 remaining prebuilt .o (30−8); 35 .s (4 base + 31 leaves). */
-    result.planted = 22;
-    result.inputs_s = 35;
+    /* job.rsp: M300 batch3 — 13 prebuilt .o; 44 .s (4 base + 40 leaves). */
+    result.planted = 13;
+    result.inputs_s = 44;
 
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
@@ -3164,8 +2982,8 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         result.failure = 10;
         return false;
     }
-    /* M295: planted only decreases; hard cap ≤33. */
-    if (result.planted > 33) {
+    /* M295/M300: planted only decreases; hard cap ≤22 (M298 lock). */
+    if (result.planted > 22) {
         syscall::clear_session();
         result.failure = 295;
         return false;

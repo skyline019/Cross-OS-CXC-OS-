@@ -215,20 +215,49 @@ def patch_int80_to_syscall(blob: bytes) -> bytes:
     return bytes(data)
 
 
+def _which_qemu_user() -> str | None:
+    for name in ("qemu-x86_64", "qemu-x86_64.exe"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
+def _wsl_bin() -> str | None:
+    return shutil.which("wsl")
+
+
+def _wsl_has(cmd: str) -> bool:
+    wsl = _wsl_bin()
+    if not wsl:
+        return False
+    probe = subprocess.run(
+        [wsl, "-e", "sh", "-c", f"command -v {cmd} >/dev/null 2>&1"],
+        check=False,
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
 def elf_run_mode() -> str:
     """How this host executes guest Linux ELF: run | qemu | compile-elf.
 
-    Windows/MSYS2 UCRT cannot natively exec Linux ET_EXEC; Linux CI keeps full
-    exit/stdout. Host-only Windows gate still requires compile + optional
-    PT_LOAD congruence (--elf-check).
+    Linux: native exec. Windows: prefer qemu-user (native or via WSL), then
+    WSL native exec; compile-elf is a local-only fallback when nothing can run
+    the guest ELF (M301 forbids it as the CI bar).
     """
     if sys.platform.startswith("linux"):
         return "run"
     prefix, _ = find_cc()
-    if prefix:  # WSL path via find_cc
+    if prefix:  # WSL path via find_cc — build+run under Linux
         return "run"
-    if shutil.which("qemu-x86_64"):
+    if _which_qemu_user():
         return "qemu"
+    # M301: MSYS2 host gcc + WSL qemu-user → semantic exit/stdout parity
+    if _wsl_has("qemu-x86_64"):
+        return "qemu"
+    if _wsl_bin() and _wsl_has("sh"):
+        return "run"
     return "compile-elf"
 
 
@@ -244,7 +273,18 @@ def run_elf(elf: bytes, work: Path) -> tuple[int, bytes]:
     if use_wsl:
         cmd = [*prefix, to_build_path(path, True)]
     elif mode == "qemu":
-        cmd = ["qemu-x86_64", str(path)]
+        q = _which_qemu_user()
+        if q:
+            cmd = [q, str(path)]
+        else:
+            cmd = [
+                _wsl_bin() or "wsl",
+                "-e",
+                "qemu-x86_64",
+                to_build_path(path, True),
+            ]
+    elif mode == "run" and not sys.platform.startswith("linux"):
+        cmd = [_wsl_bin() or "wsl", "-e", to_build_path(path, True)]
     else:
         cmd = [str(path)]
     result = subprocess.run(cmd, check=False, capture_output=True, cwd=str(work))
@@ -604,6 +644,11 @@ def main() -> int:
         action="store_true",
         help="M294: also require PT_LOAD p_offset≡p_vaddr (mod align) on ok cases",
     )
+    parser.add_argument(
+        "--require-exec",
+        action="store_true",
+        help="M301: fail if mode=compile-elf (CI must run via run|qemu)",
+    )
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--list", action="store_true")
     args = parser.parse_args()
@@ -617,6 +662,13 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="cxc-cc-conf-"))
     counts = {"pass": 0, "xfail": 0, "bug": 0, "xpass": 0, "reject": 0}
     run_mode = elf_run_mode()
+    if args.require_exec and run_mode == "compile-elf":
+        print(
+            "CC_CONF: mode=compile-elf forbidden under --require-exec "
+            "(install qemu-x86_64 or WSL+qemu-user)",
+            file=sys.stderr,
+        )
+        return 2
     try:
         compiler = build_compiler(work)
         for case in suite:

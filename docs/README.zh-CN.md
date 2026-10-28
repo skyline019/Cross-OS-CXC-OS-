@@ -4,10 +4,10 @@ CXC/OS 是一个从 **原生 UEFI** 启动的独立 x86-64 内核工程。宿主
 
 | 项 | 当前值 |
 |---|---|
-| 基线 | **Milestone 298 / v2.91.0**（CCDRV + planted≤22 + asm_mode；GUIUX/IDE 可选） |
+| 基线 | **Milestone 302 / v2.92.0**（CCDRV + planted:13 + asm_mode 深 CF + Win CC_CONF qemu；GUIUX/IDE 可选） |
 | 证据 | QEMU + OVMF；串口 `CXC_OS_SELF_TEST_PASS` + 外部 peer `peer_ok=1` |
 | 机上合同终点 | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42`；有 GOP 时另见 `ONBOX_IDE_PASS` / `ONBOX_GUIUX_PASS` |
-| 路线说明 | [`a2-mini-cc.md`](a2-mini-cc.md) · [`midpoint-assessment-30.md`](midpoint-assessment-30.md) |
+| 路线说明 | [`a2-mini-cc.md`](a2-mini-cc.md) · [`midpoint-assessment-32.md`](midpoint-assessment-32.md) |
 | 产品目标 | [`product-goals.md`](product-goals.md)（一阶段主靶仍为 **A2**；**本窗未宣称 A2**） |
 
 默认 `qemu-test` 成功时串口应同时出现：
@@ -18,7 +18,7 @@ ONBOX_CCDRV_PASS
 peer_ok=1
 ```
 
-以及工具链审计样例：`spawn_ld: 1`；`spawn_as`/`spawn_cc` 双窗（legacy 或 `spawn_as==inputs_s` + `planted≤33`）；`ccdrv: 1` `tdrv: 1` `edge: 1`。
+以及工具链审计样例：`spawn_ld: 1`；`spawn_as`/`spawn_cc` 双窗（legacy 或 `spawn_as==inputs_s` + `planted≤22`，经验 `planted:13`/`inputs_s:44`）；`ccdrv: 1` `tdrv: 1` `edge: 1`。
 
 ---
 

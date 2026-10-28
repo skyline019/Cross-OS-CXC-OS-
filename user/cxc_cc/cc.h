@@ -161,6 +161,7 @@ typedef struct CcLoop {
     size_t cont_patch[CC_BREAK_MAX];
     int ncont;
     int is_switch;
+    int asm_cont_id; /* M299: known .LccN for continue (0 = forward patch) */
 } CcLoop;
 
 typedef struct CcFn {
@@ -288,6 +289,7 @@ void cc_asm_jmp_label(CcEmit* em, int id);     /* jmp .LccN (asm only) */
 void cc_asm_je_label(CcEmit* em, int id);
 void cc_asm_jne_label(CcEmit* em, int id);
 void cc_emit_asm_test_rax(CcEmit* em); /* test %eax,%eax */
+void cc_emit_asm_cmp_rax_imm(CcEmit* em, long imm); /* M299: cmp $imm, %rax */
 void cc_emit_byte(CcEmit* em, unsigned char b);
 void cc_emit_bytes(CcEmit* em, const void* p, size_t n);
 void cc_emit_u32(CcEmit* em, unsigned v);

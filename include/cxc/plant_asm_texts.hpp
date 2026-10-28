@@ -37,8 +37,17 @@ static const char plant_asm_strnlen[] = ".text\n.globl strnlen\nstrnlen:\n\txor 
 static const char plant_asm_memchr[] = ".text\n.globl memchr\nmemchr:\n\ttest %rdx, %rdx\n\tjz .Ln\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %ecx\n.L:\n\tmovzbl (%rdi), %eax\n\tcmp %ecx, %eax\n\tje .Lf\n\tadd $1, %rdi\n\tsub $1, %rdx\n\tjnz .L\n.Ln:\n\txor %eax, %eax\n\tret\n.Lf:\n\tmov %rdi, %rax\n\tret\n";
 static const char plant_asm_strlen[] = ".text\n.globl strlen\nstrlen:\n\txor %ecx, %ecx\n.L:\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .Ld\n\tadd $1, %rdi\n\tadd $1, %ecx\n\tjmp .L\n.Ld:\n\tmov %ecx, %eax\n\tret\n";
 static const char plant_asm_strchr[] = ".text\n.globl strchr\nstrchr:\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %edx\n.L:\n\tmovzbl (%rdi), %eax\n\tcmp %edx, %eax\n\tje .Lf\n\ttest %eax, %eax\n\tjz .Ln\n\tadd $1, %rdi\n\tjmp .L\n.Lf:\n\tmov %rdi, %rax\n\tret\n.Ln:\n\txor %eax, %eax\n\tret\n";
+static const char plant_asm_memset[] = ".text\n.globl memset\nmemset:\n\tpush %rdi\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %rdx, %rcx\n\ttest %rcx, %rcx\n\tjz .Ld\n\trep stosb\n.Ld:\n\tpop %rax\n\tret\n";
+static const char plant_asm_memcmp[] = ".text\n.globl memcmp\nmemcmp:\n\ttest %rdx, %rdx\n\tjz .Lz\n.L:\n\tmovzbl (%rdi), %eax\n\tmovzbl (%rsi), %ecx\n\tcmp %ecx, %eax\n\tjne .Ld\n\tadd $1, %rdi\n\tadd $1, %rsi\n\tsub $1, %rdx\n\tjnz .L\n.Lz:\n\txor %eax, %eax\n\tret\n.Ld:\n\tsub %ecx, %eax\n\tret\n";
+static const char plant_asm_strcmp[] = ".text\n.globl strcmp\nstrcmp:\n.L:\n\tmovzbl (%rdi), %eax\n\tmovzbl (%rsi), %ecx\n\tcmp %ecx, %eax\n\tjne .Ld\n\ttest %eax, %eax\n\tjz .Lz\n\tadd $1, %rdi\n\tadd $1, %rsi\n\tjmp .L\n.Ld:\n\tsub %ecx, %eax\n\tret\n.Lz:\n\txor %eax, %eax\n\tret\n";
+static const char plant_asm_strncmp[] = ".text\n.globl strncmp\nstrncmp:\n\ttest %rdx, %rdx\n\tjz .Lz\n.L:\n\tmovzbl (%rdi), %eax\n\tmovzbl (%rsi), %ecx\n\tcmp %ecx, %eax\n\tjne .Ld\n\ttest %eax, %eax\n\tjz .Lz\n\tadd $1, %rdi\n\tadd $1, %rsi\n\tsub $1, %rdx\n\tjnz .L\n.Lz:\n\txor %eax, %eax\n\tret\n.Ld:\n\tsub %ecx, %eax\n\tret\n";
+static const char plant_asm_strcpy[] = ".text\n.globl strcpy\nstrcpy:\n\tpush %rdi\n.L:\n\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n\tadd $1, %rsi\n\tadd $1, %rdi\n\ttest %eax, %eax\n\tjnz .L\n\tpop %rax\n\tret\n";
+static const char plant_asm_stpcpy[] = ".text\n.globl __stpcpy\n.globl stpcpy\n__stpcpy:\nstpcpy:\n.L:\n\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n\tadd $1, %rsi\n\tadd $1, %rdi\n\ttest %eax, %eax\n\tjnz .L\n\tsub $1, %rdi\n\tmov %rdi, %rax\n\tret\n";
+static const char plant_asm_strcat[] = ".text\n.globl strcat\nstrcat:\n\tpush %rdi\n.F:\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .C\n\tadd $1, %rdi\n\tjmp .F\n.C:\n\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n\tadd $1, %rsi\n\tadd $1, %rdi\n\ttest %eax, %eax\n\tjnz .C\n\tpop %rax\n\tret\n";
+static const char plant_asm_strchrnul[] = ".text\n.globl __strchrnul\n.globl strchrnul\n__strchrnul:\nstrchrnul:\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %edx\n.L:\n\tmovzbl (%rdi), %eax\n\tcmp %edx, %eax\n\tje .Lf\n\ttest %eax, %eax\n\tjz .Lf\n\tadd $1, %rdi\n\tjmp .L\n.Lf:\n\tmov %rdi, %rax\n\tret\n";
+static const char plant_asm_atoi[] = ".text\n.globl atoi\natoi:\n\txor %eax, %eax\n.L:\n\tmovzbl (%rdi), %edx\n\tsub $48, %rdx\n\tcmp $9, %rdx\n\tja .D\n\timul $10, %eax\n\tadd %edx, %eax\n\tadd $1, %rdi\n\tjmp .L\n.D:\n\tret\n";
 
-enum { PLANT_ASM_COUNT = 31 };
+enum { PLANT_ASM_COUNT = 40 };
 static const PlantAsmText plant_asm_texts[PLANT_ASM_COUNT] = {
     {"disk/dig.s", plant_asm_isdigit},
     {"disk/labs.s", plant_asm_labs},
@@ -71,5 +80,14 @@ static const PlantAsmText plant_asm_texts[PLANT_ASM_COUNT] = {
     {"disk/mchr.s", plant_asm_memchr},
     {"disk/slen.s", plant_asm_strlen},
     {"disk/schr.s", plant_asm_strchr},
+    {"disk/mset.s", plant_asm_memset},
+    {"disk/mcmp.s", plant_asm_memcmp},
+    {"disk/scmp.s", plant_asm_strcmp},
+    {"disk/sncmp.s", plant_asm_strncmp},
+    {"disk/scpy.s", plant_asm_strcpy},
+    {"disk/stpc.s", plant_asm_stpcpy},
+    {"disk/scat.s", plant_asm_strcat},
+    {"disk/snul.s", plant_asm_strchrnul},
+    {"disk/atoi.s", plant_asm_atoi},
 };
 

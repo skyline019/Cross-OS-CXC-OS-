@@ -323,6 +323,20 @@ void cc_asm_jne_label(CcEmit* em, int id) {
     cc_emit_asm_puts(em, "\n");
 }
 
+void cc_emit_asm_cmp_rax_imm(CcEmit* em, long imm) {
+    if (!em || !em->asm_mode) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tcmp $");
+    if (imm < 0) {
+        cc_emit_asm_puts(em, "-");
+        asm_u32(em, (unsigned)(-imm));
+    } else {
+        asm_u32(em, (unsigned)imm);
+    }
+    cc_emit_asm_puts(em, ", %rax\n");
+}
+
 void cc_emit_asm_test_rax(CcEmit* em) {
     if (!em || !em->asm_mode) {
         return;
@@ -818,48 +832,44 @@ void cc_emit_fn_prologue(CcEmit* em, int arity) {
 }
 
 void cc_emit_fn_prologue_sysv(CcEmit* em, int arity) {
-    /* Frame without zeroing first — rep stosq would clobber rdi/rsi/rdx/rcx. */
+    /* Frame without zeroing first — rep stosq would clobber rdi/rsi/rdx/rcx.
+     * M299: emit frame GAS once; arg mov→store goes through store_local asm. */
     if (em->asm_mode) {
         cc_emit_asm_puts(em, "\tpush %rbp\n");
         cc_emit_asm_puts(em, "\tmov %rsp, %rbp\n");
         cc_emit_asm_puts(em, "\tsub $");
         asm_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
         cc_emit_asm_puts(em, ", %rsp\n");
-        if (arity >= 1) {
-            cc_emit_asm_puts(em, "\tmov %rdi, %rax\n");
-            cc_emit_asm_puts(em, "\tmov %rax, -8(%rbp)\n");
-        }
-        if (arity >= 2) {
-            cc_emit_asm_puts(em, "\tmov %rsi, %rax\n");
-            cc_emit_asm_puts(em, "\tmov %rax, -16(%rbp)\n");
-        }
-        if (arity >= 3) {
-            cc_emit_asm_puts(em, "\tmov %rdx, %rax\n");
-            cc_emit_asm_puts(em, "\tmov %rax, -24(%rbp)\n");
-        }
-        if (arity >= 4) {
-            cc_emit_asm_puts(em, "\tmov %rcx, %rax\n");
-            cc_emit_asm_puts(em, "\tmov %rax, -32(%rbp)\n");
-        }
-        /* arity≥5 stack args: binary path only for now */
     }
     cc_emit_byte(em, 0x55);                      /* push rbp */
     cc_emit_bytes(em, "\x48\x89\xE5", 3);         /* mov rbp, rsp */
     cc_emit_bytes(em, "\x48\x81\xEC", 3);         /* sub rsp, imm */
     cc_emit_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
     if (arity >= 1) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rdi, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xF8", 3); /* mov rax, rdi */
         cc_emit_store_local(em, 0);
     }
     if (arity >= 2) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rsi, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xF0", 3); /* mov rax, rsi */
         cc_emit_store_local(em, 1);
     }
     if (arity >= 3) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rdx, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xD0", 3); /* mov rax, rdx */
         cc_emit_store_local(em, 2);
     }
     if (arity >= 4) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rcx, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xC8", 3); /* mov rax, rcx */
         cc_emit_store_local(em, 3);
     }
@@ -1483,10 +1493,18 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             }
         }
     }
+    /* M300: musl-style aliases share one entry (`__strchrnul`/`strchrnul`).
+     * Size spans to the next distinct entry (or code end), not the next
+     * symbol row — same-entry rows would otherwise get end<=start. */
     for (i = 0; i < nfn; i++) {
         size_t start = em->fns[order[i]].entry;
-        size_t end =
-            (i + 1 < nfn) ? em->fns[order[i + 1]].entry : em->code_len;
+        size_t end = em->code_len;
+        for (j = i + 1; j < nfn; j++) {
+            if (em->fns[order[j]].entry > start) {
+                end = em->fns[order[j]].entry;
+                break;
+            }
+        }
         if (end <= start || end > em->code_len) {
             return -1;
         }

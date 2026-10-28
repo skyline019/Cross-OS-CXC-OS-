@@ -76,8 +76,10 @@ jobs:
       - name: Host toolchain chaos (M142)
         run: python3 tools/run_cc_chaos_test.py
 
-      - name: CXC_A2 semantic conformance (M287)
-        run: python3 tools/cc_conformance.py --strict --elf-check
+      - name: CXC_A2 semantic conformance (M287/M301)
+        run: python3 tools/cc_conformance.py --strict --elf-check --require-exec
+        env:
+          CXC_REQUIRE_CONF_EXEC: "1"
 
       - name: Default qemu-test (PASS + peer_ok)
         run: cmake --build build/uefi --target qemu-test
@@ -280,7 +282,7 @@ jobs:
           grep -F 'hard: 1' build/uefi/qemu-test/serial.log
           grep -F 'fat: 1' build/uefi/qemu-test/serial.log
           grep -F 'as: 1' build/uefi/qemu-test/serial.log
-          # M293/M295 dual windows: spawn_cc 3|4; spawn_as 4 OR ==inputs_s with planted<=33
+          # M293/M300 dual windows: spawn_cc 3|4; spawn_as 4 OR ==inputs_s with planted<=22
           python3 tools/check_spawn_dual_window.py build/uefi/qemu-test/serial.log
           grep -F 'src: 1' build/uefi/qemu-test/serial.log
           grep -F 'cc: 1' build/uefi/qemu-test/serial.log
@@ -409,7 +411,10 @@ jobs:
   windows-uefi-build:
     name: Windows (MSYS2 build + host contract)
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      # M301: CC_CONF must run guest ELF (qemu|run), not compile-elf-only.
+      CXC_REQUIRE_CONF_EXEC: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -421,6 +426,17 @@ jobs:
             mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-python
+
+      # M301: MSYS2 qemu is system-only; use WSL qemu-user for mode=qemu.
+      - uses: Vampire/setup-wsl@v5
+        with:
+          distribution: Ubuntu-24.04
+          additional-packages: qemu-user-static
+
+      - name: Probe WSL qemu-user
+        shell: pwsh
+        run: |
+          wsl -e sh -c "command -v qemu-x86_64 && qemu-x86_64 --version | head -1"
 
       - name: Configure Release (-Werror)
         shell: msys2 {0}
@@ -446,6 +462,11 @@ jobs:
           cmake -S tests/host -B build/host-tests
           cmake --build build/host-tests --parallel
           ctest --test-dir build/host-tests --output-on-failure
+
+      - name: CXC_A2 conformance (M301 require-exec)
+        shell: msys2 {0}
+        run: >-
+          python3 tools/cc_conformance.py --strict --elf-check --require-exec
 
       - name: Host-side test contract
         shell: msys2 {0}

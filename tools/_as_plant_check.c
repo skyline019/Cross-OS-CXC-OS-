@@ -27,12 +27,20 @@ static const struct {
     {"bzero.s", "bzero"},       {"bcmp.s", "bcmp"},
     {"strnlen.s", "strnlen"},   {"memchr.s", "memchr"},
     {"strlen.s", "strlen"},     {"strchr.s", "strchr"},
+    /* M300 batch3 */
+    {"memset.s", "memset"},     {"memcmp.s", "memcmp"},
+    {"strcmp.s", "strcmp"},     {"strncmp.s", "strncmp"},
+    {"strcpy.s", "strcpy"},     {"stpcpy.s", "stpcpy"},
+    {"strcat.s", "strcat"},     {"strchrnul.s", "strchrnul"},
+    {"atoi.s", "atoi"},
+    /* M300 musl-compat aliases (same ET_REL as primary) */
+    {"stpcpy.s", "__stpcpy"},   {"strchrnul.s", "__strchrnul"},
 };
 
-static const char* expect_sym(const char* fname) {
+static int expect_known(const char* fname) {
     for (size_t i = 0; i < sizeof(k_expect) / sizeof(k_expect[0]); ++i) {
         if (strcmp(fname, k_expect[i].file) == 0) {
-            return k_expect[i].sym;
+            return 1;
         }
     }
     return 0;
@@ -142,8 +150,7 @@ int main(void) {
         if (L < 3 || strcmp(e->d_name + L - 2, ".s") != 0) {
             continue;
         }
-        want = expect_sym(e->d_name);
-        if (!want) {
+        if (!expect_known(e->d_name)) {
             fprintf(stderr, "FAIL unexpected plant file %s\n", e->d_name);
             fails++;
             continue;
@@ -179,12 +186,22 @@ int main(void) {
         if (as_compile(buf, (size_t)sz, &elf, &eln) != 0 || !elf || eln < 64) {
             fprintf(stderr, "FAIL as %s code=%d\n", e->d_name, as_last_fail_code());
             fails++;
-        } else if (!elf_has_global(elf, eln, want)) {
-            fprintf(stderr, "FAIL sym %s missing global %s\n", e->d_name, want);
-            fails++;
-        } else {
-            printf("ok %s -> %s (%zu)\n", e->d_name, want, eln);
-            n++;
+            free(buf);
+            continue;
+        }
+        for (size_t i = 0; i < sizeof(k_expect) / sizeof(k_expect[0]); ++i) {
+            if (strcmp(e->d_name, k_expect[i].file) != 0) {
+                continue;
+            }
+            want = k_expect[i].sym;
+            if (!elf_has_global(elf, eln, want)) {
+                fprintf(stderr, "FAIL sym %s missing global %s\n", e->d_name,
+                        want);
+                fails++;
+            } else {
+                printf("ok %s -> %s (%zu)\n", e->d_name, want, eln);
+                n++;
+            }
         }
         /* as_compile owns elf buffer (arena); do not free. */
         free(buf);

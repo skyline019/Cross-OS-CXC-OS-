@@ -11,9 +11,9 @@
 
 | Item | Value |
 |---|---|
-| Baseline | **Milestone 285 / v2.81.0** (mini-IDE + CCDRV) |
+| Baseline | **Milestone 302 / v2.92.0** (CCDRV + planted batch3 + Win CC_CONF qemu) |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
-| On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_ld:1`; `spawn_as`/`spawn_cc` dual-window; `planted≤33`) |
+| On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_ld:1`; `spawn_as==inputs_s`; `planted:13≤22`) |
 | Optional GUI | GOP + PS/2 mini-IDE → `ONBOX_IDE_PASS`; GUIUX (mouse/wm/VT100/`/dev/fb0`/`tty0`) → `ONBOX_GUIUX_PASS` (not CI-gated) |
 | Evidence | QEMU + OVMF, EDU + e1000e + virtio-blk, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
