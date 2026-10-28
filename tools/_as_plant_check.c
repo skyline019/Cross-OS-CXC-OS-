@@ -35,6 +35,21 @@ static const struct {
     {"atoi.s", "atoi"},
     /* M300 musl-compat aliases (same ET_REL as primary) */
     {"stpcpy.s", "__stpcpy"},   {"strchrnul.s", "__strchrnul"},
+    /* M303 mem/str + bridge */
+    {"memrchr.s", "memrchr"},   {"memcpy.s", "memcpy"},
+    {"memmove.s", "memmove"},   {"strcspn.s", "strcspn"},
+    {"strspn.s", "strspn"},     {"strpbrk.s", "strpbrk"},
+    {"strrchr.s", "strrchr"},   {"tcap_bridge_add.s", "tcap_bridge_add"},
+    {"memrchr.s", "__memrchr"}, {"memcpy.s", "__memcpy_fwd"},
+    /* M304 hard_stubs + strdup */
+    {"hard_stubs.s", "malloc"}, {"hard_stubs.s", "free"},
+    {"hard_stubs.s", "___errno_location"},
+    {"hard_stubs.s", "__stack_chk_fail"},
+    {"hard_stubs.s", "__uflow"},
+    {"strdup.s", "strdup"},
+    /* M305 strtol chain */
+    {"strtol.s", "strtol"},   {"intscan.s", "__intscan"},
+    {"shgetc.s", "__shgetc"}, {"shgetc.s", "__shlim"},
 };
 
 static int expect_known(const char* fname) {

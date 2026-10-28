@@ -24,9 +24,9 @@
 |---|---|---|
 | D1 词法 | 未知字符/`#` 裸用 → 编译失败（不再静默 EOF） | M287 已硬失败 |
 | D2–D8 / D3 / D6 / D7 | M288–M292 语义网已全绿（59=`pass`） | 完成 |
-| D11 种植 | spawn 双窗；planted 13≤22（40 叶机上 as） | M293/M295/M298/M300 |
+| D11 种植 | spawn 双窗；**planted==0**（53 叶机上 as；13→0 清债、链保留） | M293–M306 |
 | D12 诊断 | 失败追加 `DLOC:line:col`；`cc -E`/`-S`；S-* 深 CF 回编 | M296/M297/M299 |
-| D9/D10 | ELF 同余 + `--elf-check` + [中场 32](midpoint-assessment-32.md) | M294 完成 |
+| D9/D10 | ELF 同余 + `--elf-check` + [中场 33](midpoint-assessment-33.md) | M294 完成 |
 | D13 Win 语义 | CI `CC_CONF mode=qemu\|run`；禁 `compile-elf` 绿条 | M301 |
 
 ## 3. 「能独立跑复杂方言」四条（目标，非现状）

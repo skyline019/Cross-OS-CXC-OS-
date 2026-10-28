@@ -752,8 +752,7 @@ class ContractRunner:
         assert b"hard: 1" in serial
         assert b"fat: 1" in serial
         assert b"as: 1" in serial
-        # M293/M295/M300 dual windows (numbers may drop as planted→as; relational only):
-        # spawn_cc: legacy 3 or 4; spawn_as: legacy 4 OR == inputs_s; planted <= 22 (M298 lock)
+        # M293/M306: spawn_cc legacy 3|4; spawn_as legacy 4 OR == inputs_s; planted == 0
         import re as _re
 
         legacy_as = (
@@ -772,15 +771,15 @@ class ContractRunner:
         relational_ok = False
         if rel_m:
             sas, scc, ins, plant = (int(rel_m.group(i)) for i in range(1, 5))
-            relational_ok = sas == ins and plant <= 22 and scc in (3, 4)
+            relational_ok = sas == ins and plant == 0 and scc in (3, 4)
         assert legacy_as in serial or relational_cc in serial or relational_ok
         planted_m = _re.search(rb"planted: (\d+)", serial)
         assert planted_m is not None
-        assert int(planted_m.group(1)) <= 22
+        assert int(planted_m.group(1)) == 0
         inputs_s_m = _re.search(rb"inputs_s: (\d+)", serial)
         spawn_as_m = _re.search(rb"spawn_as: (\d+)", serial)
         assert inputs_s_m is not None and spawn_as_m is not None
-        # After M295: relational window is the live path (spawn_as == inputs_s).
+        # After M295/M306: relational window is the live path (spawn_as == inputs_s).
         assert int(spawn_as_m.group(1)) == int(inputs_s_m.group(1))
         assert b"fat_bytes: 1049088" in serial
         assert ONBOX_CCDRV_PASS.encode() in serial

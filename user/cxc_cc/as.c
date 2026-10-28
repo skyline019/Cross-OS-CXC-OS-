@@ -1170,6 +1170,26 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                             cc_emit_byte(&em, (unsigned char)(modrm_rsi | 0x40));
                             cc_emit_byte(&em, (unsigned char)disp);
                         }
+                    } else if (eq(base, "%rax") || eq(base, "%eax")) {
+                        /* M303: movzbl (%rax), %e*x — HARD deepen probes */
+                        unsigned char modrm_rax = 0x00;
+                        if (eq(t3, "%eax") || eq(t3, "%rax")) {
+                            modrm_rax = 0x00;
+                        } else if (eq(t3, "%ecx") || eq(t3, "%rcx")) {
+                            modrm_rax = 0x08;
+                        } else if (eq(t3, "%edx") || eq(t3, "%rdx")) {
+                            modrm_rax = 0x10;
+                        } else {
+                            g_as_fail = AS_FAIL;
+                            return -1;
+                        }
+                        if (disp == 0) {
+                            cc_emit_bytes(&em, "\x0F\xB6", 2);
+                            cc_emit_byte(&em, modrm_rax);
+                        } else {
+                            g_as_fail = AS_FAIL;
+                            return -1;
+                        }
                     } else {
                         g_as_fail = AS_FAIL;
                         return -1;
@@ -1259,6 +1279,14 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
             } else if ((eq(t1, "%eax") || eq(t1, "%rax")) &&
                        (eq(t3, "%ecx") || eq(t3, "%rcx"))) {
                 cc_emit_bytes(&em, "\x39\xC1", 2);
+            } else if ((eq(t1, "%esi") || eq(t1, "%rsi")) &&
+                       (eq(t3, "%edi") || eq(t3, "%rdi"))) {
+                /* M303: cmp %rsi, %rdi — memmove overlap */
+                if (eq(t1, "%rsi") || eq(t3, "%rdi")) {
+                    cc_emit_bytes(&em, "\x48\x39\xF7", 3);
+                } else {
+                    cc_emit_bytes(&em, "\x39\xF7", 2);
+                }
             } else if (t1[0] == '$') {
                 long imm = 0;
                 if (parse_imm(t1 + 1, &imm) != 0) {
@@ -1723,7 +1751,8 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                         return -1;
                     }
                 } else {
-                    /* store: %eax|%rax|%al, disp(%rbp|%rdi|%rax) or (%reg) */
+                    /* store: %eax|%rax|%al, disp(%rbp|%rdi|%rax) or (%reg)
+                     * M304: mov %rax, name(%rip) */
                     long disp = 0;
                     char base[AS_TOK_MAX];
                     int use64;
@@ -1733,68 +1762,122 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                         return -1;
                     }
                     use64 = eq(t1, "%rax");
-                    if (t3[0] == '(') {
-                        disp = 0;
-                        if (read_tok(&p, end, base, sizeof(base)) <= 0 ||
-                            read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
-                            t2[0] != ')') {
-                            g_as_fail = AS_FAIL;
-                            return -1;
-                        }
-                    } else {
-                        if (parse_imm(t3, &disp) != 0) {
-                            g_as_fail = AS_FAIL;
-                            return -1;
-                        }
+                    if (is_ident0(t3[0]) && !use8) {
+                        int di;
+                        size_t d_off;
+                        size_t k;
+                        size_t disp_at;
                         if (read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
                             t2[0] != '(' ||
                             read_tok(&p, end, base, sizeof(base)) <= 0 ||
+                            !(eq(base, "%rip") || eq(base, "rip")) ||
                             read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
                             t2[0] != ')') {
                             g_as_fail = AS_FAIL;
                             return -1;
                         }
-                    }
-                    if (use8) {
-                        /* M300: mov %al, (%rdi|%rsi) for strcpy/stpcpy */
-                        if (disp != 0) {
+                        if (!use64) {
                             g_as_fail = AS_FAIL;
                             return -1;
                         }
-                        if (eq(base, "%rdi") || eq(base, "%edi")) {
-                            cc_emit_bytes(&em, "\x88\x07", 2);
-                        } else if (eq(base, "%rsi") || eq(base, "%esi")) {
-                            cc_emit_bytes(&em, "\x88\x06", 2);
-                        } else {
-                            g_as_fail = AS_FAIL;
-                            return -1;
-                        }
-                    } else if (eq(base, "%rbp") || eq(base, "%ebp")) {
-                        /* M297: match cc_emit_store_local (disp32) when needed */
-                        if (use64 || disp < -128 || disp > 127) {
-                            cc_emit_bytes(&em, "\x48\x89\x85", 3);
-                            cc_emit_i32(&em, (int)disp);
-                        } else {
-                            cc_emit_bytes(&em, "\x89\x45", 2);
-                            cc_emit_byte(&em, (unsigned char)disp);
-                        }
-                    } else if (eq(base, "%rdi") || eq(base, "%edi")) {
-                        if (disp == 0) {
-                            cc_emit_bytes(&em, "\x89\x07", 2);
-                        } else {
-                            cc_emit_bytes(&em, "\x89\x47", 2);
-                            cc_emit_byte(&em, (unsigned char)disp);
-                        }
-                    } else if (eq(base, "%rax") || eq(base, "%eax")) {
-                        if (disp == 0) {
-                            cc_emit_bytes(&em, "\x89\x00", 2);
-                        } else {
-                            cc_emit_bytes(&em, "\x89\x40", 2);
-                            cc_emit_byte(&em, (unsigned char)disp);
+                        di = data_find(dnames, doffs, ndata, t3);
+                        d_off = di >= 0 ? doffs[di] : 0;
+                        /* mov %rax, name(%rip) */
+                        cc_emit_bytes(&em, "\x48\x89\x05", 3);
+                        disp_at = em.code_len;
+                        cc_emit_i32(&em, 0);
+                        cc_reloc_add(disp_at, d_off);
+                        if (di < 0) {
+                            if (nlea_pend >= AS_LEA_PEND) {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                            k = 0;
+                            while (k < CC_IDENT_MAX && t3[k]) {
+                                lea_names[nlea_pend][k] = t3[k];
+                                k++;
+                            }
+                            if (t3[k] != 0) {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                            lea_names[nlea_pend][k] = 0;
+                            lea_ri[nlea_pend] = cc_reloc_count() - 1;
+                            nlea_pend++;
                         }
                     } else {
-                        g_as_fail = AS_FAIL;
-                        return -1;
+                        if (t3[0] == '(') {
+                            disp = 0;
+                            if (read_tok(&p, end, base, sizeof(base)) <= 0 ||
+                                read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
+                                t2[0] != ')') {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                        } else {
+                            if (parse_imm(t3, &disp) != 0) {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                            if (read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
+                                t2[0] != '(' ||
+                                read_tok(&p, end, base, sizeof(base)) <= 0 ||
+                                read_tok(&p, end, t2, sizeof(t2)) <= 0 ||
+                                t2[0] != ')') {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                        }
+                        if (use8) {
+                            /* M300: mov %al, (%rdi|%rsi) for strcpy/stpcpy */
+                            if (disp != 0) {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                            if (eq(base, "%rdi") || eq(base, "%edi")) {
+                                cc_emit_bytes(&em, "\x88\x07", 2);
+                            } else if (eq(base, "%rsi") || eq(base, "%esi")) {
+                                cc_emit_bytes(&em, "\x88\x06", 2);
+                            } else {
+                                g_as_fail = AS_FAIL;
+                                return -1;
+                            }
+                        } else if (eq(base, "%rbp") || eq(base, "%ebp")) {
+                            /* M297: match cc_emit_store_local (disp32) when needed */
+                            if (use64 || disp < -128 || disp > 127) {
+                                cc_emit_bytes(&em, "\x48\x89\x85", 3);
+                                cc_emit_i32(&em, (int)disp);
+                            } else {
+                                cc_emit_bytes(&em, "\x89\x45", 2);
+                                cc_emit_byte(&em, (unsigned char)disp);
+                            }
+                        } else if (eq(base, "%rdi") || eq(base, "%edi")) {
+                            /* M305: REX.W store of %rax into FILE* field */
+                            if (disp == 0) {
+                                if (use64) {
+                                    cc_emit_bytes(&em, "\x48\x89\x07", 3);
+                                } else {
+                                    cc_emit_bytes(&em, "\x89\x07", 2);
+                                }
+                            } else {
+                                cc_emit_bytes(&em, "\x89\x47", 2);
+                                cc_emit_byte(&em, (unsigned char)disp);
+                            }
+                        } else if (eq(base, "%rax") || eq(base, "%eax")) {
+                            if (disp == 0) {
+                                if (use64) {
+                                    cc_emit_bytes(&em, "\x48\x89\x00", 3);
+                                } else {
+                                    cc_emit_bytes(&em, "\x89\x00", 2);
+                                }
+                            } else {
+                                cc_emit_bytes(&em, "\x89\x40", 2);
+                                cc_emit_byte(&em, (unsigned char)disp);
+                            }
+                        } else {
+                            g_as_fail = AS_FAIL;
+                            return -1;
+                        }
                     }
                 }
             } else if (is_ident0(t1[0])) {
@@ -1878,15 +1961,31 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                         cc_emit_byte(&em, (unsigned char)disp);
                     }
                 } else if (eq(base, "%rdi") || eq(base, "%edi")) {
+                    /* M305: REX.W when loading into %rax (FILE* rpos) */
                     if (disp == 0) {
-                        cc_emit_bytes(&em, "\x8B\x07", 2);
-                    } else {
-                        cc_emit_bytes(&em, "\x8B\x47", 2);
+                        if (eq(t3, "%rax")) {
+                            cc_emit_bytes(&em, "\x48\x8B\x07", 3);
+                        } else {
+                            cc_emit_bytes(&em, "\x8B\x07", 2);
+                        }
+                    } else if (disp >= -128 && disp <= 127) {
+                        if (eq(t3, "%rax")) {
+                            cc_emit_bytes(&em, "\x48\x8B\x47", 3);
+                        } else {
+                            cc_emit_bytes(&em, "\x8B\x47", 2);
+                        }
                         cc_emit_byte(&em, (unsigned char)disp);
+                    } else {
+                        g_as_fail = AS_FAIL;
+                        return -1;
                     }
                 } else if (eq(base, "%rax") || eq(base, "%eax")) {
                     if (disp == 0) {
-                        cc_emit_bytes(&em, "\x8B\x00", 2);
+                        if (eq(t3, "%rax")) {
+                            cc_emit_bytes(&em, "\x48\x8B\x00", 3);
+                        } else {
+                            cc_emit_bytes(&em, "\x8B\x00", 2);
+                        }
                     } else {
                         cc_emit_bytes(&em, "\x8B\x40", 2);
                         cc_emit_byte(&em, (unsigned char)disp);
@@ -1993,8 +2092,8 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                     return -1;
                 }
                 cc_emit_bytes(&em, "\x01\xF0", 2);
-            } else if (eq(t1, "%edx") || eq(t1, "%rdx")) {
-                /* M297: add %rdx, %rax */
+            } else if (eq(t1, "%ecx") || eq(t1, "%rcx")) {
+                /* M304: add %rcx, %rax — malloc bump ptr */
                 if (read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != ',' ||
                     read_tok(&p, end, t3, sizeof(t3)) <= 0) {
                     g_as_fail = AS_FAIL;
@@ -2004,10 +2103,55 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                     g_as_fail = AS_FAIL;
                     return -1;
                 }
-                if (eq(t1, "%rdx") || eq(t3, "%rax") || eq(t0, "addq")) {
-                    cc_emit_bytes(&em, "\x48\x01\xD0", 3);
+                if (eq(t1, "%rcx") || eq(t3, "%rax") || eq(t0, "addq")) {
+                    cc_emit_bytes(&em, "\x48\x01\xC8", 3);
                 } else {
-                    cc_emit_bytes(&em, "\x01\xD0", 2);
+                    cc_emit_bytes(&em, "\x01\xC8", 2);
+                }
+            } else if (eq(t1, "%edx") || eq(t1, "%rdx")) {
+                /* M297: add %rdx, %rax; M303: add %rdx, %rdi|%rsi */
+                if (read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != ',' ||
+                    read_tok(&p, end, t3, sizeof(t3)) <= 0) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                if (eq(t3, "%eax") || eq(t3, "%rax")) {
+                    if (eq(t1, "%rdx") || eq(t3, "%rax") || eq(t0, "addq")) {
+                        cc_emit_bytes(&em, "\x48\x01\xD0", 3);
+                    } else {
+                        cc_emit_bytes(&em, "\x01\xD0", 2);
+                    }
+                } else if (eq(t3, "%edi") || eq(t3, "%rdi")) {
+                    if (eq(t1, "%rdx") || eq(t3, "%rdi") || eq(t0, "addq")) {
+                        cc_emit_bytes(&em, "\x48\x01\xD7", 3);
+                    } else {
+                        cc_emit_bytes(&em, "\x01\xD7", 2);
+                    }
+                } else if (eq(t3, "%esi") || eq(t3, "%rsi")) {
+                    if (eq(t1, "%rdx") || eq(t3, "%rsi") || eq(t0, "addq")) {
+                        cc_emit_bytes(&em, "\x48\x01\xD6", 3);
+                    } else {
+                        cc_emit_bytes(&em, "\x01\xD6", 2);
+                    }
+                } else {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+            } else if (eq(t1, "%eax") || eq(t1, "%rax")) {
+                /* M303: add %rax, %rdi — strpbrk after strcspn */
+                if (read_tok(&p, end, t2, sizeof(t2)) <= 0 || t2[0] != ',' ||
+                    read_tok(&p, end, t3, sizeof(t3)) <= 0) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                if (!(eq(t3, "%edi") || eq(t3, "%rdi"))) {
+                    g_as_fail = AS_FAIL;
+                    return -1;
+                }
+                if (eq(t1, "%rax") || eq(t3, "%rdi") || eq(t0, "addq")) {
+                    cc_emit_bytes(&em, "\x48\x01\xC7", 3);
+                } else {
+                    cc_emit_bytes(&em, "\x01\xC7", 2);
                 }
             } else {
                 g_as_fail = AS_FAIL;
@@ -2048,6 +2192,13 @@ int as_compile(const char* src, size_t len, unsigned char** out_elf,
                 g_as_fail = AS_FAIL;
                 return -1;
             }
+        } else if (eq(t0, "ud2")) {
+            /* M304: __stack_chk_fail plant leaf */
+            if (!in_text || cur_fn < 0) {
+                g_as_fail = AS_FAIL;
+                return -1;
+            }
+            cc_emit_bytes(&em, "\x0F\x0B", 2);
         } else if (eq(t0, "cld")) {
             if (!in_text || cur_fn < 0) {
                 g_as_fail = AS_FAIL;

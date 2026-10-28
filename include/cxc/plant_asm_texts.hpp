@@ -46,8 +46,21 @@ static const char plant_asm_stpcpy[] = ".text\n.globl __stpcpy\n.globl stpcpy\n_
 static const char plant_asm_strcat[] = ".text\n.globl strcat\nstrcat:\n\tpush %rdi\n.F:\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .C\n\tadd $1, %rdi\n\tjmp .F\n.C:\n\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n\tadd $1, %rsi\n\tadd $1, %rdi\n\ttest %eax, %eax\n\tjnz .C\n\tpop %rax\n\tret\n";
 static const char plant_asm_strchrnul[] = ".text\n.globl __strchrnul\n.globl strchrnul\n__strchrnul:\nstrchrnul:\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %edx\n.L:\n\tmovzbl (%rdi), %eax\n\tcmp %edx, %eax\n\tje .Lf\n\ttest %eax, %eax\n\tjz .Lf\n\tadd $1, %rdi\n\tjmp .L\n.Lf:\n\tmov %rdi, %rax\n\tret\n";
 static const char plant_asm_atoi[] = ".text\n.globl atoi\natoi:\n\txor %eax, %eax\n.L:\n\tmovzbl (%rdi), %edx\n\tsub $48, %rdx\n\tcmp $9, %rdx\n\tja .D\n\timul $10, %eax\n\tadd %edx, %eax\n\tadd $1, %rdi\n\tjmp .L\n.D:\n\tret\n";
+static const char plant_asm_memrchr[] = ".text\n.globl __memrchr\n.globl memrchr\n__memrchr:\nmemrchr:\n\ttest %rdx, %rdx\n\tjz .Ln\n\tadd %rdx, %rdi\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %ecx\n.L:\n\tsub $1, %rdi\n\tmovzbl (%rdi), %eax\n\tcmp %ecx, %eax\n\tje .Lf\n\tsub $1, %rdx\n\tjnz .L\n.Ln:\n\txor %eax, %eax\n\tret\n.Lf:\n\tmov %rdi, %rax\n\tret\n";
+static const char plant_asm_memcpy[] = ".text\n.globl __memcpy_fwd\n.globl memcpy\n__memcpy_fwd:\nmemcpy:\n\tpush %rdi\n\tmov %rdx, %rcx\n\ttest %rcx, %rcx\n\tjz .Ld\n\trep movsb\n.Ld:\n\tpop %rax\n\tret\n";
+static const char plant_asm_memmove[] = ".text\n.globl memmove\nmemmove:\n\tpush %rdi\n\ttest %rdx, %rdx\n\tjz .Ld\n\tcmp %rsi, %rdi\n\tjae .Lb\n\tmov %rdx, %rcx\n\trep movsb\n\tjmp .Ld\n.Lb:\n\tadd %rdx, %rdi\n\tadd %rdx, %rsi\n.L:\n\tsub $1, %rsi\n\tsub $1, %rdi\n\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n\tsub $1, %rdx\n\tjnz .L\n.Ld:\n\tpop %rax\n\tret\n";
+static const char plant_asm_strcspn[] = ".text\n.globl strcspn\nstrcspn:\n\txor %edx, %edx\n\txor %eax, %eax\n\ttest %eax, %eax\n\tjnz .Lssp\n.Lo:\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .Ld\n\tpush %rsi\n.Li:\n\tmovzbl (%rsi), %ecx\n\ttest %ecx, %ecx\n\tjz .La\n\tcmp %ecx, %eax\n\tje .Lh\n\tadd $1, %rsi\n\tjmp .Li\n.La:\n\tpop %rsi\n\tadd $1, %rdi\n\tadd $1, %edx\n\tjmp .Lo\n.Lh:\n\tpop %rsi\n.Ld:\n\tmov %edx, %eax\n\tret\n.Lssp:\n\tcall __stack_chk_fail\n";
+static const char plant_asm_strspn[] = ".text\n.globl strspn\nstrspn:\n\txor %edx, %edx\n\txor %eax, %eax\n\ttest %eax, %eax\n\tjnz .Lssp\n.Lo:\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .Ld\n\tpush %rsi\n.Li:\n\tmovzbl (%rsi), %ecx\n\ttest %ecx, %ecx\n\tjz .Lm\n\tcmp %ecx, %eax\n\tje .Lh\n\tadd $1, %rsi\n\tjmp .Li\n.Lh:\n\tpop %rsi\n\tadd $1, %rdi\n\tadd $1, %edx\n\tjmp .Lo\n.Lm:\n\tpop %rsi\n.Ld:\n\tmov %edx, %eax\n\tret\n.Lssp:\n\tcall __stack_chk_fail\n";
+static const char plant_asm_strpbrk[] = ".text\n.globl strpbrk\nstrpbrk:\n\tpush %rdi\n\tcall strcspn\n\tpop %rdi\n\tadd %rax, %rdi\n\tmovzbl (%rdi), %eax\n\ttest %eax, %eax\n\tjz .Ln\n\tmov %rdi, %rax\n\tret\n.Ln:\n\txor %eax, %eax\n\tret\n";
+static const char plant_asm_strrchr[] = ".text\n.globl strrchr\nstrrchr:\n\txor %ecx, %ecx\n\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %edx\n.L:\n\tmovzbl (%rdi), %eax\n\tcmp %edx, %eax\n\tjne .Ln\n\tmov %rdi, %rax\n\tmov %rax, %rcx\n.Ln:\n\ttest %eax, %eax\n\tjz .Ld\n\tadd $1, %rdi\n\tjmp .L\n.Ld:\n\tmov %rcx, %rax\n\tret\n";
+static const char plant_asm_tcap_bridge_add[] = ".text\n.globl tcap_bridge_add\ntcap_bridge_add:\n\tmov %edi, %eax\n\tadd %esi, %eax\n\tret\n";
+static const char plant_asm_hard_stubs[] = ".text\n.globl ___errno_location\n.globl __stack_chk_fail\n.globl __uflow\n.globl free\n.globl malloc\n___errno_location:\n\tlea errno_cell(%rip), %rax\n\tret\n__stack_chk_fail:\n.Lssp:\n\tud2\n\tjmp .Lssp\n__uflow:\n\tmov $-1, %eax\n\tret\nmalloc:\n\tmov %rdi, %rax\n\tadd $15, %rax\n\tand $-16, %rax\n\tpush %rax\n\tmov heap_off(%rip), %rax\n\tmov %rax, %rcx\n\tpop %rax\n\tadd %rcx, %rax\n\tcmp $512, %rax\n\tja .Lmf\n\tpush %rax\n\tlea heap(%rip), %rax\n\tadd %rcx, %rax\n\tmov %rax, %rsi\n\tpop %rax\n\tmov %rax, heap_off(%rip)\n\tmov %rsi, %rax\n\tret\n.Lmf:\n\txor %eax, %eax\n\tret\nfree:\n\tret\n.data\nerrno_cell:\n.quad 1\nheap_off:\n.quad 16\nheap:\n.byte 1\n.zero 255\n.zero 256\n";
+static const char plant_asm_strdup[] = ".text\n.globl strdup\nstrdup:\n\tpush %rdi\n\tcall strlen\n\tadd $1, %rax\n\tpush %rax\n\tmov %rax, %rdi\n\tcall malloc\n\tpop %rdx\n\tpop %rsi\n\ttest %rax, %rax\n\tjz .Lf\n\tmov %rax, %rdi\n\tpush %rax\n\tcall memcpy\n\tpop %rax\n\tret\n.Lf:\n\tret\n";
+static const char plant_asm_shgetc[] = ".text\n.globl __shlim\n.globl __shgetc\n__shlim:\n\tret\n__shgetc:\n\tmov (%rdi), %rax\n\tmovzbl (%rax), %ecx\n\ttest %ecx, %ecx\n\tjz .Leof\n\tadd $1, %rax\n\tmov %rax, (%rdi)\n\tmov %ecx, %eax\n\tret\n.Leof:\n\tcall __uflow\n\tret\n";
+static const char plant_asm_intscan[] = ".text\n.globl __intscan\n__intscan:\n\tpush %rbp\n\tmov %rsp, %rbp\n\tsub $32, %rsp\n\tmov %rdi, %rax\n\tmov %rax, -8(%rbp)\n\tmov %esi, %eax\n\ttest %eax, %eax\n\tjnz .Lb\n\tmov $10, %eax\n.Lb:\n\tmov %eax, -12(%rbp)\n\txor %eax, %eax\n\tmov %eax, -16(%rbp)\n\tmov %eax, -20(%rbp)\n\tmov -8(%rbp), %rax\n\tmov %rax, %rdi\n\tcall __shgetc\n\tcmp $45, %eax\n\tjne .Lp\n\tmov $1, %eax\n\tmov %eax, -16(%rbp)\n\tjmp .Ln\n.Lp:\n\tcmp $43, %eax\n\tjne .Lf0\n.Ln:\n\tmov -8(%rbp), %rax\n\tmov %rax, %rdi\n\tcall __shgetc\n.Lf0:\n\tmov %eax, -24(%rbp)\n.Lloop:\n\tmov -24(%rbp), %eax\n\ttest %eax, %eax\n\tjs .Ldone\n\tmov %eax, %edx\n\tsub $48, %edx\n\tcmp $9, %edx\n\tja .Lback\n\tmov -20(%rbp), %eax\n\timul $10, %eax\n\tadd %edx, %eax\n\tmov %eax, -20(%rbp)\n\tmov -8(%rbp), %rax\n\tmov %rax, %rdi\n\tcall __shgetc\n\tmov %eax, -24(%rbp)\n\tjmp .Lloop\n.Lback:\n\tmov -8(%rbp), %rax\n\tmov %rax, %rdi\n\tmov (%rdi), %rax\n\tsub $1, %rax\n\tmov %rax, (%rdi)\n.Ldone:\n\tmov -16(%rbp), %eax\n\ttest %eax, %eax\n\tjz .Lget\n\tmov -20(%rbp), %eax\n\tneg %eax\n\tjmp .Lpos\n.Lget:\n\tmov -20(%rbp), %eax\n.Lpos:\n\tmov %rbp, %rsp\n\tpop %rbp\n\tret\n";
+static const char plant_asm_strtol[] = ".text\n.globl strtol\nstrtol:\n\tpush %rbp\n\tmov %rsp, %rbp\n\tsub $32, %rsp\n\tmov %rdi, %rax\n\tmov %rax, -8(%rbp)\n\tmov %rsi, %rax\n\tmov %rax, -16(%rbp)\n\tmov %rdx, %rax\n\tmov %rax, -24(%rbp)\n\tlea -8(%rbp), %rax\n\tmov %rax, %rdi\n\txor %esi, %esi\n\tcall __shlim\n\tlea -8(%rbp), %rax\n\tmov %rax, %rdi\n\tmov -24(%rbp), %rax\n\tmov %rax, %rsi\n\tmov $1, %edx\n\tmov $-1, %ecx\n\tcall __intscan\n\tpush %rax\n\tmov -16(%rbp), %rax\n\ttest %rax, %rax\n\tjz .Lout\n\tmov %rax, %rdi\n\tmov -8(%rbp), %rax\n\tmov %rax, (%rdi)\n.Lout:\n\tpop %rax\n\tmov %rbp, %rsp\n\tpop %rbp\n\tret\n";
 
-enum { PLANT_ASM_COUNT = 40 };
+enum { PLANT_ASM_COUNT = 53 };
 static const PlantAsmText plant_asm_texts[PLANT_ASM_COUNT] = {
     {"disk/dig.s", plant_asm_isdigit},
     {"disk/labs.s", plant_asm_labs},
@@ -89,5 +102,18 @@ static const PlantAsmText plant_asm_texts[PLANT_ASM_COUNT] = {
     {"disk/scat.s", plant_asm_strcat},
     {"disk/snul.s", plant_asm_strchrnul},
     {"disk/atoi.s", plant_asm_atoi},
+    {"disk/mrch.s", plant_asm_memrchr},
+    {"disk/mcpy.s", plant_asm_memcpy},
+    {"disk/mmov.s", plant_asm_memmove},
+    {"disk/scsp.s", plant_asm_strcspn},
+    {"disk/sspn.s", plant_asm_strspn},
+    {"disk/spbk.s", plant_asm_strpbrk},
+    {"disk/srch.s", plant_asm_strrchr},
+    {"disk/tcap_br.s", plant_asm_tcap_bridge_add},
+    {"disk/hstb.s", plant_asm_hard_stubs},
+    {"disk/sdup.s", plant_asm_strdup},
+    {"disk/shgt.s", plant_asm_shgetc},
+    {"disk/iscn.s", plant_asm_intscan},
+    {"disk/stol.s", plant_asm_strtol},
 };
 

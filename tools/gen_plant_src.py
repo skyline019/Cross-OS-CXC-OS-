@@ -696,6 +696,421 @@ leaf(
 \tret
 """,
 )
+# M303: mem/str + tcap bridge — drop musl/host .o plants (deepen, no probe shrink)
+leaf(
+    "mrch",
+    "memrchr",
+    "memrchr",
+    """__memrchr:
+memrchr:
+\ttest %rdx, %rdx
+\tjz .Ln
+\tadd %rdx, %rdi
+\tmov %esi, %eax
+\tand $255, %eax
+\tmov %eax, %ecx
+.L:
+\tsub $1, %rdi
+\tmovzbl (%rdi), %eax
+\tcmp %ecx, %eax
+\tje .Lf
+\tsub $1, %rdx
+\tjnz .L
+.Ln:
+\txor %eax, %eax
+\tret
+.Lf:
+\tmov %rdi, %rax
+\tret
+""",
+    aliases=("__memrchr",),
+)
+leaf(
+    "mcpy",
+    "memcpy",
+    "memcpy",
+    """__memcpy_fwd:
+memcpy:
+\tpush %rdi
+\tmov %rdx, %rcx
+\ttest %rcx, %rcx
+\tjz .Ld
+\trep movsb
+.Ld:
+\tpop %rax
+\tret
+""",
+    aliases=("__memcpy_fwd",),
+)
+leaf(
+    "mmov",
+    "memmove",
+    "memmove",
+    """memmove:
+\tpush %rdi
+\ttest %rdx, %rdx
+\tjz .Ld
+\tcmp %rsi, %rdi
+\tjae .Lb
+\tmov %rdx, %rcx
+\trep movsb
+\tjmp .Ld
+.Lb:
+\tadd %rdx, %rdi
+\tadd %rdx, %rsi
+.L:
+\tsub $1, %rsi
+\tsub $1, %rdi
+\tmovzbl (%rsi), %eax
+\tmov %al, (%rdi)
+\tsub $1, %rdx
+\tjnz .L
+.Ld:
+\tpop %rax
+\tret
+""",
+)
+leaf(
+    "scsp",
+    "strcspn",
+    "strcspn",
+    """strcspn:
+\txor %edx, %edx
+\txor %eax, %eax
+\ttest %eax, %eax
+\tjnz .Lssp
+.Lo:
+\tmovzbl (%rdi), %eax
+\ttest %eax, %eax
+\tjz .Ld
+\tpush %rsi
+.Li:
+\tmovzbl (%rsi), %ecx
+\ttest %ecx, %ecx
+\tjz .La
+\tcmp %ecx, %eax
+\tje .Lh
+\tadd $1, %rsi
+\tjmp .Li
+.La:
+\tpop %rsi
+\tadd $1, %rdi
+\tadd $1, %edx
+\tjmp .Lo
+.Lh:
+\tpop %rsi
+.Ld:
+\tmov %edx, %eax
+\tret
+.Lssp:
+\tcall __stack_chk_fail
+""",
+)
+leaf(
+    "sspn",
+    "strspn",
+    "strspn",
+    """strspn:
+\txor %edx, %edx
+\txor %eax, %eax
+\ttest %eax, %eax
+\tjnz .Lssp
+.Lo:
+\tmovzbl (%rdi), %eax
+\ttest %eax, %eax
+\tjz .Ld
+\tpush %rsi
+.Li:
+\tmovzbl (%rsi), %ecx
+\ttest %ecx, %ecx
+\tjz .Lm
+\tcmp %ecx, %eax
+\tje .Lh
+\tadd $1, %rsi
+\tjmp .Li
+.Lh:
+\tpop %rsi
+\tadd $1, %rdi
+\tadd $1, %edx
+\tjmp .Lo
+.Lm:
+\tpop %rsi
+.Ld:
+\tmov %edx, %eax
+\tret
+.Lssp:
+\tcall __stack_chk_fail
+""",
+)
+leaf(
+    "spbk",
+    "strpbrk",
+    "strpbrk",
+    """strpbrk:
+\tpush %rdi
+\tcall strcspn
+\tpop %rdi
+\tadd %rax, %rdi
+\tmovzbl (%rdi), %eax
+\ttest %eax, %eax
+\tjz .Ln
+\tmov %rdi, %rax
+\tret
+.Ln:
+\txor %eax, %eax
+\tret
+""",
+)
+leaf(
+    "srch",
+    "strrchr",
+    "strrchr",
+    """strrchr:
+\txor %ecx, %ecx
+\tmov %esi, %eax
+\tand $255, %eax
+\tmov %eax, %edx
+.L:
+\tmovzbl (%rdi), %eax
+\tcmp %edx, %eax
+\tjne .Ln
+\tmov %rdi, %rax
+\tmov %rax, %rcx
+.Ln:
+\ttest %eax, %eax
+\tjz .Ld
+\tadd $1, %rdi
+\tjmp .L
+.Ld:
+\tmov %rcx, %rax
+\tret
+""",
+)
+leaf(
+    "tcap_br",
+    "tcap_bridge_add",
+    "tcap_bridge_add",
+    """tcap_bridge_add:
+\tmov %edi, %eax
+\tadd %esi, %eax
+\tret
+""",
+)
+# M304: hard_stubs + strdup — drop host .o plants (keep ssp/errno/uflow/malloc/free)
+leaf(
+    "hstb",
+    "hard_stubs",
+    "malloc",
+    """___errno_location:
+\tlea errno_cell(%rip), %rax
+\tret
+__stack_chk_fail:
+.Lssp:
+\tud2
+\tjmp .Lssp
+__uflow:
+\tmov $-1, %eax
+\tret
+malloc:
+\tmov %rdi, %rax
+\tadd $15, %rax
+\tand $-16, %rax
+\tpush %rax
+\tmov heap_off(%rip), %rax
+\tmov %rax, %rcx
+\tpop %rax
+\tadd %rcx, %rax
+\tcmp $512, %rax
+\tja .Lmf
+\tpush %rax
+\tlea heap(%rip), %rax
+\tadd %rcx, %rax
+\tmov %rax, %rsi
+\tpop %rax
+\tmov %rax, heap_off(%rip)
+\tmov %rsi, %rax
+\tret
+.Lmf:
+\txor %eax, %eax
+\tret
+free:
+\tret
+.data
+errno_cell:
+.quad 1
+heap_off:
+.quad 16
+heap:
+.byte 1
+.zero 255
+.zero 256
+""",
+    aliases=(
+        "___errno_location",
+        "__stack_chk_fail",
+        "__uflow",
+        "free",
+    ),
+)
+leaf(
+    "sdup",
+    "strdup",
+    "strdup",
+    """strdup:
+\tpush %rdi
+\tcall strlen
+\tadd $1, %rax
+\tpush %rax
+\tmov %rax, %rdi
+\tcall malloc
+\tpop %rdx
+\tpop %rsi
+\ttest %rax, %rax
+\tjz .Lf
+\tmov %rax, %rdi
+\tpush %rax
+\tcall memcpy
+\tpop %rax
+\tret
+.Lf:
+\tret
+""",
+)
+# M305: strtol chain — separate symbols, keep call graph (no collapse)
+leaf(
+    "shgt",
+    "shgetc",
+    "__shgetc",
+    """__shlim:
+\tret
+__shgetc:
+\tmov (%rdi), %rax
+\tmovzbl (%rax), %ecx
+\ttest %ecx, %ecx
+\tjz .Leof
+\tadd $1, %rax
+\tmov %rax, (%rdi)
+\tmov %ecx, %eax
+\tret
+.Leof:
+\tcall __uflow
+\tret
+""",
+    aliases=("__shlim",),
+)
+leaf(
+    "iscn",
+    "intscan",
+    "__intscan",
+    """__intscan:
+\tpush %rbp
+\tmov %rsp, %rbp
+\tsub $32, %rsp
+\tmov %rdi, %rax
+\tmov %rax, -8(%rbp)
+\tmov %esi, %eax
+\ttest %eax, %eax
+\tjnz .Lb
+\tmov $10, %eax
+.Lb:
+\tmov %eax, -12(%rbp)
+\txor %eax, %eax
+\tmov %eax, -16(%rbp)
+\tmov %eax, -20(%rbp)
+\tmov -8(%rbp), %rax
+\tmov %rax, %rdi
+\tcall __shgetc
+\tcmp $45, %eax
+\tjne .Lp
+\tmov $1, %eax
+\tmov %eax, -16(%rbp)
+\tjmp .Ln
+.Lp:
+\tcmp $43, %eax
+\tjne .Lf0
+.Ln:
+\tmov -8(%rbp), %rax
+\tmov %rax, %rdi
+\tcall __shgetc
+.Lf0:
+\tmov %eax, -24(%rbp)
+.Lloop:
+\tmov -24(%rbp), %eax
+\ttest %eax, %eax
+\tjs .Ldone
+\tmov %eax, %edx
+\tsub $48, %edx
+\tcmp $9, %edx
+\tja .Lback
+\tmov -20(%rbp), %eax
+\timul $10, %eax
+\tadd %edx, %eax
+\tmov %eax, -20(%rbp)
+\tmov -8(%rbp), %rax
+\tmov %rax, %rdi
+\tcall __shgetc
+\tmov %eax, -24(%rbp)
+\tjmp .Lloop
+.Lback:
+\tmov -8(%rbp), %rax
+\tmov %rax, %rdi
+\tmov (%rdi), %rax
+\tsub $1, %rax
+\tmov %rax, (%rdi)
+.Ldone:
+\tmov -16(%rbp), %eax
+\ttest %eax, %eax
+\tjz .Lget
+\tmov -20(%rbp), %eax
+\tneg %eax
+\tjmp .Lpos
+.Lget:
+\tmov -20(%rbp), %eax
+.Lpos:
+\tmov %rbp, %rsp
+\tpop %rbp
+\tret
+""",
+)
+leaf(
+    "stol",
+    "strtol",
+    "strtol",
+    """strtol:
+\tpush %rbp
+\tmov %rsp, %rbp
+\tsub $32, %rsp
+\tmov %rdi, %rax
+\tmov %rax, -8(%rbp)
+\tmov %rsi, %rax
+\tmov %rax, -16(%rbp)
+\tmov %rdx, %rax
+\tmov %rax, -24(%rbp)
+\tlea -8(%rbp), %rax
+\tmov %rax, %rdi
+\txor %esi, %esi
+\tcall __shlim
+\tlea -8(%rbp), %rax
+\tmov %rax, %rdi
+\tmov -24(%rbp), %rax
+\tmov %rax, %rsi
+\tmov $1, %edx
+\tmov $-1, %ecx
+\tcall __intscan
+\tpush %rax
+\tmov -16(%rbp), %rax
+\ttest %rax, %rax
+\tjz .Lout
+\tmov %rax, %rdi
+\tmov -8(%rbp), %rax
+\tmov %rax, (%rdi)
+.Lout:
+\tpop %rax
+\tmov %rbp, %rsp
+\tpop %rbp
+\tret
+""",
+)
 
 
 def c_escape(s: str) -> str:

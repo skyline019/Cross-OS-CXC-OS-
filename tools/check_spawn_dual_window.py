@@ -28,13 +28,13 @@ def main() -> int:
     ok = legacy in s or legacy_cc4 in s
     if m:
         sas, scc, ins, plant = (int(m.group(i)) for i in range(1, 5))
-        ok = ok or (sas == ins and plant <= 22 and scc in (3, 4))
+        ok = ok or (sas == ins and plant == 0 and scc in (3, 4))
     if not ok:
         print("CCDRV spawn dual-window mismatch", file=sys.stderr)
         return 1
     plant_m = re.search(rb"planted: (\d+)", s)
-    if plant_m and int(plant_m.group(1)) > 22:
-        print("planted > 22", file=sys.stderr)
+    if plant_m is None or int(plant_m.group(1)) != 0:
+        print("planted != 0", file=sys.stderr)
         return 1
     print("spawn dual-window ok")
     return 0

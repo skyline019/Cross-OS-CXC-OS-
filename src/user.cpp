@@ -2,25 +2,12 @@
 #include <cxc/plant_asm_texts.hpp>
 #include <cxc/host_add_elf.hpp>
 #include <cxc/host_bump_elf.hpp>
-#include <cxc/musl_memcpy_elf.hpp>
-#include <cxc/musl_strcspn_elf.hpp>
-#include <cxc/musl_strspn_elf.hpp>
-#include <cxc/musl_strpbrk_elf.hpp>
-#include <cxc/musl_strrchr_elf.hpp>
-#include <cxc/musl_memmove_elf.hpp>
-#include <cxc/musl_strdup_elf.hpp>
-#include <cxc/musl_strtol_elf.hpp>
-#include <cxc/musl_intscan_elf.hpp>
-#include <cxc/musl_shgetc_elf.hpp>
-#include <cxc/musl_memrchr_elf.hpp>
-#include <cxc/hard_stubs_elf.hpp>
 #include <cxc/fat42_elf.hpp>
 #include <cxc/fat_stub_elf.hpp>
 #include <cxc/mini_as_elf.hpp>
 #include <cxc/as_cli_elf.hpp>
 #include <cxc/ld_cli_elf.hpp>
 #include <cxc/as_stub_elf.hpp>
-#include <cxc/tcap_bridge_elf.hpp>
 #include <cxc/rtcrt_elf.hpp>
 #include <cxc/rtio_elf.hpp>
 #include <cxc/rtmath_elf.hpp>
@@ -2392,17 +2379,94 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "mov %rax, %rsi\n"
         "mov $3, %edx\n"
         "call memmove\n"
+        /* M303 deepen: empty reject set → full length */
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea sempty(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "call strcspn\n"
+        "cmp $2, %eax\n"
+        "jne .Lmc\n"
+        /* M303 deepen: strrchr last occurrence (next byte NUL, not 'b') */
+        "lea saba(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $97, %esi\n"
+        "call strrchr\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        "add $1, %rax\n"
+        "movzbl (%rax), %eax\n"
+        "test %eax, %eax\n"
+        "jne .Lmc\n"
+        /* M303 deepen: memrchr last byte */
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $50, %esi\n"
+        "mov $2, %edx\n"
+        "call memrchr\n"
+        "test %rax, %rax\n"
+        "je .Lmc\n"
+        /* M303 deepen: overlapping memmove */
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $3, %edx\n"
+        "call memcpy\n"
+        "lea -16(%rbp), %rax\n"
+        "mov %rax, %rsi\n"
+        "lea -15(%rbp), %rax\n"
+        "mov %rax, %rdi\n"
+        "mov $2, %edx\n"
+        "call memmove\n"
+        "lea -15(%rbp), %rax\n"
+        "movzbl (%rax), %eax\n"
+        "cmp $52, %eax\n"
+        "jne .Lmc\n"
         "lea s42(%rip), %rax\n"
         "mov %rax, %rdi\n"
         "call strdup\n"
         "test %rax, %rax\n"
         "je .Lmc\n"
+        /* M304 deepen: strdup nonempty round-trip first byte */
+        "movzbl (%rax), %eax\n"
+        "cmp $52, %eax\n"
+        "jne .Lmc\n"
         "lea s42(%rip), %rax\n"
         "mov %rax, %rdi\n"
         "xor %esi, %esi\n"
         "mov $10, %edx\n"
         "call strtol\n"
         "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        /* M305 deepen: optional sign */
+        "lea sneg(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "xor %esi, %esi\n"
+        "mov $10, %edx\n"
+        "call strtol\n"
+        "cmp $-42, %eax\n"
+        "jne .Lmc\n"
+        /* M305 deepen: base=0 decimal */
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "xor %esi, %esi\n"
+        "xor %edx, %edx\n"
+        "call strtol\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        /* M305 deepen: endptr at NUL */
+        "lea s42(%rip), %rax\n"
+        "mov %rax, %rdi\n"
+        "lea -24(%rbp), %rax\n"
+        "mov %rax, %rsi\n"
+        "mov $10, %edx\n"
+        "call strtol\n"
+        "cmp $42, %eax\n"
+        "jne .Lmc\n"
+        "mov -24(%rbp), %rax\n"
+        "movzbl (%rax), %eax\n"
+        "test %eax, %eax\n"
         "jne .Lmc\n"
         "mov $42, %edi\n"
         "call labs\n"
@@ -2451,6 +2515,12 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         ".asciz \",;\"\n"
         "sdig:\n"
         ".asciz \"0123456789\"\n"
+        "sempty:\n"
+        ".asciz \"\"\n"
+        "saba:\n"
+        ".asciz \"aba\"\n"
+        "sneg:\n"
+        ".asciz \"-42\"\n"
         "q:\n"
         ".quad 42\n";
     /* CCDRV job.rsp: .s first (small forks), nested a.c/b.c, then lib.c. */
@@ -2501,20 +2571,20 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         "disk/ntns.s\n"
         "disk/ntnl.s\n"
         "disk/mset.s\n"
-        "disk/scsp.o\n"
-        "disk/sspn.o\n"
-        "disk/spbk.o\n"
-        "disk/srch.o\n"
-        "disk/mmov.o\n"
-        "disk/sdup.o\n"
-        "disk/stol.o\n"
-        "disk/iscn.o\n"
-        "disk/shgt.o\n"
-        "disk/mrch.o\n"
-        "disk/hstb.o\n"
-        "disk/mcpy.o\n"
+        "disk/scsp.s\n"
+        "disk/sspn.s\n"
+        "disk/spbk.s\n"
+        "disk/srch.s\n"
+        "disk/mmov.s\n"
+        "disk/sdup.s\n"
+        "disk/stol.s\n"
+        "disk/iscn.s\n"
+        "disk/shgt.s\n"
+        "disk/mrch.s\n"
+        "disk/hstb.s\n"
+        "disk/mcpy.s\n"
         "disk/slen.s\n"
-        "disk/tcap_br.o\n";
+        "disk/tcap_br.s\n";
     static const char src_text[] =
         "CXC_A2\n"
         "fn main(){\n"
@@ -2635,65 +2705,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         }
     }
     {
-        const int64_t yfd = fs::open_path(
-            "disk/mcpy.o", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-        if (yfd < 0) {
-            result.failure = 64;
-            return false;
-        }
-        if (fs::write_fd(static_cast<uint32_t>(yfd), musl_memcpy_elf,
-                         musl_memcpy_elf_size) !=
-            static_cast<int64_t>(musl_memcpy_elf_size)) {
-            (void)fs::close_fd(static_cast<uint32_t>(yfd));
-            result.failure = 65;
-            return false;
-        }
-        if (fs::close_fd(static_cast<uint32_t>(yfd)) != 0) {
-            result.failure = 66;
-            return false;
-        }
-    }
-    {
-        struct Plant {
-            const char* path;
-            const unsigned char* blob;
-            unsigned size;
-            uint32_t fail;
-        };
-        const Plant plants[] = {
-            {"disk/scsp.o", musl_strcspn_elf, musl_strcspn_elf_size, 200},
-            {"disk/sspn.o", musl_strspn_elf, musl_strspn_elf_size, 203},
-            {"disk/spbk.o", musl_strpbrk_elf, musl_strpbrk_elf_size, 206},
-            {"disk/srch.o", musl_strrchr_elf, musl_strrchr_elf_size, 209},
-            {"disk/mmov.o", musl_memmove_elf, musl_memmove_elf_size, 212},
-            {"disk/sdup.o", musl_strdup_elf, musl_strdup_elf_size, 215},
-            {"disk/stol.o", musl_strtol_elf, musl_strtol_elf_size, 218},
-            {"disk/iscn.o", musl_intscan_elf, musl_intscan_elf_size, 221},
-            {"disk/shgt.o", musl_shgetc_elf, musl_shgetc_elf_size, 224},
-            {"disk/mrch.o", musl_memrchr_elf, musl_memrchr_elf_size, 227},
-            {"disk/hstb.o", hard_stubs_elf, hard_stubs_elf_size, 230},
-        };
-        for (const Plant& pl : plants) {
-            const int64_t pfd = fs::open_path(
-                pl.path, fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
-            if (pfd < 0) {
-                result.failure = pl.fail;
-                return false;
-            }
-            if (fs::write_fd(static_cast<uint32_t>(pfd), pl.blob, pl.size) !=
-                static_cast<int64_t>(pl.size)) {
-                (void)fs::close_fd(static_cast<uint32_t>(pfd));
-                result.failure = pl.fail + 1;
-                return false;
-            }
-            if (fs::close_fd(static_cast<uint32_t>(pfd)) != 0) {
-                result.failure = pl.fail + 2;
-                return false;
-            }
-        }
-    }
-
-    {
         const int64_t lfd = fs::open_path(
             "disk/lib.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
         if (lfd < 0) {
@@ -2811,9 +2822,9 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             }
         }
     }
-    /* job.rsp: M300 batch3 — 13 prebuilt .o; 44 .s (4 base + 40 leaves). */
-    result.planted = 13;
-    result.inputs_s = 44;
+    /* job.rsp: M305 — 0 prebuilt .o; 57 .s (4 base + 53 leaves). */
+    result.planted = 0;
+    result.inputs_s = 57;
 
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);
@@ -2884,7 +2895,6 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         const ToolPlant tools[] = {
             {"disk/as", as_cli_elf, as_cli_elf_size, 300},
             {"disk/ld", ld_cli_elf, ld_cli_elf_size, 310},
-            {"disk/tcap_br.o", tcap_bridge_elf, tcap_bridge_elf_size, 320},
         };
         for (const ToolPlant& tp : tools) {
             const int64_t tfd = fs::open_path(
@@ -2982,10 +2992,10 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
         result.failure = 10;
         return false;
     }
-    /* M295/M300: planted only decreases; hard cap ≤22 (M298 lock). */
-    if (result.planted > 22) {
+    /* M306: planted debt cleared — hard lock planted == 0. */
+    if (result.planted != 0) {
         syscall::clear_session();
-        result.failure = 295;
+        result.failure = 306;
         return false;
     }
     /* M293 spawn_cc dual window + M295 spawn_as dual window.
@@ -3246,14 +3256,8 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
     }
     result.stage = 9;
 
-    // M262: bridge plant — verify on-disk ET_REL bytes (not open-only / BSS write).
+    // M262/M303: bridge via planted .s → disk/as ET_REL (not host embed).
     {
-        if (tcap_bridge_elf_size < 20 || tcap_bridge_elf[0] != 0x7f ||
-            tcap_bridge_elf[1] != 'E' || tcap_bridge_elf[2] != 'L' ||
-            tcap_bridge_elf[3] != 'F' || tcap_bridge_elf[16] != 1) {
-            result.failure = 283;
-            return false;
-        }
         const int64_t bfd = fs::open_path("disk/tcap_br.o", fs::o_rdonly, 0);
         if (bfd < 0) {
             result.failure = 280;
