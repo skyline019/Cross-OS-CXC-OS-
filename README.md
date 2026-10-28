@@ -5,7 +5,7 @@
 
 **Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, userspace ELF + CXCFS `disk/`, and an on-box mini toolchain (`disk/cc` / `as` / `ld`). Acceptance requires kernel `CXC_OS_SELF_TEST_PASS`, on-box `ONBOX_CCDRV_PASS`, **and** external Python peer `peer_ok=1`.
 
-> Chinese deep-dive (current features): [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Toolchain: [`docs/a2-mini-cc.md`](docs/a2-mini-cc.md) · Midfield 28: [`docs/midpoint-assessment-28.md`](docs/midpoint-assessment-28.md)
+> Chinese deep-dive (current features): [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Toolchain: [`docs/a2-mini-cc.md`](docs/a2-mini-cc.md) · Midfield 28: [`docs/midpoint-assessment-28.md`](docs/midpoint-assessment-28.md) · Next plan (M285–M294): [`docs/plan-m285-m294.md`](docs/plan-m285-m294.md)
 
 ## Status
 
