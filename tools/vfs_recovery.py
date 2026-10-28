@@ -56,36 +56,50 @@ def main():
             return ram
 
         run.regress(base, "init", "format-and-baseline")
-        vfs(base, "prepare")
-        vfs(base, "old", "baseline-reboot")
-        ram = copy_base("normal")
-        vfs(ram, "move")
-        vfs(ram, "new", "normal-reboot-1")
-        vfs(ram, "new", "normal-reboot-2")
-        ram.unlink()
+        # A non-replacing rename appends only the dentry snapshot; replacing
+        # an empty destination removes an inode as well and appends both pages.
+        # Exercise both shapes, including old target existence after recovery.
+        for replace in (False, True):
+            kind = "replace" if replace else "simple"
+            prepared = copy_base(f"{kind}-base")
+            vfs(prepared, "prepare-replace" if replace else "prepare", f"{kind}-prepare")
+            old = "old-replace" if replace else "old"
+            vfs(prepared, old, f"{kind}-baseline-reboot")
 
-        # With QEMU's shared file, the commit word is visible at stage 4,
-        # even before the following instrumentation fence completes.
-        for stage in range(1, 6):
-            ram = copy_base(f"checkpoint-{stage}")
-            run.boot(ram, f"checkpoint-{stage}", f"vfstest fault {stage} 0",
-                     f"PMFS_FAULT_POINT stage={stage}", False,
-                     failure_marker=b"VFS_TEST_FAIL")
-            expected = "new" if stage >= 4 else "old"
-            vfs(ram, expected, f"checkpoint-{stage}-{expected}")
+            def copy_prepared(label):
+                ram = directory / (kind + "-" + label + ".ram")
+                recovery.sparse_copy(prepared, ram)
+                return ram
+
+            ram = copy_prepared("normal")
+            vfs(ram, "move", f"{kind}-move")
+            vfs(ram, "new", f"{kind}-normal-reboot-1")
+            vfs(ram, "new", f"{kind}-normal-reboot-2")
             ram.unlink()
 
-        # Metadata consists of two new pages. Neither is reachable before the
-        # checkpoint commits; test half-page and fully written interruptions.
-        for stage in (6, 7):
-            for skip in (0, 1):
-                ram = copy_base(f"page-{stage}-{skip}")
-                run.boot(ram, f"page-{stage}-{skip}",
-                         f"vfstest fault {stage} {skip}",
+            # With QEMU's shared file, stage 4 can expose the commit word
+            # before the following instrumentation fence completes.
+            for stage in range(1, 6):
+                ram = copy_prepared(f"checkpoint-{stage}")
+                run.boot(ram, f"{kind}-checkpoint-{stage}", f"vfstest fault {stage} 0",
                          f"PMFS_FAULT_POINT stage={stage}", False,
                          failure_marker=b"VFS_TEST_FAIL")
-                vfs(ram, "old", f"page-{stage}-{skip}-old")
+                expected = "new" if stage >= 4 else old
+                vfs(ram, expected, f"{kind}-checkpoint-{stage}-{expected}")
                 ram.unlink()
+
+            # Interrupt the one or two newly appended metadata pages, before
+            # publication; the unchanged root is always reused, not written.
+            for stage in (6, 7):
+                for skip in range(2 if replace else 1):
+                    ram = copy_prepared(f"page-{stage}-{skip}")
+                    run.boot(ram, f"{kind}-page-{stage}-{skip}",
+                             f"vfstest fault {stage} {skip}",
+                             f"PMFS_FAULT_POINT stage={stage}", False,
+                             failure_marker=b"VFS_TEST_FAIL")
+                    vfs(ram, old, f"{kind}-page-{stage}-{skip}-old")
+                    ram.unlink()
+            prepared.unlink()
         print(f"VFS_RECOVERY_PASS boots={run.count} cpus={args.cpus} "
               f"nvdimm={int(args.nvdimm)} zicbom={int(args.zicbom)}")
     return 0

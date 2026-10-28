@@ -86,6 +86,16 @@ struct pm_algo {
   uint64 fuse_puts;
   uint64 fuse_seals;
   uint64 fuse_gets;
+  // Volatile software counters; reset on mount, not physical device telemetry.
+  uint64 exact_hits;
+  uint64 fallback_run_probes;
+  uint64 posting_skips;
+  uint64 file_write_bytes;
+  uint64 file_identical_bytes;
+  uint64 file_identical_ops;
+  uint64 file_cdc_attempts;
+  uint64 file_cdc_planned_chunks;
+  uint64 file_fixed_attempts;
 };
 
 void pm_algo_init(struct pm_algo *a, struct pmfs *fs);

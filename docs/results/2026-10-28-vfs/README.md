@@ -1,6 +1,6 @@
 # VFS 第一阶段：实现、软件故障与复现实验记录
 
-日期 2026-10-28。代码基于 `363c7ca02445c4f46cf7c0d4a9593be2213a69c1` 的本轮未提交修改；测试在独立副本及镜像运行。沙箱使用 QEMU 9.2.0 TCG、自建 GNU RISC-V `objcopy`/`objdump` 和 Zig/Clang RISC-V 编译包装器，**不是** Linux CI 的 GNU RISC-V GCC，也不是硬件实测。普通 MAP 是共享 guest RAM；实验 NVDIMM 使用仓库补丁 QEMU 和普通文件后端。
+日期 2026-10-28。这是提交 `35253bf` 的**历史第一阶段**记录；后续写放大和索引优化改变了容量与切点数量，当前结果见[优化验证](../2026-10-28-efficiency/README.md)。沙箱测试在独立副本及镜像使用 QEMU 9.2.0 TCG、自建 GNU RISC-V `objcopy`/`objdump` 和 Zig/Clang RISC-V 编译包装器。普通 MAP 是共享 guest RAM；实验 NVDIMM 使用仓库补丁 QEMU 和普通文件后端。该提交的 [GitHub Actions 40673050261](https://github.com/skyline019/Cross-OS-CXC-OS-/actions/runs/40673050261) 在 GNU RISC-V GCC/Linux、macOS 和实验 NVDIMM 任务全部通过；不等于硬件实测。
 
 ## 本阶段实现及不变量
 

@@ -34,6 +34,8 @@ struct pmrun_page {
 
 typedef char
   pmrun_header_fits[(sizeof(struct pmrun_page) < PMDEV_PAGE) ? 1 : -1];
+typedef char
+  pm_posting_covers_runs[((int)PM_MAX_RUNS <= (int)PM_POST_RUNS) ? 1 : -1];
 static struct pm_algo g_algo;
 static uint8 run_buffer[PMRUN_MAX_PAGES][PMDEV_PAGE];
 static uint8 read_buffer[PMDEV_PAGE];
@@ -421,6 +423,37 @@ page_find(struct pm_algo *a, uint32 pid, uint64 key, void *dst, uint32 cap,
   return 0;
 }
 
+// Highest set bit of a nonzero word without a Zbb or compiler-rt dependency.
+// Posting words are traversed newest first to preserve latest-value semantics.
+static int
+highest_bit(uint64 bits)
+{
+  int n = 0;
+  if (bits >> 32) {
+    n += 32;
+    bits >>= 32;
+  }
+  if (bits >> 16) {
+    n += 16;
+    bits >>= 16;
+  }
+  if (bits >> 8) {
+    n += 8;
+    bits >>= 8;
+  }
+  if (bits >> 4) {
+    n += 4;
+    bits >>= 4;
+  }
+  if (bits >> 2) {
+    n += 2;
+    bits >>= 2;
+  }
+  if (bits >> 1)
+    n++;
+  return n;
+}
+
 int
 pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 cap, uint32 *out_len)
 {
@@ -455,35 +488,75 @@ pm_get(struct pm_algo *a, uint64 key, void *dst, uint32 cap, uint32 *out_len)
       *out_len = len;
     return 1;
   }
-  for (i = a->nruns; i > 0; i--) {
-    struct pm_run *r = &a->runs[i - 1];
-    uint32 p;
-    if (!r->used || key < r->first || key > r->last)
-      continue;
-    if (!bloom_maybe(&r->bloom, key)) {
-      a->wa.bloom_skips++;
-      continue;
-    }
-    for (p = 0; p < r->nfences; p++) {
+  // The bounded exact index is updated oldest-to-newest on recovery and on
+  // every successful seal. Even at capacity existing keys are refreshed.
+  // It can therefore route a tracked key directly to its newest page; an
+  // untracked key must still use the complete fallback below.
+  {
+    uint32 rid, page;
+    if (pmindex_lookup_exact(&a->ix, key, &rid, &page)) {
       int hit;
-      if (p + 1 < r->nfences && r->fences[p + 1] <= key) {
-        a->wa.fence_skips++;
-        continue;
-      }
-      if (r->fences[p] > key)
-        break;
-      hit = page_find(a, r->page0 + p, key, dst, cap, &len);
-      if (hit < 0)
+      if (rid >= a->nruns || !a->runs[rid].used || page >= a->runs[rid].npages)
         return -1;
-      if (hit == 1) {
-        if (out_len)
-          *out_len = len;
-        pmindex_cache_put(&a->ix, key, dst, len, 1);
-        a->fuse_gets++;
-        return 1;
-      }
-      break;
+      hit = page_find(a, a->runs[rid].page0 + page, key, dst, cap, &len);
+      if (hit != 1)
+        return -1; // inconsistent in-memory index or corrupt page: fail closed
+      if (out_len)
+        *out_len = len;
+      pmindex_cache_put(&a->ix, key, dst, len, 1);
+      a->exact_hits++;
+      a->fuse_gets++;
+      return 1;
     }
+  }
+  {
+    const struct pm_posting *posting = &a->ix.coarse[pm_key_coarse(key)];
+    uint32 cursor = a->nruns;
+    if (a->nruns > PM_POST_RUNS)
+      return -1; // never read beyond the bounded posting bitmap
+    // Postings are complete even for keys beyond exact-index capacity. Scan
+    // only set bits, newest first, rather than probing every unrelated run.
+    for (i = (a->nruns + 63) / 64; i > 0; i--) {
+      uint64 bits = posting->bits[i - 1];
+      while (bits) {
+        uint32 bit = highest_bit(bits), rid = (i - 1) * 64 + bit, p;
+        struct pm_run *r;
+        bits &= ~(1ULL << bit);
+        if (rid >= cursor)
+          continue;
+        a->posting_skips += cursor - rid - 1;
+        cursor = rid;
+        a->fallback_run_probes++;
+        r = &a->runs[rid];
+        if (!r->used || key < r->first || key > r->last)
+          continue;
+        if (!bloom_maybe(&r->bloom, key)) {
+          a->wa.bloom_skips++;
+          continue;
+        }
+        for (p = 0; p < r->nfences; p++) {
+          int hit;
+          if (p + 1 < r->nfences && r->fences[p + 1] <= key) {
+            a->wa.fence_skips++;
+            continue;
+          }
+          if (r->fences[p] > key)
+            break;
+          hit = page_find(a, r->page0 + p, key, dst, cap, &len);
+          if (hit < 0)
+            return -1;
+          if (hit == 1) {
+            if (out_len)
+              *out_len = len;
+            pmindex_cache_put(&a->ix, key, dst, len, 1);
+            a->fuse_gets++;
+            return 1;
+          }
+          break;
+        }
+      }
+    }
+    a->posting_skips += cursor;
   }
   pmindex_cache_put(&a->ix, key, 0, 0, 0);
   return 0;

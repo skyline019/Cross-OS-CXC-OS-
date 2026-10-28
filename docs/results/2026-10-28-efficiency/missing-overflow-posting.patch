@@ -1,0 +1,12 @@
+--- a/kernel/pmindex.c
++++ b/kernel/pmindex.c
+@@ -90,7 +90,8 @@
+ 
+   // Binary posting at coarse quant bucket (二值化倒排).
+   c = pm_key_coarse(key);
+-  pm_post_set(&ix->coarse[c], rid);
++  if (ix->nkeys < PM_IDX_KEYS)
++    pm_post_set(&ix->coarse[c], rid); // deliberately omit overflow postings
+ 
+   // Always allow an existing entry to be refreshed even at capacity.
+   pos = pmindex_lower_bound(ix, key);

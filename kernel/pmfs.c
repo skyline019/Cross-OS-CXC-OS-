@@ -169,6 +169,8 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
     return -1;
   word = (volatile uint64 *)(raw + 8);
   *word = 0;
+  fs->dev.write_bytes += sizeof(*word);
+  fs->dev.checkpoint_word_stores++;
   pmem_persist((void *)word, sizeof(*word));
   fault_point(2);
 
@@ -181,6 +183,8 @@ pmfs_write_sb_slot(struct pmfs *fs, const struct pmfs_sb *s, uint32 slot)
 
   commit = ((uint64)s->chk << 32) | s->state;
   *word = commit;
+  fs->dev.write_bytes += sizeof(*word);
+  fs->dev.checkpoint_word_stores++;
   fault_point(4);
   pmem_persist((void *)word, sizeof(*word));
   fault_point(5);

@@ -288,40 +288,50 @@ pmfile_load(void)
   return 0;
 }
 
-// Write new inode and dentry pages; a single checkpoint publishes both roots.
+enum { PM_META_INODES = 1, PM_META_DENTS = 2, PM_META_ALL = 3 };
+
+// Append only the changed immutable snapshots, reusing the unchanged root.
+// Both roots still become visible atomically through one COW checkpoint.
 static int
-pmfile_store_meta(void)
+pmfile_store_meta_mask(int changed)
 {
   struct pmfs *fs = pmfs_store();
   static uint8 page[PMDEV_PAGE];
-  uint32 body, pid, old_tail, old_inode, old_dent;
+  uint32 body, pid, count, old_tail, old_inode, old_dent;
 
-  if (fs == 0 || !fs->mounted || sizeof(inodes) + PMFILE_HDR > PMDEV_PAGE ||
-      sizeof(dents) + PMFILE_HDR > PMDEV_PAGE)
+  if (fs == 0 || !fs->mounted || !changed || (changed & ~PM_META_ALL) ||
+      sizeof(inodes) + PMFILE_HDR > PMDEV_PAGE ||
+      sizeof(dents) + PMFILE_HDR > PMDEV_PAGE ||
+      (!(changed & PM_META_INODES) && fs->inode_page == PMFS_NIL) ||
+      (!(changed & PM_META_DENTS) && fs->dent_page == PMFS_NIL))
     return -1;
   old_tail = fs->tail;
   old_inode = fs->inode_page;
   old_dent = fs->dent_page;
-  if (pmfs_alloc_pages(fs, 2, &pid) != 0)
+  count = ((changed & PM_META_INODES) != 0) + ((changed & PM_META_DENTS) != 0);
+  if (pmfs_alloc_pages(fs, count, &pid) != 0)
     return -1;
 
-  memset(page, 0, sizeof(page));
-  body = sizeof(inodes);
-  memmove(page + PMFILE_HDR, inodes, body);
-  *(uint32 *)page = PMFILE_MAGIC;
-  *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
-  if (pmfs_write_data_page(fs, pid, page) != 0)
-    goto rollback;
-
-  memset(page, 0, sizeof(page));
-  body = sizeof(dents);
-  memmove(page + PMFILE_HDR, dents, body);
-  *(uint32 *)page = PMFILE_MAGIC;
-  *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
-  if (pmfs_write_data_page(fs, pid + 1, page) != 0)
-    goto rollback;
-  fs->inode_page = pid;
-  fs->dent_page = pid + 1;
+  if (changed & PM_META_INODES) {
+    memset(page, 0, sizeof(page));
+    body = sizeof(inodes);
+    memmove(page + PMFILE_HDR, inodes, body);
+    *(uint32 *)page = PMFILE_MAGIC;
+    *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
+    if (pmfs_write_data_page(fs, pid, page) != 0)
+      goto rollback;
+    fs->inode_page = pid++;
+  }
+  if (changed & PM_META_DENTS) {
+    memset(page, 0, sizeof(page));
+    body = sizeof(dents);
+    memmove(page + PMFILE_HDR, dents, body);
+    *(uint32 *)page = PMFILE_MAGIC;
+    *(uint32 *)(page + 4) = meta_chk(page + PMFILE_HDR, body);
+    if (pmfs_write_data_page(fs, pid, page) != 0)
+      goto rollback;
+    fs->dent_page = pid;
+  }
   if (pmfs_commit(fs) != 0)
     goto rollback;
   return 0;
@@ -331,6 +341,12 @@ rollback:
   fs->inode_page = old_inode;
   fs->dent_page = old_dent;
   return -1;
+}
+
+static int
+pmfile_store_meta(void)
+{
+  return pmfile_store_meta_mask(PM_META_ALL);
 }
 
 static void
@@ -771,7 +787,8 @@ pmfile_fsync(int fd)
     return -2;
   old = inodes[ino];
   inodes[ino] = ofile[fd].work;
-  if (pmfile_store_meta() != 0) {
+  // A file-content commit changes the inode/extent graph, not its dentry.
+  if (pmfile_store_meta_mask(PM_META_INODES) != 0) {
     inodes[ino] = old;
     return -3;
   }
@@ -924,7 +941,9 @@ pmfile_rename(const char *oldpath, const char *newpath)
     name_copy(dents[i].name, renamed);
   }
   dents[src].parent = parent;
-  if (pmfile_store_meta() != 0) {
+  // A non-replacing move changes only names/parent links. Reuse the
+  // immutable inode snapshot instead of rewriting an unchanged 4 KiB page.
+  if (pmfile_store_meta_mask(target < 0 ? PM_META_DENTS : PM_META_ALL) != 0) {
     memmove(dents, saved, sizeof(dents));
     if (target >= 0)
       inodes[target - 1] = replaced;
@@ -997,11 +1016,33 @@ pmfile_shared_sync(int fd, const void *data, uint32 len)
   ofile[fd].st = pmstream_alloc(ino, mode, batch);
   if (ofile[fd].st == 0)
     goto out;
-  // The bounded fd adapter must be able to represent every byte sequence up
-  // to 1024 bytes in four extents, not fail based on CDC's random cut points.
-  pmcdc_init(&ofile[fd].st->cdc, PMCDC_MODE_FIXED,
-             PMFILE_MAX_SIZE / PMFILE_MAX_EXT, PMFILE_MAX_SIZE / PMFILE_MAX_EXT,
-             PM_VAL_MAX);
+  // Probe CDC without writing anything first. Keep it when it fits the four
+  // inode extents and emits no more chunks than the fixed 256-byte fallback;
+  // otherwise use fixed chunks so every byte sequence up to 1024 B fits.
+  if (len) {
+    struct pmcdc probe;
+    const uint8 *bytes = data;
+    uint32 i, chunks = 0;
+    uint32 fixed = (len + PMFILE_MAX_SIZE / PMFILE_MAX_EXT - 1) /
+                   (PMFILE_MAX_SIZE / PMFILE_MAX_EXT);
+    pmcdc_init(&probe, PMCDC_MODE_CDC, PMCDC_MIN_DEF, PMCDC_AVG_DEF,
+               PMCDC_MAX_DEF);
+    for (i = 0; i < len; i++)
+      chunks += pmcdc_feed(&probe, bytes[i]) != 0;
+    if (pmcdc_should_force(&probe))
+      chunks++;
+    if (chunks <= PMFILE_MAX_EXT && chunks <= fixed) {
+      pmcdc_init(&ofile[fd].st->cdc, PMCDC_MODE_CDC, PMCDC_MIN_DEF,
+                 PMCDC_AVG_DEF, PMCDC_MAX_DEF);
+      pm_algo_global()->file_cdc_attempts++;
+      pm_algo_global()->file_cdc_planned_chunks += chunks;
+    } else {
+      pmcdc_init(&ofile[fd].st->cdc, PMCDC_MODE_FIXED,
+                 PMFILE_MAX_SIZE / PMFILE_MAX_EXT,
+                 PMFILE_MAX_SIZE / PMFILE_MAX_EXT, PM_VAL_MAX);
+      pm_algo_global()->file_fixed_attempts++;
+    }
+  }
   ofile[fd].work = inodes[ino - 1];
   ofile[fd].dirty = 0;
   ofile[fd].failed = 0;

@@ -42,6 +42,7 @@
 #define SYS_fsync         40
 #define SYS_xv6_log_fault 41
 
-#define SYS_lseek    42
-#define SYS_getdents 43
-#define SYS_rename   44
+#define SYS_lseek        42
+#define SYS_getdents     43
+#define SYS_rename       44
+#define SYS_pmfs_metrics 45

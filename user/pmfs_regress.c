@@ -34,6 +34,16 @@ pattern(char *p, int n, int seed)
     p[i] = (char)((i * 37 + seed) & 255);
 }
 
+// With default CDC parameters this 1024 B pattern yields four chunks, all
+// within the ordinary-fd extent bound, and must survive multiple reboots.
+static void
+cdc_pattern(char *p)
+{
+  int i;
+  for (i = 0; i < 1024; i++)
+    p[i] = (char)(i * 17 + i % 7);
+}
+
 static int
 write_file(const char *path, const char *p, int n)
 {
@@ -76,6 +86,9 @@ check_common(int a_new, int updated)
   if (check_file("/t/a", s, strlen(s)) != 0 ||
       check_file("/t/abandon", ABANDON, strlen(ABANDON)) != 0)
     return -1;
+  cdc_pattern(data);
+  if (check_file("/t/cdc", data, sizeof(data)) != 0)
+    return -6;
   pattern(data, 512, updated ? 29 : 11);
   for (i = 0; i < 2; i++) {
     if (pmfs_get(KEY_LONG, result, sizeof(result) / 2, &len) != 1 ||
@@ -100,9 +113,15 @@ check_common(int a_new, int updated)
 static void
 init_image(const char *mode)
 {
+  int fd;
   CHECK(pmfs_format() == 0, 1);
   CHECK(pmfs_format() < 0, 2); // already mounted: never format implicitly
   CHECK(pmfs_mkdir("/t") == 0, 3);
+  cdc_pattern(data);
+  fd = open("/pm/t/cdc", O_CREATE | O_RDWR);
+  CHECK(fd >= 0 && write(fd, data, sizeof(data)) == sizeof(data) &&
+          fsync(fd) == 0 && close(fd) == 0,
+        9);
   CHECK(pmfs_create("/t/a") == 0 && write_file("/t/a", OLD, strlen(OLD)) == 0,
         4);
   CHECK(pmfs_create("/t/delete") == 0 &&
@@ -226,16 +245,28 @@ index_test(const char *mode, int populate)
       val[2] = 'k';
       val[3] = '!';
       CHECK(pmfs_put(0x10000UL + i, val, sizeof(val)) == 0, 50);
-      if (i % 32 == 31)
+      // Build more than 128 runs to exercise multiple posting words after
+      // restart, as well as the 512-key exact-index overflow.
+      if (i % 4 == 3)
         CHECK(pmfs_seal() == 0, 51);
     }
+    // Refresh both tracked and untracked keys after the exact table fills.
+    CHECK(pmfs_put(0x10000UL, "new!", 4) == 0 &&
+            pmfs_put(0x10000UL + 520, "end!", 4) == 0 && pmfs_seal() == 0,
+          53);
   }
   for (i = 0; i < 576; i++) {
-    CHECK(pmfs_get(0x10000UL + i, result, 512, &len) == 1 && len == 4 &&
-            (unsigned char)result[0] == (i & 255) &&
-            (unsigned char)result[1] == (i >> 8) && result[2] == 'k' &&
-            result[3] == '!',
-          52);
+    CHECK(pmfs_get(0x10000UL + i, result, 512, &len) == 1 && len == 4, 52);
+    if (i == 0) {
+      CHECK(memcmp(result, "new!", 4) == 0, 54);
+    } else if (i == 520) {
+      CHECK(memcmp(result, "end!", 4) == 0, 56);
+    } else {
+      CHECK((unsigned char)result[0] == (i & 255) &&
+              (unsigned char)result[1] == (i >> 8) && result[2] == 'k' &&
+              result[3] == '!',
+            55);
+    }
   }
 }
 

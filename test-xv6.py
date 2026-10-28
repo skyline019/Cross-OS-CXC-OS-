@@ -204,6 +204,25 @@ def test_vfscapacity():
     q.stop()
     print("OK")
 
+def test_efficiency():
+    print("Test PMFS software write avoidance and exact/fallback queries")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmfs_eff\n")
+    q.monitor(r'^PMFS_EFFICIENCY_PASS', progress=r'^PMFS_METRIC',
+              failure=r'^PMFS_EFFICIENCY_FAIL', timeout=120)
+    q.stop()
+    print("OK")
+
+def test_efficiency_metrics():
+    print("Test PMFS software metrics utility")
+    q = QEMU(True)
+    q.wait_for_prompt()
+    q.cmd("pmstats\n")
+    q.monitor(r'^PMFS_SOFTWARE_METRICS version=1', failure=r'^pmstats:', timeout=30)
+    q.stop()
+    print("OK")
+
 def test_stress():
     print("Test concurrent block-log writes and readback")
     q = QEMU(True)

@@ -100,7 +100,7 @@ pmindex_upsert(struct pm_index *ix, uint64 key, uint32 rid, uint32 page)
     return 0;
   }
   if (ix->nkeys >= PM_IDX_KEYS)
-    return 0; // posting hints are optional; reads still search all runs
+    return 0; // exact entry is optional; complete postings remain required
   if (pos < 0)
     pos = (int)ix->nkeys;
   for (i = (int)ix->nkeys; i > pos; i--)
@@ -110,6 +110,22 @@ pmindex_upsert(struct pm_index *ix, uint64 key, uint32 rid, uint32 page)
   ix->keys[pos].page = page;
   ix->nkeys++;
   return 0;
+}
+
+// Entries that fit in the bounded exact index are always updated on every
+// later seal, including when the table is full. Keys that did not fit must
+// fall back to the complete run search; an absent exact entry is not a miss.
+int
+pmindex_lookup_exact(struct pm_index *ix, uint64 key, uint32 *rid, uint32 *page)
+{
+  int pos = pmindex_lower_bound(ix, key);
+  if (pos < 0 || ix->keys[pos].key != key)
+    return 0;
+  if (rid)
+    *rid = ix->keys[pos].rid;
+  if (page)
+    *page = ix->keys[pos].page;
+  return 1;
 }
 
 int

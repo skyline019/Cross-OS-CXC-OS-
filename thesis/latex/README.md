@@ -1,6 +1,8 @@
 # 本科毕业论文 LaTeX（PMFS-KV）
 
-> **旧草稿，不能直接提交。** 现有正文源码将普通 RAM/file-backed RAM 称为 NVDIMM，并对缓存刷写、掉电一致性及历史性能结果作了未经充分验证的完成式表述。`main.pdf` 为旧制品，本次未重编或验证。请先按[优秀毕设路线图](../../docs/EXCELLENCE-ROADMAP.md)实现并验收，再整体重写论文和重生成 PDF。
+> **旧草稿，不能直接提交。** 现有正文源码将普通 RAM/file-backed RAM 称为 NVDIMM，并对缓存刷写、掉电一致性及历史性能结果作了未经充分验证的完成式表述。`main.pdf` 为旧制品，本次未重编或验证。请根据[当前语义](../../docs/SEMANTICS.md)和[验证记录](../../docs/results/2026-10-28-efficiency/README.md)整体重写论文和重生成 PDF。
+>
+> 新增 [`chapters/current-evidence.tex`](chapters/current-evidence.tex) 作为可供重写时使用的当前证据章节，包含明确限制及消融数据；**尚未接入旧 `main.tex`，也尚未编译校验**。不可只把该章拼进旧正文就当作完整论文。
 
 ## 产出
 

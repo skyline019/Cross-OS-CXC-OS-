@@ -172,6 +172,8 @@ UPROGS=\
 	$U/_pmfs_regress\
 	$U/_pmfs_posix\
 	$U/_pmfs_file\
+	$U/_pmfs_eff\
+	$U/_pmstats\
 	$U/_vfstest\
 
 fs.img: mkfs/mkfs README $(UPROGS)

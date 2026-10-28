@@ -311,10 +311,11 @@ def main():
                 run.regress(ram, expected, f"recover-{skip}-{stage}-{expected}")
                 ram.unlink()
 
-        # Tear or interrupt after the new run, inode and dentry page writes.
-        # None is reachable before its following checkpoint is published.
+        # Tear/interruption after the new run or inode snapshot. The dentry
+        # snapshot is immutable and reused on file-content updates. The VFS
+        # replacement-rename oracle separately tests two changed meta pages.
         for stage in (6, 7):
-            for skip in range(3):
+            for skip in range(2):
                 ram = copy_base(f"page-{stage}-{skip}")
                 run.boot(ram, f"page-{stage}-{skip}", f"pmfs_regress fault {stage} {skip}",
                          f"PMFS_FAULT_POINT stage={stage}", False)

@@ -107,6 +107,7 @@ extern uint64 sys_pmfs_put(void);
 extern uint64 sys_pmfs_get(void);
 extern uint64 sys_pmfs_seal(void);
 extern uint64 sys_pmfs_stat(void);
+extern uint64 sys_pmfs_metrics(void);
 extern uint64 sys_cycles(void);
 extern uint64 sys_pmfs_create(void);
 extern uint64 sys_pmfs_fopen(void);
@@ -156,6 +157,7 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_get]     = sys_pmfs_get,
   [SYS_pmfs_seal]    = sys_pmfs_seal,
   [SYS_pmfs_stat]    = sys_pmfs_stat,
+  [SYS_pmfs_metrics] = sys_pmfs_metrics,
   [SYS_cycles]       = sys_cycles,
   [SYS_pmfs_create]  = sys_pmfs_create,
   [SYS_pmfs_fopen]   = sys_pmfs_fopen,

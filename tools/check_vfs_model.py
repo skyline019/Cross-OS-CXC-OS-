@@ -31,9 +31,9 @@ def recover(durable, new_namespace=NEW):
     return new_namespace
 
 
-def explore(actions, new_namespace=NEW):
+def explore(actions, new_namespace=NEW, initially_durable=()):
     """Enumerate early evictions before and after every abstract action."""
-    durable, pending, checked, outcomes = set(), set(), 0, set()
+    durable, pending, checked, outcomes = set(initially_durable), set(), 0, set()
     for position in range(len(actions) + 1):
         for evicted in subsets(pending):
             image = durable | evicted
@@ -69,6 +69,24 @@ def main():
         raise SystemExit(f"VFS_MODEL_FAIL protocol={bad} outcomes={outcomes}")
     print(f"VFS_MODEL_PASS protocol=cow-rename crash_states={checked} "
           "evictions=all_subsets outcomes=old,new")
+
+    # A non-replacing rename reuses the already durable, immutable inode
+    # snapshot and publishes only a new dentry page.
+    single_page = [("store", {"dentry"}), ("drain", {"dentry"}),
+                   ("store", {"header"}), ("drain", {"header"}),
+                   ("store", {"word"}), ("drain", {"word"})]
+    checked, outcomes, bad = explore(single_page, initially_durable={"inode"})
+    if bad is not None or outcomes != {"old", "new"}:
+        raise SystemExit(f"VFS_MODEL_FAIL reuse-inode={bad} outcomes={outcomes}")
+    print(f"VFS_MODEL_PASS protocol=reuse-inode crash_states={checked} "
+          "evictions=all_subsets outcomes=old,new")
+    early_single = [("store", {"dentry"}), ("store", {"header"}),
+                    ("drain", {"header"}), ("store", {"word"}),
+                    ("drain", {"word"}), ("drain", {"dentry"})]
+    _, _, bad = explore(early_single, initially_durable={"inode"})
+    if bad is None:
+        raise SystemExit("VFS_MODEL_FAIL reuse-inode early-publish was not detected")
+    print(f"VFS_MODEL_NEG_PASS mutation=reuse-early counterexample={bad[:2]}")
 
     # Publish the checkpoint before draining the new metadata pages.
     early = [

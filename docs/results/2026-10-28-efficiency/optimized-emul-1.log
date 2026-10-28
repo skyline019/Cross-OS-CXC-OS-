@@ -1,0 +1,28 @@
+Namespace(testrex='efficiency', q=False)
+Test PMFS software write avoidance and exact/fallback queries
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_logtest user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file user/_pmfs_eff user/_pmstats user/_vfstest 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 452 blocks have been allocated
+balloc: write bitmap block at sector 46
+PMFS_METRIC case=file_sync page_writes=2 dev_bytes=8320 checkpoint_word_stores=4
+PMFS_METRIC case=identical user_bytes=4 avoided=4 dev_bytes=0 page_writes=0
+PMFS_METRIC case=cdc_bound payload=1024 planned_chunks=4
+PMFS_METRIC case=rename page_writes=1 dev_bytes=4160 checkpoint_word_stores=2
+PMFS_METRIC case=replace page_writes=2 dev_bytes=8256
+PMFS_METRIC case=tracked_old exact=1 run_probes=0 page_reads=1
+PMFS_METRIC case=tracked exact=1 run_probes=0 page_reads=1
+PMFS_METRIC case=overflow exact=0 run_probes=2 page_reads=1
+PMFS_METRIC case=overflow_updated run_probes=1 page_reads=1
+PMFS_METRIC case=sparse_overflow skipped=64 run_probes=16 page_reads=1
+PMFS_METRIC case=absent posting_skips=214 run_probes=0 page_reads=0
+PMFS_EFFICIENCY_PASS rename_pages=1 replace_pages=2 identical_overwrite=skipped cdc=adaptive index_overflow=fallback
+OK
+Test PMFS software metrics utility
+make: 'kernel/kernel' is up to date.
+mkfs/mkfs fs.img README user/_cat user/_echo user/_forktest user/_grep user/_init user/_kill user/_ln user/_ls user/_mkdir user/_rm user/_sh user/_stressfs user/_usertests user/_grind user/_wc user/_zombie user/_logstress user/_logtest user/_forphan user/_dorphan user/_sync user/_pmfs_probe user/_pmfs_bench user/_pmformat user/_pmfs_regress user/_pmfs_posix user/_pmfs_file user/_pmfs_eff user/_pmstats user/_vfstest 
+nmeta 47 (boot, super, log blocks 31, inode blocks 13, bitmap blocks 1) blocks 1953 total 2000
+balloc: first 452 blocks have been allocated
+balloc: write bitmap block at sector 46
+PMFS_SOFTWARE_METRICS version=1 (not physical wear or erase data)
+OK

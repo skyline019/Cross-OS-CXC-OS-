@@ -47,6 +47,7 @@ entry("pmfs_put");
 entry("pmfs_get");
 entry("pmfs_seal");
 entry("pmfs_stat");
+entry("pmfs_metrics");
 entry("cycles");
 entry("pmfs_create");
 entry("pmfs_fopen");

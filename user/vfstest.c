@@ -323,6 +323,33 @@ basic(const char *mode)
   for (j = 0; j < i; j++)
     CHECK(close(fds[j]) == 0, 62);
   CHECK(unlink("/pm/vf/multi") == 0, 63);
+
+  // Race global sync against the last user close; sync must not extend the
+  // file object's lifetime with an invisible reference that delays close.
+  for (i = 0; i < 12; i++) {
+    fd = open("/pm/vf/sync", O_CREATE | O_RDWR | O_TRUNC);
+    CHECK(fd >= 0 && write(fd, "sync", 4) == 4 && pipe(ready) == 0 &&
+            pipe(go) == 0,
+          64);
+    pid = fork();
+    CHECK(pid >= 0, 65);
+    if (pid == 0) {
+      close(ready[0]);
+      close(go[1]);
+      if (close(fd) != 0 || write(ready[1], "r", 1) != 1 ||
+          read(go[0], buf, 1) != 1 || sync() != 0)
+        exit(1);
+      exit(0);
+    }
+    close(ready[1]);
+    close(go[0]);
+    CHECK(read(ready[0], buf, 1) == 1 && write(go[1], "g", 1) == 1 &&
+            close(fd) == 0 && wait(&status) == pid && status == 0 &&
+            checkfile("/pm/vf/sync", "sync") == 0,
+          66);
+    close(ready[0]);
+    close(go[1]);
+  }
 }
 
 // Exhaust the append-only metadata allocator in a disposable EMUL image.
@@ -331,44 +358,56 @@ static void
 capacity(const char *mode)
 {
   const char *src = "/pm/c/a", *dst = "/pm/c/b", *tmp;
-  int i;
+  int i, fd;
   CHECK(mkdir("/pm/c") == 0 && writefile(src, "capacity-data") == 0 &&
-          writefile("/pm/c/g", "guard") == 0,
+          writefile("/pm/c/g", "guard") == 0 &&
+          (fd = open("/pm/c/dirty", O_CREATE | O_RDWR)) >= 0 &&
+          write(fd, "dirty", 5) == 5,
         60);
-  for (i = 0; i < 2000; i++) {
+  for (i = 0; i < 4000; i++) {
     if (rename(src, dst) != 0)
       break;
     tmp = src;
     src = dst;
     dst = tmp;
   }
-  CHECK(i > 0 && i < 2000 && checkfile(src, "capacity-data") == 0 &&
+  CHECK(i > 0 && i < 4000 && checkfile(src, "capacity-data") == 0 &&
           open(dst, O_RDONLY) < 0 && checkfile("/pm/c/g", "guard") == 0 &&
           rename(src, dst) < 0 && checkfile(src, "capacity-data") == 0,
         61);
+  // A dirty file cannot be committed once the append-only space is full;
+  // both global sync and the last close must report the error.
+  CHECK(sync() < 0 && close(fd) < 0 && checkfile(src, "capacity-data") == 0,
+        67);
   printf("VFS_CAPACITY_PASS successful_renames=%d\n", i);
 }
 
 // A separate fresh MAP/NVDIMM image is used for each fault test. One rename
 // moves a directory and its two descendants in a single metadata checkpoint.
 static void
-prepare(const char *mode)
+prepare(const char *mode, int replace)
 {
   CHECK(mkdir("/pm/r") == 0 && mkdir("/pm/r/old") == 0 &&
           mkdir("/pm/r/old/sub") == 0 &&
           writefile("/pm/r/old/sub/item", "rename-data") == 0 &&
-          writefile("/pm/r/guard", "guard") == 0,
+          writefile("/pm/r/guard", "guard") == 0 &&
+          (!replace || mkdir("/pm/r/new") == 0),
         50);
 }
 
 static void
-verify(const char *mode, int is_new)
+verify(const char *mode, int is_new, int replace)
 {
   const char *have = is_new ? "/pm/r/new/sub/item" : "/pm/r/old/sub/item";
   const char *missing = is_new ? "/pm/r/old/sub/item" : "/pm/r/new/sub/item";
+  int fd;
   CHECK(checkfile(have, "rename-data") == 0 && open(missing, O_RDONLY) < 0 &&
           checkfile("/pm/r/guard", "guard") == 0,
         51);
+  if (!is_new) {
+    fd = open("/pm/r/new", O_RDONLY);
+    CHECK(replace ? (fd >= 0 && close(fd) == 0) : (fd < 0), 68);
+  }
 }
 
 int
@@ -379,15 +418,15 @@ main(int argc, char **argv)
     basic(mode);
   else if (strcmp(mode, "capacity") == 0)
     capacity(mode);
-  else if (strcmp(mode, "prepare") == 0)
-    prepare(mode);
-  else if (strcmp(mode, "old") == 0)
-    verify(mode, 0);
+  else if (strcmp(mode, "prepare") == 0 || strcmp(mode, "prepare-replace") == 0)
+    prepare(mode, strcmp(mode, "prepare-replace") == 0);
+  else if (strcmp(mode, "old") == 0 || strcmp(mode, "old-replace") == 0)
+    verify(mode, 0, strcmp(mode, "old-replace") == 0);
   else if (strcmp(mode, "new") == 0)
-    verify(mode, 1);
+    verify(mode, 1, 0);
   else if (strcmp(mode, "move") == 0) {
     CHECK(rename("/pm/r/old", "/pm/r/new") == 0, 52);
-    verify(mode, 1);
+    verify(mode, 1, 0);
   } else if (strcmp(mode, "fault") == 0 && argc == 4) {
     CHECK(pmfs_fault(atoi(argv[2]), atoi(argv[3])) == 0, 53);
     rename("/pm/r/old", "/pm/r/new");

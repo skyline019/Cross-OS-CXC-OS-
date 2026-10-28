@@ -53,6 +53,7 @@ THESIS PMFS PROTOTYPE (v3)
 Current status, test evidence and limits: THESIS.md and
   docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
   docs/SEMANTICS.md                   exact supported subset and error semantics
+  docs/PERFORMANCE-ENDURANCE.md       software I/O counters and wear limitations
   docs/QEMU-NVDIMM.md                 device and persistence-domain limits
   docs/XV6-LOG-RECOVERY.md            native xv6 log CI diagnosis and tests
   docs/results/2026-10-28-vfs/        VFS implementation and validation evidence
@@ -78,6 +79,8 @@ power failures. v3 is incompatible with v2; there is no automatic migration.
   make kernel-pmem          # rebuild MAP with ordinary 160 MiB guest RAM
   make test-model           # bounded specifications + mutation controls
   CPUS=3 make test-vfs      # default EMUL VFS and metadata exhaustion tests
+  ./test-xv6.py efficiency  # CDC/fallback, write avoidance, query counters
+  # In the guest: pmstats   # volatile software requests, NOT physical wear
   make test-vfs-recovery    # PM subtree rename restart/fault oracle, MAP
   python3 tools/bench_repro.py --runs 10 --warmup 1 --n 8 --output /tmp/pmfs-bench-results
                             # prebuilt default EMUL; copies the input disk

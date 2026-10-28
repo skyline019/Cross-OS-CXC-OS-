@@ -14,6 +14,7 @@
 #include "proc.h"
 #include "pmfs.h"
 #include "pmfile.h"
+#include "pmalgo.h"
 #include "vfs.h"
 #include "fcntl.h"
 
@@ -147,7 +148,9 @@ filepm_open_locked(struct file *f, const char *path, int ino, uint size,
 
   oldlen = pm->len;
   olddirty = pm->dirty;
-  if (trunc) {
+  // Truncating an already clean, empty version changes no observable state;
+  // avoid a redundant run/checkpoint and keep the other slot untouched.
+  if (trunc && (pm->len != 0 || pm->dirty)) {
     pm->len = 0;
     pm->dirty = 1;
     if (pmfile_commit_locked(pm) != 0) {
@@ -185,26 +188,18 @@ filepm_init_dir(struct file *f, int ino)
   release(&ftable.lock);
 }
 
-// Pin a snapshot before sleeping: never hold ftable's spinlock while flushing.
+// PMFS's lock already protects the shared inode table and its lifetimes.
+// Do not pin struct file objects here: an artificial file ref can make the
+// concurrent last close return success before the actual flush has run.
 int
 filepm_sync_all(void)
 {
-  struct file *f, *snapshot[NFILE];
-  int n = 0, i, rc = 0;
-  acquire(&ftable.lock);
-  for (f = ftable.file; f < ftable.file + NFILE; f++) {
-    if (f->ref && f->type == FD_PMFS) {
-      f->ref++;
-      snapshot[n++] = f;
-    }
-  }
-  release(&ftable.lock);
-  for (i = 0; i < n; i++) {
-    if (filefsync(snapshot[i]) != 0)
+  int i, rc = 0;
+  pmfs_lock();
+  for (i = 0; i < PMFILE_MAX_FD; i++)
+    if (pm_open_files[i].refs && pmfile_commit_locked(&pm_open_files[i]) != 0)
       rc = -1;
-    if (fileclose(snapshot[i]) != 0)
-      rc = -1;
-  }
+  pmfs_unlock();
   return rc;
 }
 
@@ -388,13 +383,22 @@ filewrite(struct file *f, uint64 addr, int n)
       ret = -1;
     } else {
       if (n) {
-        if (off > f->pm->len)
-          memset(f->pm->data + f->pm->len, 0, off - f->pm->len);
-        memmove(f->pm->data + off, tmp, n);
+        struct pm_algo *a = pm_algo_global();
+        int identical = off <= f->pm->len && (uint)n <= f->pm->len - off &&
+                        memcmp(f->pm->data + off, tmp, n) == 0;
+        a->file_write_bytes += n;
+        if (identical) {
+          a->file_identical_bytes += n;
+          a->file_identical_ops++;
+        } else {
+          if (off > f->pm->len)
+            memset(f->pm->data + f->pm->len, 0, off - f->pm->len);
+          memmove(f->pm->data + off, tmp, n);
+          if (off + n > f->pm->len)
+            f->pm->len = off + n;
+          f->pm->dirty = 1;
+        }
         f->off = off + n;
-        if (f->off > f->pm->len)
-          f->pm->len = f->off;
-        f->pm->dirty = 1;
       }
       ret = n;
     }

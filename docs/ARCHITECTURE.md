@@ -49,6 +49,10 @@ PMFS 区内页 0/1 为双 checkpoint，页 2/3 保留，后续页按 tail 追加
 
 `vfs_walk` 对每个分量执行后端实际查找并持有 inode 引用；只有原生根的 `pm` 进入 PMFS，PM 根的 `..` 回到原生根。PM inode pin 使用独立 spinlock，允许 `fork` 在进程锁下复制 cwd 引用而不睡眠；对原生 vnode 的 `iput` 在 xv6 日志事务内完成。目录 ABI 提供后端无关的固定长度项；原生 on-disk `dirent` 格式没有改变。
 
-每个普通 PM inode 最多有一个共享的有界工作缓冲和一个底层槽；独立 `open` 获得各自偏移，`dup`/`fork` 共用打开对象和偏移。PMFS sleep lock 串行化缓冲、写入、append 选尾和同步；专用文件句柄与普通打开同一 inode 互斥。全局同步在 file table spinlock 下取得引用快照，释放 spinlock 后才进入可睡眠的 PMFS 同步。该粗粒度锁保证当前受限操作路径的互斥，不是可扩展多核设计或完整线性化证明。
+每个普通 PM inode 最多有一个共享的有界工作缓冲和一个底层槽；独立 `open` 获得各自偏移，`dup`/`fork` 共用打开对象和偏移。PMFS sleep lock 串行化缓冲、写入、append 选尾和同步；专用文件句柄与普通打开同一 inode 互斥。全局同步直接在 PMFS 锁下遍历有界共享 inode 表并提交脏缓冲，不给 `struct file` 额外加引用；这避免并发最后 `close` 被同步快照延长寿命后提前成功返回。该粗粒度锁保证当前受限操作路径的互斥，不是可扩展多核设计或完整线性化证明。
 
-子树 rename 先检查目标、环和所有后代的新路径长度，再复制旧 dentry 表供普通错误回滚，修改内存图后**一次**调用元数据 COW checkpoint 发布。重写复杂度 `O(受限 dentry 数)`；活动目录或文件的引用按 inode 保持，目标若被引用则拒绝替换。重启 oracle、实际代码变异负控与规格模型见 [VFS 验证记录](results/2026-10-28-vfs/README.md)。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。
+子树 rename 先检查目标、环和所有后代的新路径长度，再复制旧 dentry 表供普通错误回滚，修改内存图后**一次**调用元数据 COW checkpoint 发布。非替换式移动只追加新 dentry 页并复用不可变 inode 页；替换目标会同时生成两页。文件内容提交只生成 inode 页并复用不可变 dentry 页；所有新页都在同一个 checkpoint 发布相应根之前持久化。重写复杂度 `O(受限 dentry 数)`；活动引用按 inode 保持，目标若被引用则拒绝替换。
+
+PMFS KV 查询优先查内存批次和小值缓存；缓存未命中时，完整重建/持续更新的有界精确索引直达最新 run 的页。精确表满后未收入的键仍走 newest-first 搜索；所有键都更新 coarse posting，fallback 直接倒序遍历置位的 run、跳过零位，再使用 Bloom 和 fence。普通 fd 提交先探测 CDC 切分，在不超过 4 extent、且分块数不多于固定分块时采用 CDC，否则退回固定分块；专用 CDC/KV/stream 接口仍保留。当前 CDC 仅用于切分，**没有内容去重**。
+
+重启 oracle、实际代码变异负控、软件计数与模型见[优化验证记录](results/2026-10-28-efficiency/README.md)。调用过程、资源上限、失败及全局 `sync` 细节见[语义](SEMANTICS.md)。
