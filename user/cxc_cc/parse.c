@@ -5,16 +5,41 @@ typedef struct CcParser {
     CcEmit* em;
 } CcParser;
 
+static void snap_fail_loc(CcParser* p) {
+    /* M296: first-fail line/col only (matches fail_code latch). */
+    if (p->em->fail_line == 0 && p->lx) {
+        p->em->fail_line = p->lx->line;
+        p->em->fail_col = p->lx->col;
+    }
+}
+
 static void fail(CcParser* p) {
     p->em->failed = 1;
     if (p->em->fail_code == 0) {
         p->em->fail_code = 30; /* parse fail (debug) */
+        snap_fail_loc(p);
+    }
+}
+
+static void fail_unknown(CcParser* p) {
+    /* M287/D1: unsupported lexeme (e.g. '#' from #define) */
+    p->em->failed = 1;
+    if (p->em->fail_code == 0) {
+        p->em->fail_code = 60;
+        snap_fail_loc(p);
     }
 }
 
 static int accept(CcParser* p, int tok) {
+    if (p->lx->tok == TOK_UNKNOWN) {
+        fail_unknown(p);
+        return 0;
+    }
     if (p->lx->tok == tok) {
         cc_lex_next(p->lx);
+        if (p->lx->tok == TOK_UNKNOWN) {
+            fail_unknown(p);
+        }
         return 1;
     }
     return 0;
@@ -22,7 +47,9 @@ static int accept(CcParser* p, int tok) {
 
 static void expect(CcParser* p, int tok) {
     if (!accept(p, tok)) {
-        fail(p);
+        if (!p->em->failed) {
+            fail(p);
+        }
     }
 }
 
@@ -61,10 +88,6 @@ static int accept_type_ex(CcParser* p, int* is_char, int* is_const) {
         return 1;
     }
     return 0;
-}
-
-static int accept_type(CcParser* p) {
-    return accept_type_ex(p, 0, 0);
 }
 
 static int is_type_tok(CcParser* p) {
@@ -120,37 +143,99 @@ static int store_global_checked(CcParser* p, int gi) {
 }
 
 static void parse_expr(CcParser* p);
+static void parse_unary(CcParser* p);
 
 static size_t emit_je32(CcEmit* em) {
     size_t at;
+    int id = 0;
+    if (em->asm_mode) {
+        id = cc_asm_new_label(em);
+        cc_asm_je_label(em, id);
+    }
     cc_emit_bytes(em, "\x0F\x84", 2);
     at = em->code_len;
     cc_emit_i32(em, 0);
+    if (em->asm_mode) {
+        if (em->nasm_fix >= 64) {
+            em->failed = 1;
+        } else {
+            em->asm_fix_at[em->nasm_fix] = at;
+            em->asm_fix_id[em->nasm_fix] = id;
+            em->nasm_fix++;
+        }
+    }
     return at;
 }
 
 static size_t emit_jne32(CcEmit* em) {
     size_t at;
+    int id = 0;
+    if (em->asm_mode) {
+        id = cc_asm_new_label(em);
+        cc_asm_jne_label(em, id);
+    }
     cc_emit_bytes(em, "\x0F\x85", 2);
     at = em->code_len;
     cc_emit_i32(em, 0);
+    if (em->asm_mode) {
+        if (em->nasm_fix >= 64) {
+            em->failed = 1;
+        } else {
+            em->asm_fix_at[em->nasm_fix] = at;
+            em->asm_fix_id[em->nasm_fix] = id;
+            em->nasm_fix++;
+        }
+    }
     return at;
 }
 
 static size_t emit_jmp32(CcEmit* em) {
     size_t at;
+    int id = 0;
+    if (em->asm_mode) {
+        id = cc_asm_new_label(em);
+        cc_asm_jmp_label(em, id);
+    }
     cc_emit_byte(em, 0xE9);
     at = em->code_len;
     cc_emit_i32(em, 0);
+    if (em->asm_mode) {
+        if (em->nasm_fix >= 64) {
+            em->failed = 1;
+        } else {
+            em->asm_fix_at[em->nasm_fix] = at;
+            em->asm_fix_id[em->nasm_fix] = id;
+            em->nasm_fix++;
+        }
+    }
     return at;
 }
 
 static void patch_rel32(CcEmit* em, size_t at, size_t target) {
     int rel = (int)(target - (at + 4));
+    int i;
     em->code[at] = (unsigned char)(rel);
     em->code[at + 1] = (unsigned char)(rel >> 8);
     em->code[at + 2] = (unsigned char)(rel >> 16);
     em->code[at + 3] = (unsigned char)(rel >> 24);
+    /* M297: forward asm labels — define .LccN at current code end when
+     * target==code_len. Backward edges use cc_asm_jmp_label(known id). */
+    if (!em->asm_mode) {
+        return;
+    }
+    for (i = 0; i < em->nasm_fix; i++) {
+        if (em->asm_fix_at[i] == at) {
+            int id = em->asm_fix_id[i];
+            em->asm_fix_at[i] = em->asm_fix_at[em->nasm_fix - 1];
+            em->asm_fix_id[i] = em->asm_fix_id[em->nasm_fix - 1];
+            em->nasm_fix--;
+            if (target == em->code_len) {
+                cc_asm_def_label(em, id);
+            }
+            /* backward: label text already used correct id via jmp_label */
+            return;
+        }
+    }
 }
 
 static void parse_call(CcParser* p, const char* name) {
@@ -184,21 +269,36 @@ static void parse_call(CcParser* p, const char* name) {
     if (p->em->fns[fi].sysv) {
         /* Args were pushed L→R; pop into SysV regs (last arg on top). */
         if (argc >= 4) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tpop %rcx\n");
+            }
             cc_emit_byte(p->em, 0x59); /* pop rcx */
         }
         if (argc >= 3) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tpop %rdx\n");
+            }
             cc_emit_byte(p->em, 0x5A); /* pop rdx */
         }
         if (argc >= 2) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tpop %rsi\n");
+            }
             cc_emit_byte(p->em, 0x5E); /* pop rsi */
         }
         if (argc >= 1) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tpop %rdi\n");
+            }
             cc_emit_byte(p->em, 0x5F); /* pop rdi */
         }
         if (argc > 4) {
             fail(p);
             return;
         }
+    }
+    if (p->em->asm_mode) {
+        cc_emit_call_name(p->em, p->em->fns[fi].name);
     }
     call_at = cc_emit_call_rel32(p->em);
     /* obj_mode: leave e8 00..00 + record for .rela.text (gcc-like). */
@@ -222,7 +322,12 @@ static void parse_call(CcParser* p, const char* name) {
 
 static void parse_primary(CcParser* p) {
     if (p->lx->tok == TOK_NUMBER) {
-        cc_emit_mov_eax_imm(p->em, (unsigned)p->lx->number);
+        unsigned long long u = (unsigned long long)p->lx->number;
+        if (u > 0xffffffffull || (p->lx->number < 0)) {
+            cc_emit_mov_rax_imm64(p->em, u);
+        } else {
+            cc_emit_mov_eax_imm(p->em, (unsigned)u);
+        }
         cc_lex_next(p->lx);
         return;
     }
@@ -272,21 +377,27 @@ static void parse_primary(CcParser* p) {
                 return;
             }
             if (p->em->locals[idx].count > 1) {
+                int ew = p->em->locals[idx].elem_w > 0
+                             ? p->em->locals[idx].elem_w
+                             : 8;
                 parse_expr(p);
                 expect(p, TOK_RBRACK);
-                cc_emit_index_load(p->em, p->em->locals[idx].slot);
+                cc_emit_index_load_n(p->em, p->em->locals[idx].slot,
+                                    p->em->locals[idx].count, ew);
                 return;
             }
             if (p->em->locals[idx].count == 1) {
-                /* pointer word index: *(p + i) with 8-byte scale */
+                /* M288: *(p + i) with pointee elem_w (default 8). */
+                int ew = p->em->locals[idx].elem_w > 0
+                             ? p->em->locals[idx].elem_w
+                             : 8;
                 cc_emit_load_local(p->em, p->em->locals[idx].slot);
                 cc_emit_push_rax(p->em);
                 parse_expr(p);
                 expect(p, TOK_RBRACK);
-                cc_emit_bytes(p->em, "\x48\xC1\xE0\x03", 4); /* shl rax, 3 */
-                cc_emit_pop_rcx(p->em);
-                cc_emit_bytes(p->em, "\x48\x01\xC8", 3); /* add rax, rcx */
-                cc_emit_load_indirect(p->em);
+                cc_emit_bytes(p->em, "\x48\x89\xC1", 3); /* mov rcx, index */
+                cc_emit_byte(p->em, 0x58);               /* pop rax = ptr */
+                cc_emit_ptr_index_load(p->em, ew);
                 return;
             }
             fail(p);
@@ -342,7 +453,8 @@ static void parse_primary(CcParser* p) {
             return;
         }
         if (p->em->locals[idx].stype >= 0 && !p->em->locals[idx].is_ptr) {
-            fail(p);
+            /* M290: struct rvalue → first word (covers return v; field0). */
+            cc_emit_load_local(p->em, p->em->locals[idx].slot);
             return;
         }
         if (p->em->locals[idx].count != 1) {
@@ -353,6 +465,25 @@ static void parse_primary(CcParser* p) {
         return;
     }
     if (accept(p, TOK_LPAREN)) {
+        /* M289: (T)x cast — T is int/long/char/unsigned[/void*]. */
+        if (is_type_tok(p) || p->lx->tok == TOK_KW_VOID) {
+            int is_char = 0;
+            if (accept(p, TOK_KW_VOID)) {
+                (void)accept(p, TOK_STAR);
+            } else if (!accept_type_ex(p, &is_char, 0)) {
+                fail(p);
+                return;
+            } else {
+                while (accept(p, TOK_STAR)) {
+                }
+            }
+            expect(p, TOK_RPAREN);
+            parse_unary(p);
+            if (is_char) {
+                emit_trunc_char(p->em);
+            }
+            return;
+        }
         parse_expr(p);
         expect(p, TOK_RPAREN);
         return;
@@ -396,13 +527,25 @@ static void parse_addr_of(CcParser* p) {
         return;
     }
     if (accept(p, TOK_LBRACK)) {
+        int ew;
         if (p->em->locals[idx].count < 1) {
             fail(p);
             return;
         }
+        ew = p->em->locals[idx].elem_w > 0 ? p->em->locals[idx].elem_w : 8;
         parse_expr(p);
         expect(p, TOK_RBRACK);
-        cc_emit_index_lea(p->em, p->em->locals[idx].slot);
+        if (p->em->locals[idx].count == 1) {
+            /* &p[i] → p + i*elem_w (index already in rax) */
+            cc_emit_push_rax(p->em);
+            cc_emit_load_local(p->em, p->em->locals[idx].slot);
+            cc_emit_bytes(p->em, "\x48\x89\xC1", 3); /* mov rcx, ptr */
+            cc_emit_byte(p->em, 0x58);               /* pop rax = index */
+            cc_emit_ptr_add_scaled(p->em, ew);
+            return;
+        }
+        cc_emit_index_lea_n(p->em, p->em->locals[idx].slot,
+                            p->em->locals[idx].count, ew);
         return;
     }
     /* M140: &struct_value → address of first field / object. */
@@ -421,6 +564,12 @@ static void parse_unary(CcParser* p) {
     if (accept(p, TOK_MINUS)) {
         parse_unary(p);
         cc_emit_bytes(p->em, "\x48\xF7\xD8", 3); /* neg rax */
+        return;
+    }
+    if (accept(p, TOK_TILDE)) {
+        /* M289: ~x → not rax */
+        parse_unary(p);
+        cc_emit_bytes(p->em, "\x48\xF7\xD0", 3); /* not rax */
         return;
     }
     if (accept(p, TOK_BANG)) {
@@ -521,19 +670,69 @@ static void parse_mul(CcParser* p) {
 }
 
 static void parse_add(CcParser* p) {
+    /* M288: track if LHS is a pointer local (ident) for scaling. */
+    int lhs_ptr = 0;
+    int lhs_ew = 8;
+    if (p->lx->tok == TOK_IDENT) {
+        int li = cc_local_find(p->em, p->lx->text);
+        if (li >= 0 && p->em->locals[li].count == 1 &&
+            p->em->locals[li].is_ptr) {
+            lhs_ptr = 1;
+            lhs_ew =
+                p->em->locals[li].elem_w > 0 ? p->em->locals[li].elem_w : 8;
+        }
+    }
     parse_mul(p);
     while (p->lx->tok == TOK_PLUS || p->lx->tok == TOK_MINUS) {
         int op = p->lx->tok;
+        int scale = lhs_ptr;
         cc_lex_next(p->lx);
         cc_emit_push_rax(p->em);
         parse_mul(p);
-        cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
-        cc_emit_pop_rcx(p->em);
-        cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
-        if (op == TOK_PLUS) {
-            cc_emit_bytes(p->em, "\x48\x01\xD0", 3);
+        if (scale && op == TOK_PLUS) {
+            /* ptr + int: rax=int, stack=ptr → ptr + int*ew */
+            cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax (int) */
+            cc_emit_pop_rcx(p->em);                 /* rcx = ptr */
+            cc_emit_bytes(p->em, "\x48\x89\xD0", 3); /* mov rax, rdx */
+            cc_emit_ptr_add_scaled(p->em, lhs_ew);
+            lhs_ptr = 1; /* result still pointer */
+        } else if (scale && op == TOK_MINUS) {
+            /* ptr - int */
+            cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+            cc_emit_pop_rcx(p->em);
+            cc_emit_bytes(p->em, "\x48\x89\xD0", 3);
+            if (lhs_ew == 2) {
+                cc_emit_bytes(p->em, "\x48\xC1\xE0\x01", 4);
+            } else if (lhs_ew == 4) {
+                cc_emit_bytes(p->em, "\x48\xC1\xE0\x02", 4);
+            } else if (lhs_ew != 1) {
+                cc_emit_bytes(p->em, "\x48\xC1\xE0\x03", 4);
+            }
+            cc_emit_bytes(p->em, "\x48\x29\xC1", 3); /* sub rcx, rax */
+            cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
+            lhs_ptr = 1;
         } else {
-            cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tmov %rax, %rdx\n");
+            }
+            cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+            cc_emit_pop_rcx(p->em);
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tmov %rcx, %rax\n");
+            }
+            cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+            if (op == TOK_PLUS) {
+                if (p->em->asm_mode) {
+                    cc_emit_asm_puts(p->em, "\tadd %rdx, %rax\n");
+                }
+                cc_emit_bytes(p->em, "\x48\x01\xD0", 3);
+            } else {
+                if (p->em->asm_mode) {
+                    cc_emit_asm_puts(p->em, "\tsub %rdx, %rax\n");
+                }
+                cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+            }
+            lhs_ptr = 0;
         }
     }
 }
@@ -563,34 +762,76 @@ static void parse_cmp(CcParser* p) {
         cc_lex_next(p->lx);
         cc_emit_push_rax(p->em);
         parse_shift(p);
+        if (p->em->asm_mode) {
+            cc_emit_asm_puts(p->em, "\tmov %rax, %rdx\n");
+        }
         cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
         cc_emit_pop_rcx(p->em);
+        if (p->em->asm_mode) {
+            cc_emit_asm_puts(p->em, "\tcmp %rdx, %rcx\n");
+        }
         cc_emit_bytes(p->em, "\x48\x39\xD1", 3);
         if (op == TOK_EQ) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsete %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x94\xC0", 3);
         } else if (op == TOK_NE) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsetne %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x95\xC0", 3);
         } else if (op == TOK_LT) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsetl %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x9C\xC0", 3);
         } else if (op == TOK_LE) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsetle %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x9E\xC0", 3);
         } else if (op == TOK_GT) {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsetg %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x9F\xC0", 3);
         } else {
+            if (p->em->asm_mode) {
+                cc_emit_asm_puts(p->em, "\tsetge %al\n");
+            }
             cc_emit_bytes(p->em, "\x0F\x9D\xC0", 3);
+        }
+        if (p->em->asm_mode) {
+            cc_emit_asm_puts(p->em, "\tmovzbl %al, %eax\n");
         }
         cc_emit_bytes(p->em, "\x0F\xB6\xC0", 3);
     }
 }
 
-static void parse_and(CcParser* p) {
+static void parse_xor(CcParser* p) {
+    /* M289: bitwise ^ (between relational and &&). */
     parse_cmp(p);
+    while (p->lx->tok == TOK_CARET) {
+        cc_lex_next(p->lx);
+        cc_emit_push_rax(p->em);
+        parse_cmp(p);
+        cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax */
+        cc_emit_pop_rcx(p->em);
+        cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
+        cc_emit_bytes(p->em, "\x48\x31\xD0", 3); /* xor rax, rdx */
+    }
+}
+
+static void parse_and(CcParser* p) {
+    parse_xor(p);
     while (p->lx->tok == TOK_AMPAMP) {
         size_t je_at;
         cc_lex_next(p->lx);
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
-        parse_cmp(p);
+        parse_xor(p);
         patch_rel32(p->em, je_at, p->em->code_len);
     }
 }
@@ -600,6 +841,7 @@ static void parse_or(CcParser* p) {
     while (p->lx->tok == TOK_BARBAR) {
         size_t jne_at;
         cc_lex_next(p->lx);
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         jne_at = emit_jne32(p->em);
         parse_and(p);
@@ -614,6 +856,7 @@ static void parse_ternary(CcParser* p) {
     if (!accept(p, TOK_QUESTION)) {
         return;
     }
+    cc_emit_asm_test_rax(p->em);
     cc_emit_bytes(p->em, "\x85\xC0", 2);
     je_at = emit_je32(p->em);
     parse_ternary(p);
@@ -649,6 +892,7 @@ static int loop_push(CcEmit* em, size_t cont_at, int is_switch) {
     lp->nbrk = 0;
     lp->ncont = 0;
     lp->is_switch = is_switch;
+    lp->asm_cont_id = 0;
     return 0;
 }
 
@@ -728,6 +972,7 @@ static void parse_stmt(CcParser* p) {
         expect(p, TOK_LPAREN);
         parse_expr(p);
         expect(p, TOK_RPAREN);
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         parse_stmt(p);
@@ -743,28 +988,53 @@ static void parse_stmt(CcParser* p) {
         return;
     }
     if (accept(p, TOK_KW_WHILE)) {
-        size_t loop = p->em->code_len;
+        size_t loop;
         size_t je_at;
         size_t back;
+        int cont_lab = 0;
         expect(p, TOK_LPAREN);
+        if (p->em->asm_mode) {
+            cont_lab = cc_asm_new_label(p->em);
+            cc_asm_def_label(p->em, cont_lab);
+        }
+        loop = p->em->code_len;
         if (loop_push(p->em, loop, 0) != 0) {
             return;
         }
+        if (p->em->asm_mode) {
+            p->em->loops[p->em->nloops - 1].asm_cont_id = cont_lab;
+        }
         parse_expr(p);
         expect(p, TOK_RPAREN);
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         parse_stmt(p);
         loop_patch_continues(p->em, loop);
-        back = emit_jmp32(p->em);
-        patch_rel32(p->em, back, loop);
+        if (p->em->asm_mode) {
+            cc_asm_jmp_label(p->em, cont_lab);
+            /* Binary back-edge without a second asm forward label. */
+            cc_emit_byte(p->em, 0xE9);
+            back = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+            patch_rel32(p->em, back, loop);
+        } else {
+            back = emit_jmp32(p->em);
+            patch_rel32(p->em, back, loop);
+        }
         patch_rel32(p->em, je_at, p->em->code_len);
         loop_pop(p->em, p->em->code_len);
         return;
     }
     if (accept(p, TOK_KW_DO)) {
-        size_t body = p->em->code_len;
+        size_t body;
         size_t jnz_at;
+        int body_lab = 0;
+        if (p->em->asm_mode) {
+            body_lab = cc_asm_new_label(p->em);
+            cc_asm_def_label(p->em, body_lab);
+        }
+        body = p->em->code_len;
         if (loop_push(p->em, body, 0) != 0) {
             return;
         }
@@ -775,9 +1045,18 @@ static void parse_stmt(CcParser* p) {
         parse_expr(p);
         expect(p, TOK_RPAREN);
         expect(p, TOK_SEMI);
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
-        jnz_at = emit_jne32(p->em);
-        patch_rel32(p->em, jnz_at, body);
+        if (p->em->asm_mode) {
+            cc_asm_jne_label(p->em, body_lab);
+            cc_emit_bytes(p->em, "\x0F\x85", 2);
+            jnz_at = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+            patch_rel32(p->em, jnz_at, body);
+        } else {
+            jnz_at = emit_jne32(p->em);
+            patch_rel32(p->em, jnz_at, body);
+        }
         loop_pop(p->em, p->em->code_len);
         return;
     }
@@ -791,6 +1070,7 @@ static void parse_stmt(CcParser* p) {
         CcLexer step_lx;
         CcLexer after_paren;
         int depth;
+        int cond_lab = 0;
         expect(p, TOK_LPAREN);
         if (!accept(p, TOK_SEMI)) {
             if (p->lx->tok != TOK_IDENT) {
@@ -812,6 +1092,10 @@ static void parse_stmt(CcParser* p) {
         if (loop_push(p->em, 0, 0) != 0) {
             return;
         }
+        if (p->em->asm_mode) {
+            cond_lab = cc_asm_new_label(p->em);
+            cc_asm_def_label(p->em, cond_lab);
+        }
         cond_at = p->em->code_len;
         if (accept(p, TOK_SEMI)) {
             cc_emit_mov_eax_imm(p->em, 1);
@@ -819,6 +1103,7 @@ static void parse_stmt(CcParser* p) {
             parse_expr(p);
             expect(p, TOK_SEMI);
         }
+        cc_emit_asm_test_rax(p->em);
         cc_emit_bytes(p->em, "\x85\xC0", 2);
         je_at = emit_je32(p->em);
         /* Save step clause, skip to ')' then parse body, then emit step. */
@@ -862,8 +1147,16 @@ static void parse_stmt(CcParser* p) {
             cc_emit_store_local(p->em, slot);
         }
         *p->lx = after_paren;
-        back = emit_jmp32(p->em);
-        patch_rel32(p->em, back, cond_at);
+        if (p->em->asm_mode) {
+            cc_asm_jmp_label(p->em, cond_lab);
+            cc_emit_byte(p->em, 0xE9);
+            back = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+            patch_rel32(p->em, back, cond_at);
+        } else {
+            back = emit_jmp32(p->em);
+            patch_rel32(p->em, back, cond_at);
+        }
         patch_rel32(p->em, je_at, p->em->code_len);
         loop_pop(p->em, p->em->code_len);
         return;
@@ -900,7 +1193,15 @@ static void parse_stmt(CcParser* p) {
             fail(p);
             return;
         }
-        at = emit_jmp32(p->em);
+        /* M299: while continue uses known loop-top label (not a fresh forward id). */
+        if (p->em->asm_mode && lp->asm_cont_id > 0) {
+            cc_asm_jmp_label(p->em, lp->asm_cont_id);
+            cc_emit_byte(p->em, 0xE9);
+            at = p->em->code_len;
+            cc_emit_i32(p->em, 0);
+        } else {
+            at = emit_jmp32(p->em);
+        }
         lp->cont_patch[lp->ncont++] = at;
         return;
     }
@@ -928,6 +1229,11 @@ static void parse_stmt(CcParser* p) {
                 cc_lex_next(p->lx);
                 expect(p, TOK_COLON);
                 /* mov rax,[rsp]; cmp rax,imm; jne skip */
+                if (p->em->asm_mode) {
+                    /* pop/push keeps scrutinee; as already accepts these. */
+                    cc_emit_asm_puts(p->em, "\tpop %rax\n\tpush %rax\n");
+                    cc_emit_asm_cmp_rax_imm(p->em, imm);
+                }
                 cc_emit_bytes(p->em, "\x48\x8B\x04\x24", 4);
                 cc_emit_bytes(p->em, "\x48\x3D", 2);
                 cc_emit_u32(p->em, (unsigned)imm);
@@ -970,6 +1276,9 @@ static void parse_stmt(CcParser* p) {
         }
         expect(p, TOK_RBRACE);
         loop_pop(p->em, p->em->code_len);
+        if (p->em->asm_mode) {
+            cc_emit_asm_puts(p->em, "\tadd $8, %rsp\n");
+        }
         cc_emit_bytes(p->em, "\x48\x83\xC4\x08", 4); /* add rsp, 8 */
         return;
     }
@@ -977,7 +1286,11 @@ static void parse_stmt(CcParser* p) {
         char lit[CC_LIT_MAX + 1];
         size_t n = 0;
         if (p->lx->tok == TOK_STR) {
-            while (n < CC_LIT_MAX && n < p->lx->str_len) {
+            if (p->lx->str_len > CC_LIT_MAX) {
+                fail(p); /* M291: no silent truncate */
+                return;
+            }
+            while (n < p->lx->str_len) {
                 lit[n] = p->lx->str[n];
                 n++;
             }
@@ -1026,7 +1339,12 @@ static void parse_stmt(CcParser* p) {
         return;
     }
     if (accept(p, TOK_KW_RETURN)) {
-        parse_expr(p);
+        /* M289: bare `return;` → rax=0 then leave. */
+        if (p->lx->tok != TOK_SEMI) {
+            parse_expr(p);
+        } else {
+            cc_emit_mov_eax_imm(p->em, 0);
+        }
         expect(p, TOK_SEMI);
         if (p->em->in_fn) {
             cc_emit_leave_ret(p->em);
@@ -1080,12 +1398,18 @@ static void parse_stmt(CcParser* p) {
             if (idx >= 0) {
                 p->em->locals[idx].is_char = is_ptr ? 0 : is_char;
                 p->em->locals[idx].is_ptr = is_ptr;
+                if (is_ptr) {
+                    p->em->locals[idx].elem_w = is_char ? 1 : 8;
+                } else if (is_char) {
+                    p->em->locals[idx].elem_w = 1;
+                }
             }
             return;
         }
         if (accept(p, TOK_LBRACK)) {
             long dim;
-            if (is_const || is_char || is_ptr) {
+            long dim2 = 1;
+            if (is_const || is_ptr) {
                 fail(p);
                 return;
             }
@@ -1096,13 +1420,31 @@ static void parse_stmt(CcParser* p) {
             dim = p->lx->number;
             cc_lex_next(p->lx);
             expect(p, TOK_RBRACK);
+            /* M290: optional second dim → flattened count. */
+            if (accept(p, TOK_LBRACK)) {
+                if (is_char || p->lx->tok != TOK_NUMBER) {
+                    fail(p);
+                    return;
+                }
+                dim2 = p->lx->number;
+                cc_lex_next(p->lx);
+                expect(p, TOK_RBRACK);
+            }
             expect(p, TOK_SEMI);
-            if (dim < 1 || dim > CC_LOCAL_MAX) {
+            if (dim < 1 || dim2 < 1 || dim * dim2 > CC_LOCAL_MAX) {
                 fail(p);
                 return;
             }
-            if (cc_local_define(p->em, name, (int)dim) < 0) {
+            if (cc_local_define(p->em, name, (int)(dim * dim2)) < 0) {
                 fail(p);
+                return;
+            }
+            if (is_char) {
+                idx = cc_local_find(p->em, name);
+                if (idx >= 0) {
+                    p->em->locals[idx].is_char = 1;
+                    p->em->locals[idx].elem_w = 1;
+                }
             }
             return;
         }
@@ -1119,6 +1461,11 @@ static void parse_stmt(CcParser* p) {
             p->em->locals[idx].is_char = is_ptr ? 0 : is_char;
             p->em->locals[idx].is_const = is_const;
             p->em->locals[idx].is_ptr = is_ptr;
+            if (is_ptr) {
+                p->em->locals[idx].elem_w = is_char ? 1 : 8;
+            } else if (is_char) {
+                p->em->locals[idx].elem_w = 1;
+            }
             slot = p->em->locals[idx].slot;
             parse_expr(p);
             expect(p, TOK_SEMI);
@@ -1159,25 +1506,47 @@ static void parse_stmt(CcParser* p) {
             }
             memcpy(inst, p->lx->text, CC_IDENT_MAX + 1);
             cc_lex_next(p->lx);
-            expect(p, TOK_SEMI);
-            if (is_ptr) {
-                if (cc_local_define_st(p->em, inst, 1, st) < 0) {
-                    fail(p);
-                    return;
+            {
+                long dim = 1;
+                if (accept(p, TOK_LBRACK)) {
+                    if (is_ptr || p->lx->tok != TOK_NUMBER) {
+                        fail(p);
+                        return;
+                    }
+                    dim = p->lx->number;
+                    cc_lex_next(p->lx);
+                    expect(p, TOK_RBRACK);
+                    if (dim < 1 || dim > CC_LOCAL_MAX) {
+                        fail(p);
+                        return;
+                    }
                 }
-                li = cc_local_find(p->em, inst);
-                if (li < 0) {
-                    fail(p);
-                    return;
-                }
-                p->em->locals[li].is_ptr = 1;
-            } else {
-                int words = (p->em->structs[st].ssize + 7) / 8;
-                if (words < 1) {
-                    words = 1;
-                }
-                if (cc_local_define_st(p->em, inst, words, st) < 0) {
-                    fail(p);
+                expect(p, TOK_SEMI);
+                if (is_ptr) {
+                    if (cc_local_define_st(p->em, inst, 1, st) < 0) {
+                        fail(p);
+                        return;
+                    }
+                    li = cc_local_find(p->em, inst);
+                    if (li < 0) {
+                        fail(p);
+                        return;
+                    }
+                    p->em->locals[li].is_ptr = 1;
+                } else {
+                    int words = (p->em->structs[st].ssize + 7) / 8;
+                    long total;
+                    if (words < 1) {
+                        words = 1;
+                    }
+                    total = (long)words * dim;
+                    if (total < 1 || total > CC_LOCAL_MAX) {
+                        fail(p);
+                        return;
+                    }
+                    if (cc_local_define_st(p->em, inst, (int)total, st) < 0) {
+                        fail(p);
+                    }
                 }
             }
             return;
@@ -1217,8 +1586,9 @@ static void parse_stmt(CcParser* p) {
             (void)store_global_checked(p, gi);
             return;
         }
-        if (p->lx->tok == TOK_PLUSEQ || p->lx->tok == TOK_MINUSEQ) {
-            int add = (p->lx->tok == TOK_PLUSEQ);
+        if (p->lx->tok == TOK_PLUSEQ || p->lx->tok == TOK_MINUSEQ ||
+            p->lx->tok == TOK_PERCENTEQ) {
+            int op = p->lx->tok;
             cc_lex_next(p->lx);
             idx = cc_local_find(p->em, name);
             if (idx >= 0 && p->em->locals[idx].count == 1) {
@@ -1226,13 +1596,22 @@ static void parse_stmt(CcParser* p) {
                 cc_emit_push_rax(p->em);
                 parse_expr(p);
                 expect(p, TOK_SEMI);
-                cc_emit_pop_rcx(p->em);
-                if (add) {
-                    cc_emit_bytes(p->em, "\x48\x01\xC8", 3); /* add rax, rcx */
+                if (op == TOK_PERCENTEQ) {
+                    /* stack=lhs, rax=rhs → lhs % rhs */
+                    cc_emit_bytes(p->em, "\x48\x89\xC1", 3); /* mov rcx, rax */
+                    cc_emit_byte(p->em, 0x58);               /* pop rax */
+                    cc_emit_bytes(p->em, "\x48\x99", 2);     /* cqo */
+                    cc_emit_bytes(p->em, "\x48\xF7\xF9", 3); /* idiv rcx */
+                    cc_emit_bytes(p->em, "\x48\x89\xD0", 3); /* mov rax, rdx */
                 } else {
-                    cc_emit_bytes(p->em, "\x48\x89\xC2", 3); /* mov rdx, rax */
-                    cc_emit_bytes(p->em, "\x48\x89\xC8", 3); /* mov rax, rcx */
-                    cc_emit_bytes(p->em, "\x48\x29\xD0", 3); /* sub rax, rdx */
+                    cc_emit_pop_rcx(p->em);
+                    if (op == TOK_PLUSEQ) {
+                        cc_emit_bytes(p->em, "\x48\x01\xC8", 3);
+                    } else {
+                        cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+                        cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+                        cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+                    }
                 }
                 (void)store_local_checked(p, idx);
                 return;
@@ -1246,13 +1625,21 @@ static void parse_stmt(CcParser* p) {
             cc_emit_push_rax(p->em);
             parse_expr(p);
             expect(p, TOK_SEMI);
-            cc_emit_pop_rcx(p->em);
-            if (add) {
-                cc_emit_bytes(p->em, "\x48\x01\xC8", 3);
+            if (op == TOK_PERCENTEQ) {
+                cc_emit_bytes(p->em, "\x48\x89\xC1", 3);
+                cc_emit_byte(p->em, 0x58);
+                cc_emit_bytes(p->em, "\x48\x99", 2);
+                cc_emit_bytes(p->em, "\x48\xF7\xF9", 3);
+                cc_emit_bytes(p->em, "\x48\x89\xD0", 3);
             } else {
-                cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
-                cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
-                cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+                cc_emit_pop_rcx(p->em);
+                if (op == TOK_PLUSEQ) {
+                    cc_emit_bytes(p->em, "\x48\x01\xC8", 3);
+                } else {
+                    cc_emit_bytes(p->em, "\x48\x89\xC2", 3);
+                    cc_emit_bytes(p->em, "\x48\x89\xC8", 3);
+                    cc_emit_bytes(p->em, "\x48\x29\xD0", 3);
+                }
             }
             (void)store_global_checked(p, gi);
             return;
@@ -1318,14 +1705,24 @@ static void parse_stmt(CcParser* p) {
         if (accept(p, TOK_LBRACK)) {
             if (p->lx->tok == TOK_NUMBER) {
                 long dim = p->lx->number;
+                long dim2 = 1;
                 cc_lex_next(p->lx);
                 expect(p, TOK_RBRACK);
-                if (accept(p, TOK_SEMI)) {
-                    if (dim < 1 || dim > CC_LOCAL_MAX) {
+                if (accept(p, TOK_LBRACK)) {
+                    if (p->lx->tok != TOK_NUMBER) {
                         fail(p);
                         return;
                     }
-                    if (cc_local_define(p->em, name, (int)dim) < 0) {
+                    dim2 = p->lx->number;
+                    cc_lex_next(p->lx);
+                    expect(p, TOK_RBRACK);
+                }
+                if (accept(p, TOK_SEMI)) {
+                    if (dim < 1 || dim2 < 1 || dim * dim2 > CC_LOCAL_MAX) {
+                        fail(p);
+                        return;
+                    }
+                    if (cc_local_define(p->em, name, (int)(dim * dim2)) < 0) {
                         fail(p);
                     }
                     return;
@@ -1341,7 +1738,13 @@ static void parse_stmt(CcParser* p) {
                     parse_expr(p);
                     expect(p, TOK_SEMI);
                     cc_emit_pop_rcx(p->em);
-                    cc_emit_index_store(p->em, p->em->locals[idx].slot);
+                    {
+                        int ew = p->em->locals[idx].elem_w > 0
+                                     ? p->em->locals[idx].elem_w
+                                     : 8;
+                        cc_emit_index_store_n(p->em, p->em->locals[idx].slot,
+                                              p->em->locals[idx].count, ew);
+                    }
                     return;
                 }
                 fail(p);
@@ -1357,6 +1760,9 @@ static void parse_stmt(CcParser* p) {
                 return;
             }
             if (p->em->locals[idx].count > 1) {
+                int ew = p->em->locals[idx].elem_w > 0
+                             ? p->em->locals[idx].elem_w
+                             : 8;
                 parse_expr(p);
                 expect(p, TOK_RBRACK);
                 expect(p, TOK_ASSIGN);
@@ -1364,23 +1770,33 @@ static void parse_stmt(CcParser* p) {
                 parse_expr(p);
                 expect(p, TOK_SEMI);
                 cc_emit_pop_rcx(p->em);
-                cc_emit_index_store(p->em, p->em->locals[idx].slot);
+                cc_emit_index_store_n(p->em, p->em->locals[idx].slot,
+                                      p->em->locals[idx].count, ew);
                 return;
             }
             if (p->em->locals[idx].count == 1) {
+                int ew = p->em->locals[idx].elem_w > 0
+                             ? p->em->locals[idx].elem_w
+                             : 8;
                 parse_expr(p);
                 expect(p, TOK_RBRACK);
                 expect(p, TOK_ASSIGN);
                 cc_emit_push_rax(p->em); /* index */
                 cc_emit_load_local(p->em, p->em->locals[idx].slot);
-                cc_emit_pop_rcx(p->em);
-                cc_emit_bytes(p->em, "\x48\xC1\xE1\x03", 4); /* shl rcx, 3 */
-                cc_emit_bytes(p->em, "\x48\x01\xC8", 3);     /* add rax, rcx */
-                cc_emit_push_rax(p->em); /* addr */
+                cc_emit_pop_rcx(p->em); /* rcx=index, rax=ptr */
+                if (ew == 2) {
+                    cc_emit_bytes(p->em, "\x48\xC1\xE1\x01", 4);
+                } else if (ew == 4) {
+                    cc_emit_bytes(p->em, "\x48\xC1\xE1\x02", 4);
+                } else if (ew != 1) {
+                    cc_emit_bytes(p->em, "\x48\xC1\xE1\x03", 4);
+                }
+                cc_emit_bytes(p->em, "\x48\x01\xC8", 3); /* add rax, rcx */
+                cc_emit_push_rax(p->em);                 /* addr */
                 parse_expr(p);
                 expect(p, TOK_SEMI);
                 cc_emit_pop_rcx(p->em);
-                cc_emit_store_indirect(p->em);
+                cc_emit_ptr_index_store(p->em, ew);
                 return;
             }
             fail(p);
@@ -1390,35 +1806,70 @@ static void parse_stmt(CcParser* p) {
         if (p->em->failed) {
             return;
         }
-        parse_expr(p);
-        if (p->em->failed) {
-            return;
-        }
-        expect(p, TOK_SEMI);
-        if (p->em->failed) {
-            return;
-        }
         idx = cc_local_find(p->em, name);
-        if (idx >= 0) {
-            if (p->em->locals[idx].count != 1) {
+        /* M290: struct blit `b=a;` — copy all words. */
+        if (idx >= 0 && p->em->locals[idx].stype >= 0 &&
+            !p->em->locals[idx].is_ptr && p->lx->tok == TOK_IDENT) {
+            int src = cc_local_find(p->em, p->lx->text);
+            if (src >= 0 && p->em->locals[src].stype == p->em->locals[idx].stype &&
+                !p->em->locals[src].is_ptr &&
+                p->em->locals[src].count == p->em->locals[idx].count) {
+                int i;
+                int n = p->em->locals[idx].count;
+                cc_lex_next(p->lx);
+                expect(p, TOK_SEMI);
+                for (i = 0; i < n; i++) {
+                    cc_emit_load_local(p->em, p->em->locals[src].slot + i);
+                    cc_emit_store_local(p->em, p->em->locals[idx].slot + i);
+                }
+                return;
+            }
+        }
+        {
+            int from_addr = (p->lx->tok == TOK_AMP);
+            parse_expr(p);
+            if (p->em->failed) {
+                return;
+            }
+            expect(p, TOK_SEMI);
+            if (p->em->failed) {
+                return;
+            }
+            idx = cc_local_find(p->em, name);
+            if (idx >= 0) {
+                if (p->em->locals[idx].count != 1) {
+                    fail(p);
+                    return;
+                }
+                (void)store_local_checked(p, idx);
+                if (from_addr) {
+                    p->em->locals[idx].is_ptr = 1;
+                    if (p->em->locals[idx].elem_w < 1) {
+                        p->em->locals[idx].elem_w = 8;
+                    }
+                }
+                return;
+            }
+            gi = cc_global_find(p->em, name);
+            if (gi >= 0) {
+                (void)store_global_checked(p, gi);
+                return;
+            }
+            slot = cc_local_slot(p->em, name, 1);
+            if (slot < 0) {
                 fail(p);
                 return;
             }
-            (void)store_local_checked(p, idx);
+            cc_emit_store_local(p->em, slot);
+            if (from_addr) {
+                idx = cc_local_find(p->em, name);
+                if (idx >= 0) {
+                    p->em->locals[idx].is_ptr = 1;
+                    p->em->locals[idx].elem_w = 8;
+                }
+            }
             return;
         }
-        gi = cc_global_find(p->em, name);
-        if (gi >= 0) {
-            (void)store_global_checked(p, gi);
-            return;
-        }
-        slot = cc_local_slot(p->em, name, 1);
-        if (slot < 0) {
-            fail(p);
-            return;
-        }
-        cc_emit_store_local(p->em, slot);
-        return;
     }
     fail(p);
 }
@@ -1515,6 +1966,9 @@ static void parse_fn_rest(CcParser* p, const char* name, int c_style) {
     fn->entry = p->em->code_len;
     fn->defined = 1;
     fn->sysv = p->em->obj_mode ? 1 : 0;
+    if (p->em->asm_mode) {
+        cc_emit_asm_fn_label(p->em, fn->name);
+    }
 
     clear_locals(p->em);
     expect(p, TOK_LPAREN);
@@ -1522,23 +1976,72 @@ static void parse_fn_rest(CcParser* p, const char* name, int c_style) {
         expect(p, TOK_RPAREN);
     } else if (p->lx->tok != TOK_RPAREN) {
         for (;;) {
+            int pst = -1;
+            int is_ptr = 0;
+            int is_char = 0;
+            int li;
+            char pname[CC_IDENT_MAX + 1];
             if (arity >= CC_FN_ARGS) {
                 fail(p);
                 return;
             }
-            if (c_style) {
-                if (!accept_type(p)) {
+            /* M290: optional T / T* / Struct* before param name. */
+            if (p->lx->tok == TOK_IDENT) {
+                int st = cc_struct_find(p->em, p->lx->text);
+                if (st >= 0) {
+                    pst = st;
+                    cc_lex_next(p->lx);
+                    if (accept(p, TOK_STAR)) {
+                        is_ptr = 1;
+                    }
+                } else if (c_style) {
                     fail(p);
                     return;
                 }
+            } else if (is_type_tok(p) || p->lx->tok == TOK_KW_VOID) {
+                if (accept(p, TOK_KW_VOID)) {
+                    if (!accept(p, TOK_STAR)) {
+                        fail(p);
+                        return;
+                    }
+                    is_ptr = 1;
+                } else if (!accept_type_ex(p, &is_char, 0)) {
+                    fail(p);
+                    return;
+                } else if (accept(p, TOK_STAR)) {
+                    is_ptr = 1;
+                }
+            } else if (c_style) {
+                fail(p);
+                return;
             }
             if (p->lx->tok != TOK_IDENT) {
                 fail(p);
                 return;
             }
-            if (cc_local_define(p->em, p->lx->text, 1) < 0) {
+            memcpy(pname, p->lx->text, CC_IDENT_MAX + 1);
+            if (pst >= 0) {
+                if (cc_local_define_st(p->em, pname, 1, pst) < 0) {
+                    fail(p);
+                    return;
+                }
+            } else if (cc_local_define(p->em, pname, 1) < 0) {
                 fail(p);
                 return;
+            }
+            li = cc_local_find(p->em, pname);
+            if (li >= 0) {
+                p->em->locals[li].is_ptr = is_ptr || (pst >= 0 && is_ptr);
+                if (is_ptr) {
+                    p->em->locals[li].is_ptr = 1;
+                    p->em->locals[li].elem_w = is_char ? 1 : 8;
+                } else if (is_char) {
+                    p->em->locals[li].is_char = 1;
+                    p->em->locals[li].elem_w = 1;
+                }
+                if (pst >= 0 && is_ptr) {
+                    p->em->locals[li].is_ptr = 1;
+                }
             }
             arity++;
             cc_lex_next(p->lx);
@@ -1885,13 +2388,37 @@ static int resolve_calls(CcEmit* em) {
 }
 
 static int g_last_fail_code;
+static int g_last_fail_line;
+static int g_last_fail_col;
+static char g_asm_buf[CC_SRC_MAX];
 
 int cc_last_fail_code(void) {
     return g_last_fail_code;
 }
 
+int cc_last_fail_line(void) {
+    return g_last_fail_line;
+}
+
+int cc_last_fail_col(void) {
+    return g_last_fail_col;
+}
+
+void cc_note_fail(int code, int line, int col) {
+    g_last_fail_code = code;
+    g_last_fail_line = line;
+    g_last_fail_col = col;
+}
+
+static void publish_fail(CcEmit* em, int code) {
+    g_last_fail_code = code;
+    g_last_fail_line = em->fail_line;
+    g_last_fail_col = em->fail_col;
+}
+
 static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
-                         size_t* out_len, int obj_mode) {
+                         size_t* out_len, int obj_mode, int asm_mode,
+                         char** out_asm, size_t* out_asm_len) {
     CcLexer lx;
     CcParser p;
     const char magic[] = "CXC_A2";
@@ -1906,6 +2433,8 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
     static char expanded[CC_SRC_MAX];
 
     g_last_fail_code = 0;
+    g_last_fail_line = 0;
+    g_last_fail_col = 0;
     memset(&em, 0, sizeof(em));
     em.code_cap = CC_CODE_MAX;
     em.data_cap = CC_DATA_MAX;
@@ -1928,6 +2457,13 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
     em.ntypedefs = 0;
     em.failed = 0;
     em.fail_code = 0;
+    em.fail_line = 0;
+    em.fail_col = 0;
+    em.asm_mode = asm_mode ? 1 : 0;
+    em.asm_buf = g_asm_buf;
+    em.asm_cap = sizeof(g_asm_buf);
+    em.asm_len = 0;
+    g_asm_buf[0] = 0;
     em.obj_mode = obj_mode ? 1 : 0;
     cc_reloc_reset();
     cc_link_reset();
@@ -1936,7 +2472,7 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
 
     if (cc_preprocess(src, len, expanded, sizeof(expanded), &expanded_len) !=
         0) {
-        g_last_fail_code = 10;
+        cc_note_fail(10, cc_prep_last_fail_line(), cc_prep_last_fail_col());
         return -1;
     }
     src = expanded;
@@ -1952,8 +2488,20 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
     }
 
     cc_lex_init(&lx, src, len);
+    if (lx.tok == TOK_UNKNOWN) {
+        g_last_fail_code = 60;
+        g_last_fail_line = lx.line;
+        g_last_fail_col = lx.col;
+        return -1;
+    }
     if (lx.tok == TOK_IDENT && strcmp(lx.text, "CXC_A2") == 0) {
         cc_lex_next(&lx);
+        if (lx.tok == TOK_UNKNOWN) {
+            g_last_fail_code = 60;
+            g_last_fail_line = lx.line;
+            g_last_fail_col = lx.col;
+            return -1;
+        }
     }
 
     p.lx = &lx;
@@ -2016,34 +2564,48 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
         }
     }
     if (em.failed) {
-        g_last_fail_code = em.fail_code ? em.fail_code : 20;
+        publish_fail(&em, em.fail_code ? em.fail_code : 20);
         return -1;
     }
     if (resolve_calls(&em) != 0) {
-        g_last_fail_code = em.fail_code ? em.fail_code : 11;
+        publish_fail(&em, em.fail_code ? em.fail_code : 11);
         return -1;
     }
     if (em.obj_mode) {
         if (cc_fn_find(&em, "main") >= 0) {
-            g_last_fail_code = 30;
+            publish_fail(&em, 30);
             return -1;
         }
         if (em.nfns < 1) {
-            g_last_fail_code = 30;
+            publish_fail(&em, 30);
             return -1;
         }
         if (lx.tok != TOK_EOF) {
-            g_last_fail_code = 30;
+            if (em.fail_line == 0) {
+                em.fail_line = lx.line;
+                em.fail_col = lx.col;
+            }
+            publish_fail(&em, 30);
             return -1;
         }
+        if (em.asm_mode) {
+            if (out_asm && out_asm_len) {
+                g_asm_buf[em.asm_len] = 0;
+                *out_asm = g_asm_buf;
+                *out_asm_len = em.asm_len;
+            }
+            return 0;
+        }
         if (cc_build_rel_elf(&em, out_elf, out_len) != 0) {
-            g_last_fail_code = 20;
+            publish_fail(&em, 20);
             return -1;
         }
         return 0;
     }
     entry_at = em.code_len;
-    patch_rel32(&em, jmp_entry, entry_at);
+    if (!em.asm_mode) {
+        patch_rel32(&em, jmp_entry, entry_at);
+    }
     clear_locals(&em);
     cc_emit_prologue(&em);
     {
@@ -2054,7 +2616,9 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
                 return -1;
             }
             call_at = cc_emit_call_rel32(&em);
-            patch_rel32(&em, call_at, em.fns[main_i].entry);
+            if (!em.asm_mode) {
+                patch_rel32(&em, call_at, em.fns[main_i].entry);
+            }
             cc_emit_bytes(&em, "\x89\xC3", 2); /* mov ebx, eax */
             cc_emit_write_pass(&em);
             cc_emit_exit_rax(&em);
@@ -2080,18 +2644,32 @@ static int cc_compile_ex(const char* src, size_t len, unsigned char** out_elf,
         }
     }
     if (em.failed) {
-        g_last_fail_code = em.fail_code ? em.fail_code : 12;
+        publish_fail(&em, em.fail_code ? em.fail_code : 12);
         return -1;
+    }
+    if (em.asm_mode) {
+        if (out_asm && out_asm_len) {
+            g_asm_buf[em.asm_len] = 0;
+            *out_asm = g_asm_buf;
+            *out_asm_len = em.asm_len;
+        }
+        return 0;
     }
     return cc_build_elf(&em, out_elf, out_len);
 }
 
 int cc_compile(const char* src, size_t len, unsigned char** out_elf,
                size_t* out_len) {
-    return cc_compile_ex(src, len, out_elf, out_len, 0);
+    return cc_compile_ex(src, len, out_elf, out_len, 0, 0, 0, 0);
 }
 
 int cc_compile_obj(const char* src, size_t len, unsigned char** out_elf,
                    size_t* out_len) {
-    return cc_compile_ex(src, len, out_elf, out_len, 1);
+    return cc_compile_ex(src, len, out_elf, out_len, 1, 0, 0, 0);
+}
+
+int cc_compile_asm(const char* src, size_t len, char** out_asm,
+                   size_t* out_len) {
+    /* -S: ET_REL-shaped (obj_mode) + asm text; no main(); use named fn. */
+    return cc_compile_ex(src, len, 0, 0, 1, 1, out_asm, out_len);
 }

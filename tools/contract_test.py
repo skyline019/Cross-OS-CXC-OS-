@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -160,6 +161,11 @@ TIME_PROBE_SUCCESS = "time: pass: 1"
 ONBOX_CCDRV_PASS = "ONBOX_CCDRV_PASS"
 ONBOX_TDRV_PASS = ONBOX_CCDRV_PASS  # alias during cutover
 ONBOX_TCAP_PASS = ONBOX_CCDRV_PASS  # alias during cutover
+# Optional when GOP is present (not required for default headless CI).
+ONBOX_GUIFB_PASS = "ONBOX_GUIFB_PASS"
+ONBOX_GUIKBD_PASS = "ONBOX_GUIKBD_PASS"
+ONBOX_IDE_PASS = "ONBOX_IDE_PASS"
+ONBOX_GUIUX_PASS = "ONBOX_GUIUX_PASS"
 ONBOX_CC_PROBE_SUCCESS = "onbox-cc: pass: 1"
 ONBOX_WMSG = "WMSG:CD"
 ONBOX_NMSG = "NMSG:42"
@@ -516,6 +522,47 @@ def run_host_checks(seed: int) -> list[HostCheck]:
 
     record("编译器", "cxc-cc host strict compile", cxc_cc_strict, "mini-cc host")
 
+    def cxc_cc_conformance() -> str:
+        script = PROJECT_ROOT / "tools" / "cc_conformance.py"
+        conf_argv = [sys.executable, str(script), "--strict", "--elf-check"]
+        # M301: CI forbids compile-elf as the success bar (need run|qemu).
+        if os.environ.get("CXC_REQUIRE_CONF_EXEC", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            conf_argv.append("--require-exec")
+        completed = subprocess.run(
+            conf_argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        out = (completed.stdout or "") + (completed.stderr or "")
+        if completed.returncode != 0:
+            raise AssertionError(out)
+        assert "CC_CONF:" in completed.stdout
+        assert "bug=0" in completed.stdout
+        assert "xpass=0" in completed.stdout
+        assert "reject=0" in completed.stdout
+        line = completed.stdout.strip().splitlines()[-1]
+        if os.environ.get("CXC_REQUIRE_CONF_EXEC", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            assert "mode=compile-elf" not in line
+            assert ("mode=run" in line) or ("mode=qemu" in line)
+        return line
+
+    record(
+        "编译器",
+        "CXC_A2 conformance",
+        cxc_cc_conformance,
+        "semantic exit/stdout",
+    )
+
     def cxc_cc_chaos() -> str:
         script = PROJECT_ROOT / "tools" / "run_cc_chaos_test.py"
         completed = subprocess.run(
@@ -705,10 +752,35 @@ class ContractRunner:
         assert b"hard: 1" in serial
         assert b"fat: 1" in serial
         assert b"as: 1" in serial
-        assert (
+        # M293/M306: spawn_cc legacy 3|4; spawn_as legacy 4 OR == inputs_s; planted == 0
+        import re as _re
+
+        legacy_as = (
             b"bridge: 1 tcap: 1 spawn_as: 4 spawn_ld: 1 spawn_cc: 3 "
-            b"tdrv: 1 ccdrv: 1 edge: 1" in serial
+            b"tdrv: 1 ccdrv: 1 edge: 1"
         )
+        relational_cc = (
+            b"bridge: 1 tcap: 1 spawn_as: 4 spawn_ld: 1 spawn_cc: 4 "
+            b"inputs_c: 3 tdrv: 1 ccdrv: 1 edge: 1"
+        )
+        rel_m = _re.search(
+            rb"bridge: 1 tcap: 1 spawn_as: (\d+) spawn_ld: 1 spawn_cc: ([34])\b"
+            rb".*?inputs_s: (\d+).*?planted: (\d+).*?tdrv: 1 ccdrv: 1 edge: 1",
+            serial,
+        )
+        relational_ok = False
+        if rel_m:
+            sas, scc, ins, plant = (int(rel_m.group(i)) for i in range(1, 5))
+            relational_ok = sas == ins and plant == 0 and scc in (3, 4)
+        assert legacy_as in serial or relational_cc in serial or relational_ok
+        planted_m = _re.search(rb"planted: (\d+)", serial)
+        assert planted_m is not None
+        assert int(planted_m.group(1)) == 0
+        inputs_s_m = _re.search(rb"inputs_s: (\d+)", serial)
+        spawn_as_m = _re.search(rb"spawn_as: (\d+)", serial)
+        assert inputs_s_m is not None and spawn_as_m is not None
+        # After M295/M306: relational window is the live path (spawn_as == inputs_s).
+        assert int(spawn_as_m.group(1)) == int(inputs_s_m.group(1))
         assert b"fat_bytes: 1049088" in serial
         assert ONBOX_CCDRV_PASS.encode() in serial
         assert ONBOX_WMSG.encode() in serial

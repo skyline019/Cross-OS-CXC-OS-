@@ -2,6 +2,7 @@
 
 #include <cxc/cpu.hpp>
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace cxc::syscall {
@@ -161,6 +162,14 @@ void begin_session(uint64_t resume_rip,
 void set_user_root(uint64_t user_root);
 void reset_heap_after_exec();
 const Session& session();
+
+// Mini-IDE: mirror user stdout (and kernel notes) into a capture buffer.
+void ide_capture_reset();
+void ide_capture_set(bool enabled);
+void ide_capture_note(const char* text);  // append text as-is
+size_t ide_capture_size();
+// Copies up to cap-1 bytes + NUL; returns bytes copied (excluding NUL).
+size_t ide_capture_copy(char* out, size_t cap);
 
 cpu::InterruptFrame* on_int80(cpu::InterruptFrame* frame);
 

@@ -9,7 +9,7 @@ enum {
 };
 
 /* Shared by ET_EXEC / ET_REL emitters (not re-entrant). */
-static unsigned char g_elf_buf[CC_CODE_MAX + CC_DATA_MAX + 256];
+static unsigned char g_elf_buf[CC_CODE_MAX + CC_DATA_MAX + 16384];
 
 /* Reloc: lea/PC32 or abs32 sites → data VA (declared early for seal). */
 typedef struct CcReloc {
@@ -63,6 +63,8 @@ int cc_local_define_st(CcEmit* em, const char* name, int count, int stype) {
     loc->is_char = 0;
     loc->is_const = 0;
     loc->is_ptr = 0;
+    /* M288: default element width 8; char/char* set elem_w=1 at define site. */
+    loc->elem_w = 8;
     em->next_slot += count;
     em->nlocals++;
     return loc->slot;
@@ -224,6 +226,124 @@ int cc_global_define(CcEmit* em, const char* name, unsigned long long init) {
     return em->nglobals - 1;
 }
 
+void cc_emit_asm_puts(CcEmit* em, const char* s) {
+    if (!em || !em->asm_mode || !em->asm_buf || !s || em->failed) {
+        return;
+    }
+    while (*s != 0 && em->asm_len + 1 < em->asm_cap) {
+        em->asm_buf[em->asm_len++] = *s++;
+    }
+    if (em->asm_len < em->asm_cap) {
+        em->asm_buf[em->asm_len] = 0;
+    }
+}
+
+void cc_emit_asm_fn_label(CcEmit* em, const char* name) {
+    if (!em || !em->asm_mode || !name) {
+        return;
+    }
+    cc_emit_asm_puts(em, ".text\n.globl ");
+    cc_emit_asm_puts(em, name);
+    cc_emit_asm_puts(em, "\n");
+    cc_emit_asm_puts(em, name);
+    cc_emit_asm_puts(em, ":\n");
+}
+
+static void asm_u32(CcEmit* em, unsigned v) {
+    char buf[16];
+    int i = 0;
+    unsigned x = v;
+    char tmp[16];
+    int n = 0;
+    if (x == 0) {
+        tmp[n++] = '0';
+    } else {
+        while (x > 0 && n < 15) {
+            tmp[n++] = (char)('0' + (x % 10));
+            x /= 10;
+        }
+    }
+    while (n > 0 && i < 15) {
+        buf[i++] = tmp[--n];
+    }
+    buf[i] = 0;
+    cc_emit_asm_puts(em, buf);
+}
+
+static void asm_i32(CcEmit* em, int v) {
+    if (v < 0) {
+        cc_emit_asm_puts(em, "-");
+        asm_u32(em, (unsigned)(-v));
+    } else {
+        asm_u32(em, (unsigned)v);
+    }
+}
+
+int cc_asm_new_label(CcEmit* em) {
+    if (!em) {
+        return 0;
+    }
+    em->asm_label_seq++;
+    return em->asm_label_seq;
+}
+
+void cc_asm_def_label(CcEmit* em, int id) {
+    if (!em || !em->asm_mode || id <= 0) {
+        return;
+    }
+    cc_emit_asm_puts(em, ".Lcc");
+    asm_u32(em, (unsigned)id);
+    cc_emit_asm_puts(em, ":\n");
+}
+
+void cc_asm_jmp_label(CcEmit* em, int id) {
+    if (!em || !em->asm_mode || id <= 0) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tjmp .Lcc");
+    asm_u32(em, (unsigned)id);
+    cc_emit_asm_puts(em, "\n");
+}
+
+void cc_asm_je_label(CcEmit* em, int id) {
+    if (!em || !em->asm_mode || id <= 0) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tje .Lcc");
+    asm_u32(em, (unsigned)id);
+    cc_emit_asm_puts(em, "\n");
+}
+
+void cc_asm_jne_label(CcEmit* em, int id) {
+    if (!em || !em->asm_mode || id <= 0) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tjne .Lcc");
+    asm_u32(em, (unsigned)id);
+    cc_emit_asm_puts(em, "\n");
+}
+
+void cc_emit_asm_cmp_rax_imm(CcEmit* em, long imm) {
+    if (!em || !em->asm_mode) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tcmp $");
+    if (imm < 0) {
+        cc_emit_asm_puts(em, "-");
+        asm_u32(em, (unsigned)(-imm));
+    } else {
+        asm_u32(em, (unsigned)imm);
+    }
+    cc_emit_asm_puts(em, ", %rax\n");
+}
+
+void cc_emit_asm_test_rax(CcEmit* em) {
+    if (!em || !em->asm_mode) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\ttest %eax, %eax\n");
+}
+
 void cc_emit_byte(CcEmit* em, unsigned char b) {
     if (em->failed || em->code_len >= em->code_cap) {
         em->failed = 1;
@@ -373,8 +493,21 @@ int cc_data_seal(CcEmit* em) {
 }
 
 void cc_emit_mov_eax_imm(CcEmit* em, unsigned imm) {
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tmov $");
+        asm_u32(em, imm);
+        cc_emit_asm_puts(em, ", %eax\n");
+    }
     cc_emit_byte(em, 0xB8);
     cc_emit_u32(em, imm);
+}
+
+void cc_emit_mov_rax_imm64(CcEmit* em, unsigned long long imm) {
+    int i;
+    cc_emit_bytes(em, "\x48\xB8", 2); /* movabs rax, imm64 */
+    for (i = 0; i < 8; i++) {
+        cc_emit_byte(em, (unsigned char)((imm >> (8 * i)) & 0xff));
+    }
 }
 
 void cc_emit_mov_edi_eax(CcEmit* em) {
@@ -391,10 +524,16 @@ void cc_emit_int80(CcEmit* em) {
 }
 
 void cc_emit_push_rax(CcEmit* em) {
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tpush %rax\n");
+    }
     cc_emit_byte(em, 0x50);
 }
 
 void cc_emit_pop_rcx(CcEmit* em) {
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tpop %rcx\n");
+    }
     cc_emit_byte(em, 0x59);
 }
 
@@ -406,18 +545,33 @@ void cc_emit_local_addr_rsi(CcEmit* em, int slot) {
 
 void cc_emit_store_local(CcEmit* em, int slot) {
     /* mov [rbp - (slot+1)*8], rax */
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tmov %rax, ");
+        asm_i32(em, -((slot + 1) * 8));
+        cc_emit_asm_puts(em, "(%rbp)\n");
+    }
     cc_emit_bytes(em, "\x48\x89\x85", 3);
     cc_emit_i32(em, -((slot + 1) * 8));
 }
 
 void cc_emit_load_local(CcEmit* em, int slot) {
     /* mov rax, [rbp - (slot+1)*8] */
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tmov ");
+        asm_i32(em, -((slot + 1) * 8));
+        cc_emit_asm_puts(em, "(%rbp), %rax\n");
+    }
     cc_emit_bytes(em, "\x48\x8B\x85", 3);
     cc_emit_i32(em, -((slot + 1) * 8));
 }
 
 void cc_emit_lea_local(CcEmit* em, int slot) {
     /* lea rax, [rbp - (slot+1)*8] */
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tlea ");
+        asm_i32(em, -((slot + 1) * 8));
+        cc_emit_asm_puts(em, "(%rbp), %rax\n");
+    }
     cc_emit_bytes(em, "\x48\x8D\x85", 3);
     cc_emit_i32(em, -((slot + 1) * 8));
 }
@@ -504,31 +658,134 @@ void cc_emit_setup_fs_tcb(CcEmit* em) {
     cc_emit_int80(em);
 }
 
+static void emit_scale_rax(CcEmit* em, int elem_w) {
+    if (elem_w == 1) {
+        return;
+    }
+    if (elem_w == 2) {
+        cc_emit_bytes(em, "\x48\xC1\xE0\x01", 4); /* shl rax, 1 */
+    } else if (elem_w == 4) {
+        cc_emit_bytes(em, "\x48\xC1\xE0\x02", 4); /* shl rax, 2 */
+    } else {
+        cc_emit_bytes(em, "\x48\xC1\xE0\x03", 4); /* shl rax, 3 */
+    }
+}
+
+static void emit_scale_rcx(CcEmit* em, int elem_w) {
+    if (elem_w == 1) {
+        return;
+    }
+    if (elem_w == 2) {
+        cc_emit_bytes(em, "\x48\xC1\xE1\x01", 4);
+    } else if (elem_w == 4) {
+        cc_emit_bytes(em, "\x48\xC1\xE1\x02", 4);
+    } else {
+        cc_emit_bytes(em, "\x48\xC1\xE1\x03", 4);
+    }
+}
+
 void cc_emit_index_load(CcEmit* em, int base_slot) {
-    /* rax = index; element at rbp-(base+1+index)*8 */
-    cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base+1)*8] */
-    cc_emit_i32(em, -((base_slot + 1) * 8));
-    cc_emit_bytes(em, "\x48\xC1\xE0\x03", 4); /* shl rax, 3 */
-    cc_emit_bytes(em, "\x48\x29\xC6", 3);     /* sub rsi, rax */
-    cc_emit_bytes(em, "\x48\x8B\x06", 3);     /* mov rax, [rsi] */
+    /* Legacy: word array, downward — prefer count-aware API. */
+    cc_emit_index_load_n(em, base_slot, 1, 8);
 }
 
 void cc_emit_index_store(CcEmit* em, int base_slot) {
-    /* value in rax, index in rcx */
-    cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base+1)*8] */
-    cc_emit_i32(em, -((base_slot + 1) * 8));
-    cc_emit_bytes(em, "\x48\xC1\xE1\x03", 4); /* shl rcx, 3 */
-    cc_emit_bytes(em, "\x48\x29\xCE", 3);     /* sub rsi, rcx */
-    cc_emit_bytes(em, "\x48\x89\x06", 3);     /* mov [rsi], rax */
+    cc_emit_index_store_n(em, base_slot, 1, 8);
 }
 
 void cc_emit_index_lea(CcEmit* em, int base_slot) {
-    /* rax = index → address of element in rax */
+    cc_emit_index_lea_n(em, base_slot, 1, 8);
+}
+
+/* M288: stack array a[0..count) with a[0] at LOWEST address so &a[0]+i matches
+ * C pointer arithmetic (grow up). Slots base..base+count-1; a[0] uses the
+ * last slot's address as base. */
+void cc_emit_index_load_n(CcEmit* em, int base_slot, int count, int elem_w) {
+    int base_addr_slot;
+    if (count < 1) {
+        count = 1;
+    }
+    if (elem_w < 1) {
+        elem_w = 8;
+    }
+    base_addr_slot = base_slot + count - 1; /* lowest address among slots */
+    cc_emit_bytes(em, "\x48\x8D\xB5", 3); /* lea rsi, [rbp-(base_addr+1)*8] */
+    cc_emit_i32(em, -((base_addr_slot + 1) * 8));
+    emit_scale_rax(em, elem_w);
+    cc_emit_bytes(em, "\x48\x01\xC6", 3); /* add rsi, rax */
+    if (elem_w == 1) {
+        cc_emit_bytes(em, "\x0F\xB6\x06", 3); /* movzx eax, byte [rsi] */
+    } else {
+        cc_emit_bytes(em, "\x48\x8B\x06", 3); /* mov rax, [rsi] */
+    }
+}
+
+void cc_emit_index_store_n(CcEmit* em, int base_slot, int count, int elem_w) {
+    int base_addr_slot;
+    if (count < 1) {
+        count = 1;
+    }
+    if (elem_w < 1) {
+        elem_w = 8;
+    }
+    base_addr_slot = base_slot + count - 1;
     cc_emit_bytes(em, "\x48\x8D\xB5", 3);
-    cc_emit_i32(em, -((base_slot + 1) * 8));
-    cc_emit_bytes(em, "\x48\xC1\xE0\x03", 4);
-    cc_emit_bytes(em, "\x48\x29\xC6", 3);
+    cc_emit_i32(em, -((base_addr_slot + 1) * 8));
+    emit_scale_rcx(em, elem_w);
+    cc_emit_bytes(em, "\x48\x01\xCE", 3); /* add rsi, rcx */
+    if (elem_w == 1) {
+        cc_emit_bytes(em, "\x88\x06", 2); /* mov [rsi], al */
+    } else {
+        cc_emit_bytes(em, "\x48\x89\x06", 3); /* mov [rsi], rax */
+    }
+}
+
+void cc_emit_index_lea_n(CcEmit* em, int base_slot, int count, int elem_w) {
+    int base_addr_slot;
+    if (count < 1) {
+        count = 1;
+    }
+    if (elem_w < 1) {
+        elem_w = 8;
+    }
+    base_addr_slot = base_slot + count - 1;
+    cc_emit_bytes(em, "\x48\x8D\xB5", 3);
+    cc_emit_i32(em, -((base_addr_slot + 1) * 8));
+    emit_scale_rax(em, elem_w);
+    cc_emit_bytes(em, "\x48\x01\xC6", 3); /* add rsi, rax */
     cc_emit_bytes(em, "\x48\x89\xF0", 3); /* mov rax, rsi */
+}
+
+/* Pointer in rax, index in rcx → rax = ptr + index*elem_w (C upward). */
+void cc_emit_ptr_index_load(CcEmit* em, int elem_w) {
+    if (elem_w < 1) {
+        elem_w = 8;
+    }
+    emit_scale_rcx(em, elem_w);
+    cc_emit_bytes(em, "\x48\x01\xC8", 3); /* add rax, rcx */
+    if (elem_w == 1) {
+        cc_emit_bytes(em, "\x0F\xB6\x00", 3); /* movzx eax, byte [rax] */
+    } else {
+        cc_emit_bytes(em, "\x48\x8B\x00", 3); /* mov rax, [rax] */
+    }
+}
+
+void cc_emit_ptr_index_store(CcEmit* em, int elem_w) {
+    /* addr in rcx (already ptr+index*w), value in rax — see parse path */
+    if (elem_w == 1) {
+        cc_emit_bytes(em, "\x88\x01", 2); /* mov [rcx], al */
+    } else {
+        cc_emit_bytes(em, "\x48\x89\x01", 3); /* mov [rcx], rax */
+    }
+}
+
+void cc_emit_ptr_add_scaled(CcEmit* em, int elem_w) {
+    /* ptr in rcx, index/addend in rax → rax = ptr + addend*elem_w */
+    if (elem_w < 1) {
+        elem_w = 8;
+    }
+    emit_scale_rax(em, elem_w);
+    cc_emit_bytes(em, "\x48\x01\xC8", 3); /* add rax, rcx */
 }
 
 void cc_emit_load_indirect(CcEmit* em) {
@@ -542,6 +799,14 @@ void cc_emit_store_indirect(CcEmit* em) {
 
 void cc_emit_prologue(CcEmit* em) {
     /* push rbp; mov rbp, rsp; sub rsp, CC_LOCAL_MAX*8 */
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tpush %rbp\n");
+        cc_emit_asm_puts(em, "\tmov %rsp, %rbp\n");
+        cc_emit_asm_puts(em, "\tsub $");
+        asm_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
+        cc_emit_asm_puts(em, ", %rsp\n");
+        /* Skip zeroing loop in asm text (as dialect; locals start unset). */
+    }
     cc_emit_byte(em, 0x55);
     cc_emit_bytes(em, "\x48\x89\xE5", 3);
     cc_emit_bytes(em, "\x48\x81\xEC", 3);
@@ -567,40 +832,83 @@ void cc_emit_fn_prologue(CcEmit* em, int arity) {
 }
 
 void cc_emit_fn_prologue_sysv(CcEmit* em, int arity) {
-    /* Frame without zeroing first — rep stosq would clobber rdi/rsi/rdx/rcx. */
+    /* Frame without zeroing first — rep stosq would clobber rdi/rsi/rdx/rcx.
+     * M299: emit frame GAS once; arg mov→store goes through store_local asm. */
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tpush %rbp\n");
+        cc_emit_asm_puts(em, "\tmov %rsp, %rbp\n");
+        cc_emit_asm_puts(em, "\tsub $");
+        asm_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
+        cc_emit_asm_puts(em, ", %rsp\n");
+    }
     cc_emit_byte(em, 0x55);                      /* push rbp */
     cc_emit_bytes(em, "\x48\x89\xE5", 3);         /* mov rbp, rsp */
     cc_emit_bytes(em, "\x48\x81\xEC", 3);         /* sub rsp, imm */
     cc_emit_u32(em, (unsigned)(CC_LOCAL_MAX * 8));
     if (arity >= 1) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rdi, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xF8", 3); /* mov rax, rdi */
         cc_emit_store_local(em, 0);
     }
     if (arity >= 2) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rsi, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xF0", 3); /* mov rax, rsi */
         cc_emit_store_local(em, 1);
     }
     if (arity >= 3) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rdx, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xD0", 3); /* mov rax, rdx */
         cc_emit_store_local(em, 2);
     }
     if (arity >= 4) {
+        if (em->asm_mode) {
+            cc_emit_asm_puts(em, "\tmov %rcx, %rax\n");
+        }
         cc_emit_bytes(em, "\x48\x89\xC8", 3); /* mov rax, rcx */
         cc_emit_store_local(em, 3);
+    }
+    /* M292: 5th+ args on stack (SysV). */
+    {
+        int i;
+        for (i = 4; i < arity; i++) {
+            cc_emit_bytes(em, "\x48\x8B\x85", 3);
+            cc_emit_i32(em, 16 + (i - 4) * 8);
+            cc_emit_store_local(em, i);
+        }
     }
 }
 
 void cc_emit_leave_ret(CcEmit* em) {
+    if (em->asm_mode) {
+        cc_emit_asm_puts(em, "\tleave\n\tret\n");
+    }
     cc_emit_byte(em, 0xC9); /* leave */
     cc_emit_byte(em, 0xC3); /* ret */
 }
 
 size_t cc_emit_call_rel32(CcEmit* em) {
     size_t at;
+    /* Symbolic call name filled by parse via cc_emit_asm after this, or
+     * cc_emit_call_name. Binary keeps rel32 placeholder. */
     cc_emit_byte(em, 0xE8);
     at = em->code_len;
     cc_emit_i32(em, 0);
     return at;
+}
+
+void cc_emit_call_name(CcEmit* em, const char* name) {
+    if (!em || !em->asm_mode || !name) {
+        return;
+    }
+    cc_emit_asm_puts(em, "\tcall ");
+    cc_emit_asm_puts(em, name);
+    cc_emit_asm_puts(em, "\n");
 }
 
 void cc_reloc_reset(void) {
@@ -671,7 +979,7 @@ void cc_emit_store_global(CcEmit* em, size_t data_off) {
 }
 
 void cc_emit_write_lit2(CcEmit* em, const char* lit) {
-    char buf[16];
+    char buf[8 + CC_LIT_MAX];
     size_t lit_len = 0;
     size_t n;
     size_t data_at;
@@ -892,10 +1200,9 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
     /* M245: RX + optional R rodata + optional RW data/bss */
     phnum = 1 + have_ro + have_rw;
     phdrs = (size_t)phnum * phdr_ent;
+    /* M294: p_offset ≡ p_vaddr (mod p_align) for host loaders. */
     file_off = ehdr + phdrs;
-    ro_file_off = file_off + em->code_len;
-    rw_file_off = ro_file_off + ro_len;
-    total = file_off + em->code_len + em->data_len;
+    file_off = (file_off + page - 1) & ~(page - 1);
     code_va_span = (em->code_len + page - 1) & ~(page - 1);
     if (code_va_span == 0) {
         code_va_span = page;
@@ -906,6 +1213,17 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         ro_va_span = page;
     }
     rw_va = ro_va + ro_va_span;
+    ro_file_off = file_off + em->code_len;
+    ro_file_off = (ro_file_off + page - 1) & ~(page - 1);
+    rw_file_off = ro_file_off + (have_ro ? ro_len : 0);
+    rw_file_off = (rw_file_off + page - 1) & ~(page - 1);
+    total = file_off + em->code_len;
+    if (have_ro && ro_file_off + ro_len > total) {
+        total = ro_file_off + ro_len;
+    }
+    if (have_rw && rw_file_off + rw_len > total) {
+        total = rw_file_off + rw_len;
+    }
     if (total > sizeof(g_elf_buf)) {
         return -1;
     }
@@ -947,8 +1265,9 @@ int cc_build_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
         unsigned long long msz = (unsigned long long)code_va_span;
         p[0] = 1;
         p[4] = 5;
-        p[8] = (unsigned char)(file_off);
-        p[9] = (unsigned char)(file_off >> 8);
+        for (i = 0; i < 8; i++) {
+            p[8 + i] = (unsigned char)(file_off >> (8 * i));
+        }
         for (i = 0; i < 8; i++) {
             p[16 + i] = (unsigned char)(va >> (8 * i));
             p[24 + i] = (unsigned char)(va >> (8 * i));
@@ -1174,10 +1493,18 @@ int cc_build_rel_elf(CcEmit* em, unsigned char** out, size_t* out_len) {
             }
         }
     }
+    /* M300: musl-style aliases share one entry (`__strchrnul`/`strchrnul`).
+     * Size spans to the next distinct entry (or code end), not the next
+     * symbol row — same-entry rows would otherwise get end<=start. */
     for (i = 0; i < nfn; i++) {
         size_t start = em->fns[order[i]].entry;
-        size_t end =
-            (i + 1 < nfn) ? em->fns[order[i + 1]].entry : em->code_len;
+        size_t end = em->code_len;
+        for (j = i + 1; j < nfn; j++) {
+            if (em->fns[order[j]].entry > start) {
+                end = em->fns[order[j]].entry;
+                break;
+            }
+        }
         if (end <= start || end > em->code_len) {
             return -1;
         }

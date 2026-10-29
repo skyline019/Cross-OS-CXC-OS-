@@ -3,8 +3,11 @@
 #include <cxc/cpu.hpp>
 #include <cxc/e1000e.hpp>
 #include <cxc/edu.hpp>
+#include <cxc/fb.hpp>
 #include <cxc/fs.hpp>
+#include <cxc/guiux.hpp>
 #include <cxc/heap.hpp>
+#include <cxc/ide.hpp>
 #include <cxc/ioapic.hpp>
 #include <cxc/irq.hpp>
 #include <cxc/log.hpp>
@@ -2074,6 +2077,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
         log::decimal(static_cast<uint64_t>(onbox_fail.wrote_pass));
         log::write(", edge: ");
         log::decimal(static_cast<uint64_t>(onbox_fail.edge_ok));
+        log::write(", spawn_as: ");
+        log::decimal(static_cast<uint64_t>(onbox_fail.spawn_as));
+        log::write(", inputs_s: ");
+        log::decimal(static_cast<uint64_t>(onbox_fail.inputs_s));
+        log::write(", planted: ");
+        log::decimal(static_cast<uint64_t>(onbox_fail.planted));
         log::write(", exit: ");
         log::decimal(onbox_fail.exit_code);
         log::write('\n');
@@ -2100,6 +2109,12 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(static_cast<uint64_t>(onbox_ok.spawn_ld));
     log::write(" spawn_cc: ");
     log::decimal(static_cast<uint64_t>(onbox_ok.spawn_cc));
+    log::write(" inputs_c: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.inputs_c));
+    log::write(" inputs_s: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.inputs_s));
+    log::write(" planted: ");
+    log::decimal(static_cast<uint64_t>(onbox_ok.planted));
     log::write(" tdrv: ");
     log::decimal(static_cast<uint64_t>(onbox_ok.tdrv));
     log::write(" ccdrv: ");
@@ -2110,6 +2125,70 @@ void require_mapping(uint64_t address, bool writable, bool executable,
     log::decimal(static_cast<uint64_t>(onbox_ok.fat_bytes));
     log::write('\n');
     log::line("ONBOX_CCDRV_PASS");
+
+    // Optional mini-IDE contract (GOP + PS/2 + lightweight disk/cc). Absent FB
+    // is non-fatal so headless CI keeps serial CCDRV evidence.
+    {
+        const auto* ide_cc = reinterpret_cast<const uint8_t*>(
+            vmm::direct_map_base + onbox_cc_elf_physical);
+        ide::ContractResult ide{};
+        if (fb::info().phys_base != 0 && onbox_cc_elf_physical != 0 &&
+            ide::run_automated_contract(
+                ide_cc, static_cast<size_t>(onbox_cc_elf_size), ide)) {
+            log::write("[ok] ide: guifb: ");
+            log::decimal(ide.guifb);
+            log::write(" guikbd: ");
+            log::decimal(ide.guikbd);
+            log::write(" saved: ");
+            log::decimal(ide.saved);
+            log::write(" built: ");
+            log::decimal(ide.built);
+            log::write(" ran: ");
+            log::decimal(ide.ran);
+            log::write(" exit: ");
+            log::decimal(ide.exit_code);
+            log::write('\n');
+            if (ide::hold_requested()) {
+                ide::run_interactive();
+            }
+        } else if (fb::info().phys_base != 0) {
+            log::write("[warn] ide contract skipped/fail stage: ");
+            log::decimal(ide.stage);
+            log::write(" failure: ");
+            log::decimal(ide.failure);
+            log::write(" exit: ");
+            log::decimal(ide.exit_code);
+            log::write('\n');
+        } else {
+            log::line("[info] no GOP framebuffer; skipping mini-IDE");
+        }
+
+        // GUIUX: mouse / multi-window / font scale / VT100 /dev/fb0 /dev/tty0.
+        if (fb::info().phys_base != 0) {
+            guiux::ContractResult gx{};
+            if (guiux::run_automated_contract(gx)) {
+                log::write("[ok] guiux: mouse: ");
+                log::decimal(gx.mouse);
+                log::write(" windows: ");
+                log::decimal(gx.windows);
+                log::write(" scale: ");
+                log::decimal(gx.scale);
+                log::write(" vt100: ");
+                log::decimal(gx.vt100);
+                log::write(" tty: ");
+                log::decimal(gx.tty);
+                log::write(" fb0: ");
+                log::decimal(gx.fb0);
+                log::write('\n');
+            } else {
+                log::write("[warn] guiux contract fail stage: ");
+                log::decimal(gx.stage);
+                log::write(" failure: ");
+                log::decimal(gx.failure);
+                log::write('\n');
+            }
+        }
+    }
 
     log::line("CXC_OS_SELF_TEST_PASS");
     log::line("[kernel] milestone 13 complete; halting CPU");
@@ -2382,7 +2461,7 @@ void require_mapping(uint64_t address, bool writable, bool executable,
 extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
                                        EFI_SYSTEM_TABLE* system_table) {
     cxc::log::initialize(system_table);
-    cxc::log::line("CXC/OS 2.80.0 - disk/cc CCDRV argv driver (M284)");
+    cxc::log::line("CXC/OS 2.82.0 - GUIUX (M286)");
 
     EFI_STATUS status = cxc::uefi::loaded_image_info(
         image_handle, system_table, cxc::firmware_image_base,
@@ -3062,6 +3141,34 @@ extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle,
     cxc::log::write("[ok] ESP ONBXCC.ELF bytes: ");
     cxc::log::decimal(cxc::onbox_cc_elf_size);
     cxc::log::write('\n');
+
+    // Optional interactive hold marker (8.3 IDEHOLD on ESP). Missing is OK.
+    {
+        static CHAR16 idehold_path[] = {
+            u'\\', u'E', u'F', u'I', u'\\', u'B', u'O', u'O', u'T', u'\\',
+            u'I',  u'D', u'E', u'H', u'O',  u'L', u'D', 0};
+        uint64_t hold_phys = 0;
+        uint64_t hold_size = 0;
+        const EFI_STATUS hold_st = cxc::uefi::load_esp_file(
+            image_handle, system_table, idehold_path, 16, hold_phys, hold_size);
+        if (!efi_error(hold_st) && hold_size > 0) {
+            cxc::ide::set_hold_requested(true);
+            cxc::log::line("[ok] ESP IDEHOLD: interactive IDE after contract");
+        }
+    }
+
+    // Capture GOP *before* ExitBootServices; mapping happens after VMM init.
+    if (cxc::fb::capture_gop(system_table)) {
+        cxc::log::write("[ok] GOP framebuffer: ");
+        cxc::log::decimal(cxc::fb::info().width);
+        cxc::log::write('x');
+        cxc::log::decimal(cxc::fb::info().height);
+        cxc::log::write(" @ ");
+        cxc::log::hex(cxc::fb::info().phys_base);
+        cxc::log::write('\n');
+    } else {
+        cxc::log::line("[info] GOP not available (headless OK)");
+    }
 
     status = cxc::uefi::exit_boot_services(
         image_handle, system_table, cxc::boot_memory_map);

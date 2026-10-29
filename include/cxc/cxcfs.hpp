@@ -59,6 +59,15 @@ bool inode_is_dir(uint32_t inode);
 void fill_stat(uint32_t inode, fs::StatBuf& out);
 int64_t getdents_inode(uint32_t inode, void* buffer, size_t length);
 
+// Kernel IDE: list children of a CXCFS-relative directory (empty = volume root).
+struct DirEnt {
+    char name[64];
+    uint8_t is_dir;
+};
+// Returns entry count, or -1 on error.
+int32_t list_dir_rel(const char* dir_rel, size_t dir_len, DirEnt* out,
+                     uint32_t max_out);
+
 // Kernel contract: mount → write → remount → read + edges.
 bool run_probe(MountResult& result);
 

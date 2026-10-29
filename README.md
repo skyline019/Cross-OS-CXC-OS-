@@ -11,9 +11,10 @@
 
 | Item | Value |
 |---|---|
-| Baseline | **Milestone 284 / v2.80.0** (CCDRV: `disk/cc` argv driver) |
+| Baseline | **Milestone 306 / v2.93.0** (CCDRV + planted:0 debt clear + Win CC_CONF qemu) |
 | Boot | Native UEFI → higher-half PE32+ (MinGW-w64) |
-| On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_cc:3` / `spawn_as:4` / `spawn_ld:1`) |
+| On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_ld:1`; `spawn_as==inputs_s`; **`planted:0`**) |
+| Optional GUI | GOP + PS/2 mini-IDE → `ONBOX_IDE_PASS`; GUIUX (mouse/wm/VT100/`/dev/fb0`/`tty0`) → `ONBOX_GUIUX_PASS` (not CI-gated) |
 | Evidence | QEMU + OVMF, EDU + e1000e + virtio-blk, UDP dgram peer |
 | Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
 | A2 claim | **Not claimed** — dialect + mini as/ld, not full gcc/g++ |
@@ -57,6 +58,13 @@ disk/cc -c disk/a.c -o disk/a.o
 disk/cc -o disk/out.elf @disk/job.rsp
 disk/out.elf    # exit 42 → ONBOX_CCDRV_PASS
 ```
+
+### Mini-IDE (optional)
+
+- UEFI GOP framebuffer + PS/2 keyboard; kernel text editor saves to `disk/lib.c` / `disk/ide_main.c`, rebuilds via ONBXST stub
+- Default CI stays headless (`-display none`). Visible run: `python3 tools/run_qemu.py --gui …`
+- Interactive hold: place non-empty `EFI/BOOT/IDEHOLD` on the ESP
+- Not claimed: mouse, windowing, desktop GUI
 
 ## Quick start (Linux)
 
@@ -107,7 +115,7 @@ docs/           Architecture, contracts, midfield assessments
 
 ## Boundaries
 
-Not claimed: full ISO C / gcc·gas·ld bootstrap (**A2**), dynamic linking, demand paging, TCP/IPv6, production NIC (multi-queue/PHY/reset), physical hardware, Windows QEMU in CI, GUI.
+Not claimed: full ISO C / gcc·gas·ld bootstrap (**A2**), dynamic linking, demand paging, TCP/IPv6, production NIC (multi-queue/PHY/reset), physical hardware, Windows QEMU in CI, mouse/multi-window desktop.
 
 ## License
 

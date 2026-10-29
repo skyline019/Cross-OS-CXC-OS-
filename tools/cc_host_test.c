@@ -1004,31 +1004,64 @@ int main(void) {
                 "m132-missing-semi") != 0) {
             fails++;
         }
+        /* CC_LOOP_MAX=8: nine nested whiles must reject. */
         if (expect_fail(
                 "CXC_A2\n"
                 "fn main(){\n"
                 "while(1){while(1){while(1){while(1){while(1){"
-                "return 1;}}}}}\n"
+                "while(1){while(1){while(1){while(1){"
+                "return 1;}}}}}}}}}\n"
                 "return 0;\n"
                 "}\n",
                 "m132-deep-nest") != 0) {
             fails++;
         }
-        if (expect_fail(
-                "CXC_A2\n"
-                "fn main(){\n"
-                "int a0;int a1;int a2;int a3;int a4;int a5;int a6;int a7;\n"
-                "int a8;int a9;int b0;int b1;int b2;int b3;int b4;int b5;\n"
-                "int b6;int b7;int b8;int b9;int c0;int c1;int c2;int c3;\n"
-                "int c4;int c5;int c6;int c7;int c8;int c9;int d0;int d1;\n"
-                "int d2;int d3;int d4;int d5;int d6;int d7;int d8;int d9;\n"
-                "int e0;int e1;int e2;int e3;int e4;int e5;int e6;int e7;\n"
-                "int e8;int e9;int f0;int f1;int f2;int f3;int f4;int f5;\n"
-                "int f6;\n"
-                "return 0;\n"
-                "}\n",
-                "m132-local-cap") != 0) {
-            fails++;
+        /* CC_LOCAL_MAX=128: synthesize 129 locals via host helper below. */
+        {
+            char buf[8192];
+            size_t n = 0;
+            int li;
+            const char* head = "CXC_A2\nfn main(){\n";
+            const char* tail = "return 0;\n}\n";
+            while (head[n] != 0) {
+                buf[n] = head[n];
+                n++;
+            }
+            for (li = 0; li < 129 && n + 16 < sizeof(buf); li++) {
+                int k = 0;
+                char line[32];
+                line[k++] = 'i';
+                line[k++] = 'n';
+                line[k++] = 't';
+                line[k++] = ' ';
+                line[k++] = 'v';
+                if (li >= 100) {
+                    line[k++] = (char)('0' + (li / 100));
+                }
+                if (li >= 10) {
+                    line[k++] = (char)('0' + ((li / 10) % 10));
+                }
+                line[k++] = (char)('0' + (li % 10));
+                line[k++] = ';';
+                line[k++] = '\n';
+                line[k] = 0;
+                {
+                    int j = 0;
+                    while (line[j] != 0) {
+                        buf[n++] = line[j++];
+                    }
+                }
+            }
+            {
+                size_t j = 0;
+                while (tail[j] != 0) {
+                    buf[n++] = tail[j++];
+                }
+                buf[n] = 0;
+            }
+            if (expect_fail(buf, "m132-local-cap") != 0) {
+                fails++;
+            }
         }
     }
     {
@@ -1845,22 +1878,52 @@ int main(void) {
                 "m150-const-assign") != 0) {
             fails++;
         }
-        if (expect_fail(
-                "CXC_A2\n"
-                "fn main(){\n"
-                "int a;\nint b;\nint c;\nint d;\nint e;\nint f;\nint g;\n"
-                "int h;\nint i;\nint j;\nint k;\nint l;\nint m;\nint n;\n"
-                "int o;\nint p;\nint q;\nint r;\nint s;\nint t;\nint u;\n"
-                "int v;\nint w;\nint x;\nint y;\nint z;\nint aa;\nint ab;\n"
-                "int ac;\nint ad;\nint ae;\nint af;\nint ag;\nint ah;\n"
-                "int ai;\nint aj;\nint ak;\nint al;\nint am;\nint an;\n"
-                "int ao;\nint ap;\nint aq;\nint ar;\nint as;\nint at;\n"
-                "int au;\nint av;\nint aw;\nint ax;\nint ay;\nint az;\n"
-                "int ba;\nint bb;\nint bc;\nint bd;\nint be;\nint bf;\n"
-                "return 0;\n"
-                "}\n",
-                "m150-locals-cap") != 0) {
-            fails++;
+        /* Same 129-local reject as m132 (CC_LOCAL_MAX=128). */
+        {
+            char buf[8192];
+            size_t n = 0;
+            int li;
+            const char* head = "CXC_A2\nfn main(){\n";
+            const char* tail = "return 0;\n}\n";
+            while (head[n] != 0) {
+                buf[n] = head[n];
+                n++;
+            }
+            for (li = 0; li < 129 && n + 16 < sizeof(buf); li++) {
+                char line[32];
+                int k = 0;
+                line[k++] = 'i';
+                line[k++] = 'n';
+                line[k++] = 't';
+                line[k++] = ' ';
+                line[k++] = 'w';
+                if (li >= 100) {
+                    line[k++] = (char)('0' + (li / 100));
+                }
+                if (li >= 10) {
+                    line[k++] = (char)('0' + ((li / 10) % 10));
+                }
+                line[k++] = (char)('0' + (li % 10));
+                line[k++] = ';';
+                line[k++] = '\n';
+                line[k] = 0;
+                {
+                    int j = 0;
+                    while (line[j] != 0) {
+                        buf[n++] = line[j++];
+                    }
+                }
+            }
+            {
+                size_t j = 0;
+                while (tail[j] != 0) {
+                    buf[n++] = tail[j++];
+                }
+                buf[n] = 0;
+            }
+            if (expect_fail(buf, "m150-locals-cap") != 0) {
+                fails++;
+            }
         }
     }
     {
@@ -2594,10 +2657,13 @@ int main(void) {
                 "m182-bad-field-type") != 0) {
             fails++;
         }
+        /* CC_STRUCT_FIELDS=16: 17 fields must reject. */
         if (expect_fail(
                 "CXC_A2\n"
                 "struct Pt {\n"
-                "int a;\nint b;\nint c;\nint d;\nint e;\nint f;\nint g;\nint h;\nint i;\n"
+                "int a0;int a1;int a2;int a3;int a4;int a5;int a6;int a7;\n"
+                "int a8;int a9;int b0;int b1;int b2;int b3;int b4;int b5;\n"
+                "int b6;\n"
                 "};\n"
                 "fn main(){\n"
                 "return 0;\n"
@@ -2704,7 +2770,9 @@ int main(void) {
         if (expect_fail(
                 "CXC_A2\n"
                 "struct Pt {\n"
-                "int a;\nint b;\nint c;\nint d;\nint e;\nint f;\nint g;\n"
+                "int a0;int a1;int a2;int a3;int a4;int a5;int a6;int a7;\n"
+                "int a8;int a9;int b0;int b1;int b2;int b3;int b4;int b5;\n"
+                "int b6;\n"
                 "};\n"
                 "fn main(){\n"
                 "return 0;\n"
@@ -3995,7 +4063,8 @@ int main(void) {
     if (expect_fail("CXC_A2\nn=missing(1);\nreturn n;\n", "bad-call") != 0) {
         fails++;
     }
-    if (expect_fail("CXC_A2\nreturn ;\n", "bad-return") != 0) {
+    /* M289 allows bare `return;`; reject doubled keyword instead. */
+    if (expect_fail("CXC_A2\nreturn return;\n", "bad-return") != 0) {
         fails++;
     }
     if (expect_fail("CXC_A2\ni=;\n", "bad-assign") != 0) {
@@ -4091,7 +4160,11 @@ int main(void) {
             fails++;
         }
         if (expect_fail(
-                "CXC_A2\nstruct Pt {\nint a;int b;int c;int d;int e;int f;int g;\n};\n"
+                "CXC_A2\nstruct Pt {\n"
+                "int a0;int a1;int a2;int a3;int a4;int a5;int a6;int a7;\n"
+                "int a8;int a9;int b0;int b1;int b2;int b3;int b4;int b5;\n"
+                "int b6;\n"
+                "};\n"
                 "fn main(){return 0;}\n",
                 "m248-over-fields") != 0) {
             fails++;
@@ -4165,8 +4238,9 @@ int main(void) {
             ".rodata\ns42:\n.asciz \"42\"\n";
         unsigned char* main_o = 0;
         size_t main_n = 0;
-        const char* main_path = "/tmp/cxc_m252_main.o";
-        const char* trunc_path = "/tmp/cxc_m252_trunc.o";
+        /* Relative to host cwd (run_cc_host_test sets disk/); avoid /tmp — UCRT fopen fails on Windows. */
+        const char* main_path = "disk/cxc_m252_main.o";
+        const char* trunc_path = "disk/cxc_m252_trunc.o";
         const char* paths[8];
         unsigned char* elf = 0;
         size_t en = 0;
@@ -4301,6 +4375,318 @@ int main(void) {
             "fn main(){return 0;}\n",
             "m273-asm-dir-in-c") != 0) {
         fails++;
+    }
+    /* M287/D1: bare unknown # directive must hard-fail (never silent EOF). */
+    if (expect_fail("CXC_A2\nfn main(){\n#x\n}\n", "hash") != 0) {
+        fails++;
+    }
+    /* M291: object #define expands. */
+    if (expect_ok("CXC_A2\n#define N 42\nreturn N;\n", "pp-define-ok") != 0) {
+        fails++;
+    }
+
+    /* M296/M297: DLOC exact line/col (hash at line 3 col 1 after prep). */
+    {
+        unsigned char* elf = 0;
+        size_t n = 0;
+        const char* bad = "CXC_A2\nfn main(){\n#x\n}\n";
+        if (cc_compile(bad, strlen(bad), &elf, &n) == 0) {
+            fprintf(stderr, "FAIL m296-dloc: expected reject\n");
+            fails++;
+        } else if (cc_last_fail_code() != 60) {
+            fprintf(stderr, "FAIL m296-dloc: code=%d want 60\n",
+                    cc_last_fail_code());
+            fails++;
+        } else if (cc_last_fail_line() != 3 || cc_last_fail_col() != 1) {
+            fprintf(stderr, "FAIL m296-dloc: line=%d col=%d want 3:1\n",
+                    cc_last_fail_line(), cc_last_fail_col());
+            fails++;
+        }
+    }
+    /* M297: prep fail (unclosed #if) must publish non-zero DLOC + code 10. */
+    {
+        unsigned char* elf = 0;
+        size_t n = 0;
+        const char* bad = "CXC_A2\n#if 1\nreturn 1;\n";
+        if (cc_compile(bad, strlen(bad), &elf, &n) == 0) {
+            fprintf(stderr, "FAIL m297-dloc-prep: expected reject\n");
+            fails++;
+        } else if (cc_last_fail_code() != 10) {
+            fprintf(stderr, "FAIL m297-dloc-prep: code=%d want 10\n",
+                    cc_last_fail_code());
+            fails++;
+        } else if (cc_last_fail_line() < 1 || cc_last_fail_col() < 1) {
+            fprintf(stderr, "FAIL m297-dloc-prep: line=%d col=%d\n",
+                    cc_last_fail_line(), cc_last_fail_col());
+            fails++;
+        }
+    }
+
+    /* M296: -E surface via cc_preprocess (must expand, not passthrough). */
+    {
+        char out[4096];
+        size_t out_n = 0;
+        const char* in = "CXC_A2\n#define N 42\nreturn N;\n";
+        if (cc_preprocess(in, strlen(in), out, sizeof(out), &out_n) != 0 ||
+            out_n == 0) {
+            fprintf(stderr, "FAIL m296-E: preprocess\n");
+            fails++;
+        } else if (strstr(out, "return 42") == 0 &&
+                   strstr(out, "return N") != 0) {
+            fprintf(stderr, "FAIL m296-E: N not expanded\n");
+            fails++;
+        } else if (strstr(out, "return 42") == 0) {
+            fprintf(stderr, "FAIL m296-E: missing return 42 in [%.*s]\n",
+                    (int)out_n, out);
+            fails++;
+        }
+    }
+
+    /* M296: -S → as closed loop (fn ans returns 42). */
+    {
+        char* asm_text = 0;
+        size_t asm_n = 0;
+        unsigned char* rel = 0;
+        size_t rel_n = 0;
+        const char* src =
+            "CXC_A2\n"
+            "fn ans(){\n"
+            "return 42;\n"
+            "}\n";
+        if (cc_compile_asm(src, strlen(src), &asm_text, &asm_n) != 0 ||
+            !asm_text || asm_n == 0) {
+            fprintf(stderr, "FAIL m296-S: compile_asm code=%d\n",
+                    cc_last_fail_code());
+            fails++;
+        } else if (strstr(asm_text, ".globl ans") == 0 ||
+                   strstr(asm_text, "mov $42") == 0) {
+            fprintf(stderr, "FAIL m296-S: asm text [%s]\n", asm_text);
+            fails++;
+        } else if (as_compile(asm_text, asm_n, &rel, &rel_n) != 0 || !rel ||
+                   rel_n < 64) {
+            fprintf(stderr, "FAIL m296-S: as_compile code=%d\n",
+                    as_last_fail_code());
+            fails++;
+        } else if (rel[0] != 0x7f || rel[16] != 1) {
+            fprintf(stderr, "FAIL m296-S: not ET_REL\n");
+            fails++;
+        }
+    }
+
+    /* M297/M299: S-* — -S → as ET_REL isomorphic. */
+    {
+        struct {
+            const char* name;
+            const char* src;
+            const char* need1;
+            const char* need2;
+        } cases[] = {
+            {"S-local",
+             "CXC_A2\nfn ans(){\nint x;\nx=40;\nreturn x+2;\n}\n",
+             "(%rbp)", "mov $40"},
+            {"S-if",
+             "CXC_A2\nfn ans(){\nif(1){return 42;}\nreturn 0;\n}\n",
+             "je .Lcc", "test %eax"},
+            {"S-while",
+             "CXC_A2\nfn ans(){\nint i;\ni=0;\nwhile(i<3){i=i+1;}\n"
+             "return i;\n}\n",
+             "jmp .Lcc", "setl %al"},
+            {"S-call",
+             "CXC_A2\nfn add(a,b){return a+b;}\n"
+             "fn ans(){return add(40,2);}\n",
+             "call add", "pop %rdi"},
+            {"S-for",
+             "CXC_A2\nfn ans(){\nint i;\nint n;\nn=0;\n"
+             "for(i=0;i<3;i=i+1){n=n+1;}\nreturn n;\n}\n",
+             "test %eax", "jmp .Lcc"},
+            {"S-do",
+             "CXC_A2\nfn ans(){\nint i;\ni=0;\ndo{i=i+1;}while(i<3);\n"
+             "return i;\n}\n",
+             "jne .Lcc", "setl %al"},
+            {"S-switch",
+             "CXC_A2\nfn ans(){\nint x;\nx=1;\n"
+             "switch(x){case 1: return 42; case 2: return 0;}\n"
+             "return 0;\n}\n",
+             "cmp $1", "add $8, %rsp"},
+            {"S-break",
+             "CXC_A2\nfn ans(){\nint i;\ni=0;\n"
+             "while(1){i=i+1;if(i>=3){break;}}\nreturn i;\n}\n",
+             "setge %al", "jmp .Lcc"},
+            {"S-continue",
+             "CXC_A2\nfn ans(){\nint i;\nint n;\ni=0;\nn=0;\n"
+             "while(i<5){i=i+1;if(i==3){continue;}n=n+1;}\n"
+             "return n;\n}\n",
+             "sete %al", "jmp .Lcc"},
+            {"S-ternary",
+             "CXC_A2\nfn ans(){\nint a;\na=1;\nreturn a<2?42:0;\n}\n",
+             "setl %al", "je .Lcc"},
+            {"S-nested",
+             "CXC_A2\nfn add(a,b){return a+b;}\n"
+             "fn ans(){return add(20,add(10,12));}\n",
+             "call add", "mov %rdi, %rax"},
+        };
+        size_t ci;
+        /* M300: musl-style dual .globl same-entry aliases must assemble. */
+        {
+            static const char alias_s[] =
+                ".text\n.globl __strchrnul\n.globl strchrnul\n"
+                "__strchrnul:\nstrchrnul:\n"
+                "\tmov %esi, %eax\n\tand $255, %eax\n\tret\n";
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            if (as_compile(alias_s, sizeof(alias_s) - 1, &rel, &rel_n) != 0 ||
+                !rel || rel_n < 64 || rel[16] != 1) {
+                fprintf(stderr, "FAIL m300-alias-as: code=%d\n",
+                        as_last_fail_code());
+                fails++;
+            }
+        }
+        /* M303: deepen as for memmove/strpbrk leaves + dual aliases. */
+        {
+            static const char m303_s[] =
+                ".text\n"
+                ".globl __memcpy_fwd\n.globl memcpy\n"
+                "__memcpy_fwd:\nmemcpy:\n"
+                "\tpush %rdi\n\tmov %rdx, %rcx\n\ttest %rcx, %rcx\n"
+                "\tjz .Ld\n\trep movsb\n.Ld:\n\tpop %rax\n\tret\n"
+                ".globl memmove\nmemmove:\n"
+                "\tpush %rdi\n\ttest %rdx, %rdx\n\tjz .Lmd\n"
+                "\tcmp %rsi, %rdi\n\tjae .Lmb\n\tmov %rdx, %rcx\n"
+                "\trep movsb\n\tjmp .Lmd\n.Lmb:\n"
+                "\tadd %rdx, %rdi\n\tadd %rdx, %rsi\n.Lml:\n"
+                "\tsub $1, %rsi\n\tsub $1, %rdi\n"
+                "\tmovzbl (%rsi), %eax\n\tmov %al, (%rdi)\n"
+                "\tsub $1, %rdx\n\tjnz .Lml\n.Lmd:\n\tpop %rax\n\tret\n"
+                ".globl __memrchr\n.globl memrchr\n"
+                "__memrchr:\nmemrchr:\n"
+                "\ttest %rdx, %rdx\n\tjz .Lrn\n\tadd %rdx, %rdi\n"
+                "\tmov %esi, %eax\n\tand $255, %eax\n\tmov %eax, %ecx\n"
+                ".Lrl:\n\tsub $1, %rdi\n\tmovzbl (%rdi), %eax\n"
+                "\tcmp %ecx, %eax\n\tje .Lrf\n\tsub $1, %rdx\n"
+                "\tjnz .Lrl\n.Lrn:\n\txor %eax, %eax\n\tret\n"
+                ".Lrf:\n\tmov %rdi, %rax\n\tret\n"
+                ".globl strpbrk\nstrpbrk:\n"
+                "\tpush %rdi\n\tcall strcspn\n\tpop %rdi\n"
+                "\tadd %rax, %rdi\n\tmovzbl (%rdi), %eax\n"
+                "\ttest %eax, %eax\n\tjz .Lpn\n\tmov %rdi, %rax\n"
+                "\tret\n.Lpn:\n\txor %eax, %eax\n\tret\n"
+                ".globl tcap_bridge_add\ntcap_bridge_add:\n"
+                "\tmov %edi, %eax\n\tadd %esi, %eax\n\tret\n";
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            if (as_compile(m303_s, sizeof(m303_s) - 1, &rel, &rel_n) != 0 ||
+                !rel || rel_n < 64 || rel[16] != 1) {
+                fprintf(stderr, "FAIL m303-plant-as: code=%d\n",
+                        as_last_fail_code());
+                fails++;
+            }
+        }
+        /* M304: hard_stubs .data seeds + ud2/ssp + strdup call graph. */
+        {
+            static const char hstb_s[] =
+                ".text\n"
+                ".globl ___errno_location\n.globl __stack_chk_fail\n"
+                ".globl __uflow\n.globl malloc\n.globl free\n"
+                "___errno_location:\n\tlea errno_cell(%rip), %rax\n\tret\n"
+                "__stack_chk_fail:\n.Lssp:\n\tud2\n\tjmp .Lssp\n"
+                "__uflow:\n\tmov $-1, %eax\n\tret\n"
+                "malloc:\n\tmov %rdi, %rax\n\tadd $15, %rax\n"
+                "\tand $-16, %rax\n\tpush %rax\n"
+                "\tmov heap_off(%rip), %rax\n\tmov %rax, %rcx\n"
+                "\tpop %rax\n\tadd %rcx, %rax\n\tcmp $512, %rax\n"
+                "\tja .Lmf\n\tpush %rax\n\tlea heap(%rip), %rax\n"
+                "\tadd %rcx, %rax\n\tmov %rax, %rsi\n\tpop %rax\n"
+                "\tmov %rax, heap_off(%rip)\n\tmov %rsi, %rax\n\tret\n"
+                ".Lmf:\n\txor %eax, %eax\n\tret\n"
+                "free:\n\tret\n"
+                ".data\nerrno_cell:\n.quad 1\nheap_off:\n.quad 16\n"
+                "heap:\n.byte 1\n.zero 255\n.zero 256\n";
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            if (as_compile(hstb_s, sizeof(hstb_s) - 1, &rel, &rel_n) != 0 ||
+                !rel || rel_n < 64 || rel[16] != 1) {
+                fprintf(stderr, "FAIL m304-hstb-as: code=%d\n",
+                        as_last_fail_code());
+                fails++;
+            }
+        }
+        /* M305: strtol chain leaves assemble with call edges present. */
+        {
+            static const char chain_s[] =
+                ".text\n"
+                ".globl __shlim\n.globl __shgetc\n"
+                "__shlim:\n\tret\n"
+                "__shgetc:\n\tmov (%rdi), %rax\n\tmovzbl (%rax), %ecx\n"
+                "\ttest %ecx, %ecx\n\tjz .Le\n\tadd $1, %rax\n"
+                "\tmov %rax, (%rdi)\n\tmov %ecx, %eax\n\tret\n"
+                ".Le:\n\tcall __uflow\n\tret\n"
+                ".globl __intscan\n__intscan:\n"
+                "\tpush %rbp\n\tmov %rsp, %rbp\n\tsub $16, %rsp\n"
+                "\tmov %rdi, %rax\n\tmov %rax, -8(%rbp)\n"
+                "\tmov %rax, %rdi\n\tcall __shgetc\n"
+                "\tmov %rbp, %rsp\n\tpop %rbp\n\tret\n"
+                ".globl strtol\nstrtol:\n"
+                "\tpush %rbp\n\tmov %rsp, %rbp\n\tsub $16, %rsp\n"
+                "\tmov %rdi, %rax\n\tmov %rax, -8(%rbp)\n"
+                "\tlea -8(%rbp), %rax\n\tmov %rax, %rdi\n"
+                "\txor %esi, %esi\n\tcall __shlim\n"
+                "\tlea -8(%rbp), %rax\n\tmov %rax, %rdi\n"
+                "\tmov $10, %esi\n\tmov $1, %edx\n\tmov $-1, %ecx\n"
+                "\tcall __intscan\n"
+                "\tmov %rbp, %rsp\n\tpop %rbp\n\tret\n";
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            if (as_compile(chain_s, sizeof(chain_s) - 1, &rel, &rel_n) != 0 ||
+                !rel || rel_n < 64 || rel[16] != 1) {
+                fprintf(stderr, "FAIL m305-strtol-as: code=%d\n",
+                        as_last_fail_code());
+                fails++;
+            }
+        }
+        for (ci = 0; ci < sizeof(cases) / sizeof(cases[0]); ci++) {
+            char* asm_text = 0;
+            size_t asm_n = 0;
+            unsigned char* rel = 0;
+            size_t rel_n = 0;
+            unsigned char* obj = 0;
+            size_t obj_n = 0;
+            if (cc_compile_asm(cases[ci].src, strlen(cases[ci].src), &asm_text,
+                               &asm_n) != 0 ||
+                !asm_text || asm_n == 0) {
+                fprintf(stderr, "FAIL m297-%s: compile_asm code=%d\n",
+                        cases[ci].name, cc_last_fail_code());
+                fails++;
+                continue;
+            }
+            if (strstr(asm_text, cases[ci].need1) == 0 ||
+                strstr(asm_text, cases[ci].need2) == 0) {
+                fprintf(stderr, "FAIL m297-%s: missing [%s]/[%s] in:\n%.400s\n",
+                        cases[ci].name, cases[ci].need1, cases[ci].need2,
+                        asm_text);
+                fails++;
+                continue;
+            }
+            if (as_compile(asm_text, asm_n, &rel, &rel_n) != 0 || !rel ||
+                rel_n < 64) {
+                fprintf(stderr, "FAIL m297-%s: as_compile code=%d\n%.400s\n",
+                        cases[ci].name, as_last_fail_code(), asm_text);
+                fails++;
+                continue;
+            }
+            if (rel[0] != 0x7f || rel[16] != 1) {
+                fprintf(stderr, "FAIL m297-%s: not ET_REL\n", cases[ci].name);
+                fails++;
+                continue;
+            }
+            /* Isomorphic: direct obj compile also succeeds. */
+            if (cc_compile_obj(cases[ci].src, strlen(cases[ci].src), &obj,
+                               &obj_n) != 0 ||
+                !obj || obj_n < 64) {
+                fprintf(stderr, "FAIL m297-%s: compile_obj code=%d\n",
+                        cases[ci].name, cc_last_fail_code());
+                fails++;
+            }
+        }
     }
 
     if (fails != 0) {

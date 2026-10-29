@@ -752,6 +752,9 @@ struct OnboxCcProbeResult {
     uint32_t spawn_as;   // HARD-session execve("disk/as") from kernel audit
     uint32_t spawn_ld;   // HARD-session execve("disk/ld") from kernel audit
     uint32_t spawn_cc;   // HARD-session execve("disk/cc"|"disk/cxc-cc")
+    uint32_t inputs_c;   // M293: .c inputs in job.rsp (spawn_cc == 1+inputs_c)
+    uint32_t inputs_s;   // M295: .s inputs in job.rsp (spawn_as == inputs_s)
+    uint32_t planted;    // M295: remaining host-prebuilt ET_REL leaves in job.rsp
     uint32_t tdrv;       // M274 kept: as/ld driver evidence subset
     uint32_t ccdrv;      // M284: disk/cc argv driver + multi-.c evidence
     uint64_t exit_code;
@@ -763,6 +766,32 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
                         const uint8_t* cc_image, size_t cc_size,
                         OnboxCcProbeResult& result);
 const OnboxCcProbeResult& onbox_cc_probe_result();
+
+struct IdeRebuildResult {
+    uint32_t stage;
+    uint32_t failure;
+    uint32_t saved;
+    uint32_t built;
+    uint32_t ran;
+    uint64_t exit_code;
+    uint32_t src_bytes;  // disk/ide_main.c after save
+    uint32_t out_bytes;  // disk/ide_out.elf after build (0 if missing)
+};
+
+// Mini-IDE helpers (after CCDRV so disk/cc + as/ld exist).
+bool ide_save_source(const char* source, size_t source_len, uint32_t& failure);
+// Save to an arbitrary disk/ path (NUL-terminated).
+bool ide_save_path(const char* path, const char* source, size_t source_len,
+                   uint32_t& failure);
+// Lightweight: disk/cc -o disk/ide_out.elf <src_path> (default disk/ide_main.c).
+bool ide_build_and_run(const uint8_t* cc_image, size_t cc_size,
+                       IdeRebuildResult& result,
+                       const char* src_path = nullptr);
+bool ide_run_out(IdeRebuildResult& result);
+// Save + build+run convenience for the automated contract.
+bool run_ide_rebuild(const char* source, size_t source_len,
+                     const uint8_t* cc_image, size_t cc_size,
+                     IdeRebuildResult& result);
 
 // M259: long argv/env for real toolchain drivers.
 constexpr uint32_t max_exec_argc = 64;
