@@ -2822,9 +2822,11 @@ bool run_onbox_cc_probe(const uint8_t* stub_image, size_t stub_size,
             }
         }
     }
-    /* job.rsp: M305 — 0 prebuilt .o; 57 .s (4 base + 53 leaves). */
+    /* job.rsp: M305 — 0 prebuilt .o; .s = 4 base + PLANT_ASM_COUNT leaves.
+     * M307: derive the count from the plant table so adding/removing a leaf
+     * can never silently drift away from the audited spawn_as count. */
     result.planted = 0;
-    result.inputs_s = 57;
+    result.inputs_s = static_cast<uint32_t>(PLANT_ASM_COUNT) + 4u;
 
     const int64_t sfd = fs::open_path(
         "disk/in.c", fs::o_wronly | fs::o_creat | fs::o_trunc, 0644);

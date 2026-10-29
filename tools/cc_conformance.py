@@ -31,7 +31,9 @@ SOURCES = [
     CC_DIR / "ld.c",
 ]
 
-Kind = Literal["ok", "xfail_wrong", "xfail_compile", "xfail_crash"]
+Kind = Literal[
+    "ok", "must_reject", "xfail_wrong", "xfail_compile", "xfail_crash"
+]
 
 
 @dataclass(frozen=True)
@@ -361,6 +363,10 @@ def cases() -> list[Case]:
     def xf_crash(name: str, body: str, reason: str) -> None:
         out.append(Case(name, A + body, "xfail_crash", None, None, reason))
 
+    def must_reject(name: str, body: str, reason: str) -> None:
+        """Compile failure is the expected, enforced outcome (walls/negatives)."""
+        out.append(Case(name, A + body, "must_reject", None, None, reason))
+
     # --- control (8) ---
     ok("while", "i=0;n=0;while(i<6){n=n+7;i=i+1;}return n;\n", 42)
     ok(
@@ -445,18 +451,29 @@ def cases() -> list[Case]:
         "fn main(){char s[4];s[0]=1;return s[0];}\n",
         1,
     )
-    ok("struct_array", "struct S{x;};S a[2];return 0;\n", 0)
+    # M307: these three used to be "declare-only" (`return 0`), i.e. they passed
+    # without ever touching the feature.  They are now real read/write cases.
+    xf_comp(
+        "struct_array",
+        "struct S{x;};S a[3];a[1].x=42;return a[1].x;\n",
+        "M307: array-of-struct member access not parsed (was a declare-only pass)",
+    )
     ok(
         "struct_assign",
         "struct S{x;};S a;S b;a.x=1;b=a;return b.x;\n",
         1,
     )
-    ok(
+    xf_comp(
         "struct_return",
-        "struct S{x;};fn f(){S v;v.x=42;return v;}fn main(){return 0;}\n",
-        0,
+        "struct S{x;y;};fn f(){S v;v.x=40;v.y=2;return v;}"
+        "fn main(){S q;q=f();return q.x+q.y;}\n",
+        "M307: struct value return/call not parsed (was a declare-only pass)",
     )
-    ok("multi_dim", "a[2][2];return 0;\n", 0)
+    xf_comp(
+        "multi_dim",
+        "a[2][2];a[1][1]=42;return a[1][1];\n",
+        "M307: two-subscript read/write not parsed (was a declare-only pass)",
+    )
 
     # --- pointers ---
     ok("ptr_deref", "n=42;p=&n;return *p;\n", 42)
@@ -528,41 +545,93 @@ def cases() -> list[Case]:
     ok("pp_line_comment", "// c\nreturn 42;\n", 42)
     ok("pp_block_comment", "/* c */\nreturn 42;\n", 42)
 
-    # --- capacity ---
+    # --- capacity (M307: names carry the MEASURED wall of M306) ---------
+    # Each wall is now a pair: at-limit must compile, limit+1 must be
+    # rejected.  A wall that silently accepts or silently truncates is a bug,
+    # so the "over" half is a must_reject case, not an xfail.
     ok(
-        "cap_globals_16",
-        "".join(f"int g{i}=0;\n" for i in range(17)) + "fn main(){return 0;}\n",
+        "cap_globals_63",
+        "".join(f"int g{i}=0;\n" for i in range(63)) + "fn main(){return 0;}\n",
         0,
     )
+    must_reject(
+        "cap_globals_over",
+        "".join(f"int g{i}=0;\n" for i in range(64)) + "fn main(){return 0;}\n",
+        "M315: 64 globals rejected although CC_GLOBAL_MAX==64 (off-by-one)",
+    )
     ok(
-        "cap_structs_6",
-        "".join(f"struct S{i}{{x;}};\n" for i in range(7))
+        "cap_structs_32",
+        "".join(f"struct S{i}{{x;}};\n" for i in range(32))
         + "fn main(){return 0;}\n",
         0,
     )
-    ok(
-        "cap_struct_fields_6",
-        "struct S{a;b;c;d;e;f;g;};fn main(){return 0;}\n",
-        0,
+    must_reject(
+        "cap_structs_over",
+        "".join(f"struct S{i}{{x;}};\n" for i in range(33))
+        + "fn main(){return 0;}\n",
+        "M315: 33rd struct rejected (CC_STRUCT_MAX==32)",
     )
     ok(
-        "cap_loop_depth_4",
-        "for(a=0;a<1;a=a+1){for(b=0;b<1;b=b+1){for(c=0;c<1;c=c+1){"
-        "for(d=0;d<1;d=d+1){for(e=0;e<1;e=e+1){}}}}}\nreturn 0;\n",
+        "cap_struct_fields_16",
+        "struct S{" + "".join(f"f{i};" for i in range(16))
+        + "};fn main(){return 0;}\n",
         0,
     )
+    must_reject(
+        "cap_struct_fields_over",
+        "struct S{" + "".join(f"f{i};" for i in range(17))
+        + "};fn main(){return 0;}\n",
+        "M315: 17th field rejected (CC_STRUCT_FIELDS==16)",
+    )
     ok(
-        "cap_locals_56",
-        "fn main(){"
-        + "".join(f"int x{i};" for i in range(57))
+        "cap_loops_8",
+        "n=0;" + "".join("while(n<1){" for _ in range(8)) + "n=n+1;"
+        + "}" * 8 + "return 0;\n",
+        0,
+    )
+    must_reject(
+        "cap_loops_over",
+        "n=0;" + "".join("while(n<1){" for _ in range(9)) + "n=n+1;"
+        + "}" * 9 + "return 0;\n",
+        "M315: 9th nesting level rejected (CC_LOOP_MAX==8)",
+    )
+    ok(
+        "cap_locals_128",
+        "fn main(){" + "".join(f"int x{i};" for i in range(128))
         + "return 0;}\n",
         0,
     )
+    must_reject(
+        "cap_locals_over",
+        "fn main(){" + "".join(f"int x{i};" for i in range(129))
+        + "return 0;}\n",
+        "M315: 129th local rejected (CC_LOCAL_MAX==128)",
+    )
     ok(
-        "cap_ident_20",
-        "abcdefghijklmnopqrstu=7;abcdefghijklmnopqrstv=42;"
-        "return abcdefghijklmnopqrstu;\n",
-        7,
+        "cap_fns_63",
+        "".join(f"fn f{i}(){{ return 0; }}\n" for i in range(63))
+        + "fn main(){return 0;}\n",
+        0,
+    )
+    must_reject(
+        "cap_fns_over",
+        "".join(f"fn f{i}(){{ return 0; }}\n" for i in range(64))
+        + "fn main(){return 0;}\n",
+        "M315: 64th function rejected although CC_FN_MAX==128 "
+        "(another table caps at 64)",
+    )
+    ok(
+        "cap_ident_64",
+        ("v" * 64) + "=42;\nreturn " + ("v" * 64) + ";\n",
+        42,
+    )
+    must_reject(
+        "cap_ident_over",
+        "fn main(){int " + "v" * 64 + "X;int " + "v" * 64 + "Y;"
+        + "v" * 64 + "X=40;" + "v" * 64 + "Y=2;"
+        + "return " + "v" * 64 + "X+" + "v" * 64 + "Y;}\n",
+        "M315: two names differing only past char 64 are rejected "
+        "(truncation collision must stay loud)",
     )
 
     # --- real programs ---
@@ -589,6 +658,118 @@ def cases() -> list[Case]:
         14,
     )
 
+    # --- M307 audit: C surface a real program actually reaches for ----------
+    # Measured against M306 (v2.93.0).  Everything below fails today, so
+    # --strict stays honest; flip each entry to ok() in the milestone that
+    # fixes it.  This block is the growth path from "CXC_A2 dialect" to
+    # "C subset that ordinary C code can use".
+
+    # P0: wrong answers / crashes that are silent today
+    xf_crash(
+        "arr_one_elem",
+        "fn main(){int a[1];a[0]=42;return a[0];}\n",
+        "M308: count==1 is treated as a scalar, so `a[0]` loads the value "
+        "and dereferences it -> SIGSEGV",
+    )
+    xf_wrong(
+        "struct_byval_param",
+        "struct S{x;y;};fn f(S p){return p.x+p.y;}"
+        "fn main(){S q;q.x=40;q.y=2;return f(q);}\n",
+        42,
+        "M309: struct-by-value parameter copies only the first field",
+    )
+    xf_wrong(
+        "untyped_param_index",
+        "fn slen(s){n=0;while(s[n]!=0){n=n+1;}return n;}"
+        'fn main(){return slen("hello")*8+2;}\n',
+        42,
+        "M310: an untyped parameter has no pointee width, so a byte string is indexed with an 8-byte stride (int arrays are fine)",
+    )
+    xf_wrong(
+        "switch_fallthrough",
+        "fn main(){int s;s=0;switch(1){case 1:s=s+40;case 2:s=s+2;"
+        "break;default:s=0;}return s;}\n",
+        42,
+        "M311: case bodies jump to the end (C falls through) — implement it "
+        "or reject it loudly, but do not differ silently",
+    )
+
+    # vocabulary a C program uses constantly
+    xf_comp("op_bit_or", "return (40|2);\n",
+            "M312: binary `|` missing (only `||` lexes)")
+    xf_comp("op_bit_and", "return (43&47);\n",
+            "M312: binary `&` missing (only unary address-of)")
+    xf_comp("enum_named", "enum E{A=40,B=2};\nreturn A+B;\n",
+            "M312: only anonymous `enum {…}` parses; `enum E{…}` is rejected")
+    xf_comp("enum_as_type",
+            "enum E{A=40,B=2};\nfn main(){enum E v;return 42;}\n",
+            "M312: a named enum cannot be used as a type")
+    xf_comp("multi_declarator", "fn main(){int a,b;a=40;b=2;return a+b;}\n",
+            "M312: `int a, b;` not parsed")
+    xf_comp("multi_declarator_init", "fn main(){int x=40,y=2;return x+y;}\n",
+            "M312: `int x = 40, y = 2;` not parsed")
+    xf_comp("char_escape_nl", "fn main(){char c;c='\\n';return c+32;}\n",
+            "M312: only `'A'`-style char literals; `'\\n'`/`'\\0'` rejected")
+    xf_comp("char_escape_hex", "fn main(){char c;c='\\x2A';return c;}\n",
+            "M312: `'\\xNN'` not lexed")
+
+    # declaration / scoping surface
+    xf_comp("type_short", "fn main(){short s;s=42;return s;}\n",
+            "M313: `short` is not a type")
+    xf_comp("type_long_long", "fn main(){long long v;v=42;return v;}\n",
+            "M313: `long long` not parsed")
+    xf_comp("static_local", "fn f(){static int n;n=n+1;return n;}"
+            "fn main(){return f()+f()+40;}\n",
+            "M313: `static` storage not parsed")
+    xf_comp(
+        "typedef_anon_struct",
+        "typedef struct{int x;int y;}P;\n"
+        "fn main(){P p;p.x=40;p.y=2;return p.x+p.y;}\n",
+        "M313: `typedef struct { … } P;` not parsed (named struct works)",
+    )
+    xf_comp("global_array",
+            "int g[4];\nfn main(){g[0]=40;g[1]=2;return g[0]+g[1];}\n",
+            "M313: arrays exist only as locals")
+    xf_comp("global_struct", "struct P{x;y;};P g;\n"
+            "fn main(){g.x=40;g.y=2;return g.x+g.y;}\n",
+            "M313: struct-typed globals rejected (fail code 12)")
+    xf_comp(
+        "array_decay",
+        "fn sum(a,n){s=0;for(i=0;i<n;i=i+1){s=s+a[i];}return s;}"
+        "fn main(){v[3];v[0]=40;v[1]=1;v[2]=1;return sum(v,3);}\n",
+        "M313: array-to-pointer decay at a call site not supported",
+    )
+    xf_comp("for_decl_c99",
+            "fn main(){s=0;for(int i=0;i<8;i=i+1){s=s+i;}return s+14;}\n",
+            "M313: C99 `for (int i = …)` not parsed")
+    xf_comp("main_argv", "int main(int argc,char** argv){return 42+argc-1;}\n",
+            "M313: `main` must take zero parameters (no argv)")
+    xf_comp(
+        "nested_struct_member",
+        "struct A{x;};struct B{a;};"
+        "fn main(){B v;v.a.x=42;return v.a.x;}\n",
+        "M309: nested struct member access not parsed",
+    )
+
+    # bigger type / layout surface
+    xf_comp(
+        "func_ptr",
+        "fn inc(x){return x+1;}fn main(){int (*fp)(int);fp=inc;return fp(41);}\n",
+        "M314: function pointers not parsed",
+    )
+    xf_comp("type_union", "union U{int i;char c;};\n"
+            "fn main(){U u;u.i=42;return u.i;}\n",
+            "M314: `union` not parsed beyond the keyword")
+    xf_comp("type_float", "fn main(){float f;f=1;return 42;}\n",
+            "M314: floating point reserved (the dialect is integer-only)")
+    xf_comp("goto_label", "fn main(){goto done;done:\nreturn 42;}\n",
+            "M314: `goto` / labels not parsed")
+
+    # size walls still reachable from ordinary code
+    xf_comp("write_33_bytes",
+            'write "0123456789012345678901234567890123";\nreturn 42;\n',
+            "M315: CC_LIT_MAX=32 caps `write \"…\"`; needs a literal pool")
+
     return out
 
 
@@ -602,6 +783,10 @@ def classify(
     require_elf_check: bool,
 ) -> str:
     """Return pass|xfail|bug|xpass|reject."""
+    if case.kind == "must_reject":
+        # A capacity/negative case: rejecting the source IS the contract.
+        return "pass" if elf is None else "bug"
+
     if case.kind == "xfail_compile":
         if elf is None:
             return "xfail"
@@ -704,8 +889,20 @@ def main() -> int:
     )
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="M307: print every case's status + known-gap reason",
+    )
+    parser.add_argument(
+        "--only",
+        default="",
+        help="M307: run only cases whose name contains this substring",
+    )
     args = parser.parse_args()
     suite = cases()
+    if args.only:
+        suite = [c for c in suite if args.only in c.name]
     if args.list:
         for c in suite:
             print(f"{c.kind}\t{c.name}\t{c.reason}")
@@ -746,6 +943,9 @@ def main() -> int:
                 status = "bug"
                 err = (err or "") + "ELF_ALIGN"
             counts[status] += 1
+            if args.report:
+                note = f"  # {case.reason}" if case.reason else ""
+                print(f"{status:7} {case.name:24}{note}")
             if status in ("bug", "reject", "xpass") and not args.strict:
                 print(f"{status.upper()} {case.name}: {err or case.reason}", file=sys.stderr)
             if status in ("bug", "reject") and args.strict:

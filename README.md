@@ -5,7 +5,7 @@
 
 **Native UEFI x86-64 kernel** — no host OS runtime. Higher-half PE32+, SMP/IPI, PCI/MSI-X, e1000e packet DMA, userspace ELF + CXCFS `disk/`, and an on-box mini toolchain (`disk/cc` / `as` / `ld`). Acceptance requires kernel `CXC_OS_SELF_TEST_PASS`, on-box `ONBOX_CCDRV_PASS`, **and** external Python peer `peer_ok=1`.
 
-> Chinese deep-dive (current features): [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Toolchain: [`docs/a2-mini-cc.md`](docs/a2-mini-cc.md) · Midfield 28: [`docs/midpoint-assessment-28.md`](docs/midpoint-assessment-28.md) · Next plan (M285–M294): [`docs/plan-m285-m294.md`](docs/plan-m285-m294.md)
+> Chinese deep-dive (current features): [`docs/README.zh-CN.md`](docs/README.zh-CN.md) · Goals: [`docs/product-goals.md`](docs/product-goals.md) · Toolchain: [`docs/a2-mini-cc.md`](docs/a2-mini-cc.md) · Dialect: [`docs/cxc-a2-dialect.md`](docs/cxc-a2-dialect.md) · Midfield 33: [`docs/midpoint-assessment-33.md`](docs/midpoint-assessment-33.md) · Next plan (M307–M316): [`docs/plan-m307-m316.md`](docs/plan-m307-m316.md)
 
 ## Status
 
@@ -16,7 +16,7 @@
 | On-box contract | `ONBOX_CCDRV_PASS` + `WMSG:CD` + `exit: 42` (`spawn_ld:1`; `spawn_as==inputs_s`; **`planted:0`**) |
 | Optional GUI | GOP + PS/2 mini-IDE → `ONBOX_IDE_PASS`; GUIUX (mouse/wm/VT100/`/dev/fb0`/`tty0`) → `ONBOX_GUIUX_PASS` (not CI-gated) |
 | Evidence | QEMU + OVMF, EDU + e1000e + virtio-blk, UDP dgram peer |
-| Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` |
+| Host tests | `ctest` (`cxc::net`) + `contract_test.py --host-only` + semantic `CC_CONF` (`--strict`, see dialect doc) |
 | A2 claim | **Not claimed** — dialect + mini as/ld, not full gcc/g++ |
 
 ## Current features
@@ -49,7 +49,7 @@
 
 - Language: **`CXC_A2` dialect** (`fn` / `import` / control flow / struct / `#include`…) — **not ISO C**
 - Process boundaries audited by kernel `execve`: nest `cc -c` for `a.c`/`b.c`; spawn `as`/`ld` for assemble/link
-- Some musl leaf `.o` files are **host-prebuilt and planted** on `disk/`
+- musl leaves are `.s` texts assembled on-box by `disk/as` — **`planted: 0`** (no prebuilt `.o`); the `.s` bodies themselves are generated on the host by `tools/gen_plant_src.py`
 
 Example:
 

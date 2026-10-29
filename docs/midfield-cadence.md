@@ -40,7 +40,8 @@
 | 第三十二次 | 约 M299–M302 | [`midpoint-assessment-32.md`](midpoint-assessment-32.md) |
 
 当前基线：**M306 / v2.93.0**（GUIUX 仍可选；迷你 IDE + CCDRV 串口主合同；QEMU 验收底线 **256 MiB**）。  
-**A2-SEM（M287–M306）**：语义网 59/59 + **`planted:0`/`inputs_s:57`**（禁止简化清债）+ asm_mode 深 CF + Win `CC_CONF --require-exec` — 见 [`midpoint-assessment-33.md`](midpoint-assessment-33.md)；方言 [`cxc-a2-dialect.md`](cxc-a2-dialect.md)。
+**A2-SEM（M287–M306）**：语义网 59/59 + **`planted:0`/`inputs_s:57`**（禁止简化清债）+ asm_mode 深 CF + Win `CC_CONF --require-exec` — 见 [`midpoint-assessment-33.md`](midpoint-assessment-33.md)；方言 [`cxc-a2-dialect.md`](cxc-a2-dialect.md)。  
+**A2-C（M307–M316）**：下一窗主线 —— 先修 3 个假绿用例与 4 个 P0 语义缺陷，再补齐普通 C 词汇；下一正式中场 **M316**。计划见 [`plan-m307-m316.md`](plan-m307-m316.md)。
 
 ## 中场窗口必做
 
