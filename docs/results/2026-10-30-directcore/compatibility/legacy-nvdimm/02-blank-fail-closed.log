@@ -1,0 +1,16 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+NVME_READY nsid=1 lba=512 qdepth=16 vwc=1 mdts=7 blocks=4000
+pmem: Zicbom CBO.CLEAN enabled, assumed block size=64
+pmem: MAP ready base=0x88000000 usable=0x2000000 fdt=0x87e00000 backend=nvdimm
+ONBOX_PMFS_PMEM0_PASS mode=MAP backend=nvdimm size=33550336
+pmfs: no valid v3 checkpoint; explicit format required
+hart 1 starting
+hart 2 starting
+init: starting sh
+$ pmformat
+usage: pmformat --force
+WARNING: destroys the entire unmounted PMFS image.
+$ 

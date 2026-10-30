@@ -1,0 +1,42 @@
+PASS blank-fail-closed
+PASS format
+PASS empty-reboot
+PASS baseline-write
+PASS baseline-reboot
+PASS legacy-isolation
+PASS identical-write
+PASS normal-update
+PASS normal-reboot
+PASS truncate-empty
+PASS empty-after-reboot
+PASS overwrite-soak
+PASS soak-reboot
+PASS concurrent
+PASS concurrent-reboot
+PASS fault-1
+PASS recover-1
+PASS directcore stage=1 state=old
+PASS fault-2
+PASS recover-2
+PASS directcore stage=2 state=old
+PASS fault-3
+PASS recover-3
+PASS directcore stage=3 state=old
+PASS fault-4
+PASS recover-4
+PASS directcore stage=4 state=new
+PASS fault-5
+PASS recover-5
+PASS directcore stage=5 state=new
+PASS fault-6
+PASS recover-6
+PASS directcore stage=6 state=new
+PASS corrupt-root-checksum
+PASS corrupt-version
+PASS corrupt-same-epoch
+PASS corrupt-alias
+PASS data-crc-disabled-probe
+PASS data-bitflip-external-oracle
+PASS trace-update
+PASS trace-reboot
+DIRECTCORE_RECOVERY_PASS boots=35 fault_stages=6 metadata_negative=4 data_crc_disabled_control=1 backend=nvme cpus=3 zicbom=1

@@ -1,0 +1,4 @@
+kernel/directcore.c:11:2: error: "DIRECT_CORE_TEST forbids destructive legacy PMFS selftests"
+   11 | #error "DIRECT_CORE_TEST forbids destructive legacy PMFS selftests"
+      |  ^
+1 error generated.

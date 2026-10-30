@@ -1,0 +1,258 @@
+{
+  "protocol": {
+    "candidate_stores": 6,
+    "root_offset": 0,
+    "flushes": 7,
+    "ordering_fences": 2,
+    "drain_groups": 2,
+    "atomic_root_stores": 1
+  },
+  "cases": 43,
+  "guest_reboots": 46,
+  "backend": "nvme",
+  "cpus": 3,
+  "zicbom": true,
+  "old": 42,
+  "new": 1,
+  "negative_controls": [
+    {
+      "name": "missing-data-flush",
+      "host_reason": "external content oracle",
+      "case": {
+        "sha256": "55e10651c294c2c28c51e5e08bb5190c05a779733ae699910b330ed53d9a9f9f",
+        "state": "invalid",
+        "requires_new": true,
+        "contexts": [
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "last-line-evicted"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "last-line-evicted-pending-all"
+          },
+          {
+            "seq": 16,
+            "event": "F",
+            "history": "deferred",
+            "scenario": "pending-all"
+          },
+          {
+            "seq": 16,
+            "event": "F",
+            "history": "deferred",
+            "scenario": "pending-alternate"
+          },
+          {
+            "seq": 17,
+            "event": "D",
+            "history": "deferred",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 18,
+            "event": "ACK",
+            "history": "deferred",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 19,
+            "event": "END",
+            "history": "deferred",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "last-line-evicted"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "last-line-evicted-pending-all"
+          },
+          {
+            "seq": 16,
+            "event": "F",
+            "history": "alternating",
+            "scenario": "pending-none"
+          },
+          {
+            "seq": 16,
+            "event": "F",
+            "history": "alternating",
+            "scenario": "pending-all"
+          },
+          {
+            "seq": 16,
+            "event": "F",
+            "history": "alternating",
+            "scenario": "pending-alternate"
+          },
+          {
+            "seq": 17,
+            "event": "D",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 18,
+            "event": "ACK",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 19,
+            "event": "END",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          }
+        ],
+        "patch": {
+          "0": "10000000a4cb5f860000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+          "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+          "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000",
+          "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+        }
+      }
+    },
+    {
+      "name": "early-root",
+      "host_reason": "checkpoint metadata",
+      "case": {
+        "sha256": "08cded80aa0faaa095f999800fa9915a1f85af5387b8190e8adf32a902fd5bbf",
+        "state": "invalid",
+        "requires_new": false,
+        "contexts": [
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "last-line-evicted"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "last-line-evicted-pending-all"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "eager",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "eager",
+            "scenario": "last-line-evicted"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "eager",
+            "scenario": "last-line-evicted-pending-all"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "last-line-evicted"
+          },
+          {
+            "seq": 14,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "last-line-evicted-pending-all"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "guaranteed"
+          }
+        ],
+        "patch": {
+          "0": "10000000a4cb5f860000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "name": "overwrite-protected-data",
+      "host_reason": "external content oracle",
+      "case": {
+        "sha256": "68cd40ec9e7f81520b1e30f897d5c656c3552af90fcbb9bec5e68472ef56409e",
+        "state": "invalid",
+        "requires_new": false,
+        "contexts": [
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "partial-1-evicted"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "deferred",
+            "scenario": "partial-1-pending-all"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "eager",
+            "scenario": "partial-1-evicted"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "eager",
+            "scenario": "partial-1-pending-all"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "partial-1-evicted"
+          },
+          {
+            "seq": 0,
+            "event": "W",
+            "history": "alternating",
+            "scenario": "partial-1-pending-all"
+          }
+        ],
+        "patch": {
+          "320": "3e3c597693b0cdea0e2b4865829fbcd9fd1a3754718eabc8ec092643607d9ab7dbf815324f6c89a6cae704213e5b7895b9d6f3102d4a6784a8c5e2ff1c395673"
+        }
+      }
+    }
+  ],
+  "source_image_unchanged": true,
+  "baseline_gzip_sha256": "f3ef251d593f7d5f07e49604dc9ed5aea193945640c3f8a7ca1992ebba508812",
+  "final_gzip_sha256": "75dbfcf8ff0548242f7ce717b0cb1dd2dd82160518b526d3090c9016dc92b8f4",
+  "final_reconstruction": "exact complete NVDIMM image match",
+  "trace_sha256": "0de24cdb04bb7ceaa166238afd909004297dc7644fdee29addc5de334b573d19",
+  "scope": "sampled source-level trace under explicit 8-byte atomic-root assumption; not physical power loss"
+}

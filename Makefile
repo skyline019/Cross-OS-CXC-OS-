@@ -21,6 +21,7 @@ OBJS = \
   $K/bio.o \
   $K/rootdisk.o \
   $K/nvme.o \
+  $K/directcore.o \
   $K/fs.o \
   $K/log.o \
   $K/sleeplock.o \
@@ -83,6 +84,16 @@ else
 $(error DISK must be virtio or nvme)
 endif
 
+# Destructive, isolated single-file publication-core experiment, NOT a VFS
+# filesystem. Requires PMEM_MAP and PMEM_NVDIMM in EXTRA_CFLAGS and a clean
+# rebuild. Never run it on a v3 or valuable NVDIMM image.
+DIRECT_CORE ?= 0
+ifeq ($(DIRECT_CORE),1)
+DIRECT_CORE_CFLAGS = -DDIRECT_CORE_TEST
+else ifneq ($(DIRECT_CORE),0)
+$(error DIRECT_CORE must be 0 or 1)
+endif
+
 CC = $(TOOLPREFIX)gcc
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
@@ -108,7 +119,7 @@ CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I.
 # Opt-in experimental modes; rebuild cleanly after changing these flags.
-CFLAGS += $(EXTRA_CFLAGS) $(DISK_CFLAGS)
+CFLAGS += $(EXTRA_CFLAGS) $(DISK_CFLAGS) $(DIRECT_CORE_CFLAGS)
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -195,6 +206,10 @@ UPROGS=\
 	$U/_pmfs_gc\
 	$U/_vfstest\
 
+ifeq ($(DIRECT_CORE),1)
+UPROGS += $U/_directcore $U/_directbench
+endif
+
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
 
@@ -206,7 +221,7 @@ clean:
 	$K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
         $U/usys.S \
-	$(UPROGS)
+	$(UPROGS) $U/_directcore $U/_directbench
 
 # try to generate a unique GDB port
 GDBPORT = $(shell expr `id -u` % 5000 + 25000)

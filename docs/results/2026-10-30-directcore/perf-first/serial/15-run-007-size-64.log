@@ -1,0 +1,46 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+NVME_READY nsid=1 lba=512 qdepth=16 vwc=1 mdts=7 blocks=4000
+pmem: Zicbom CBO.CLEAN enabled, assumed block size=64
+pmem: MAP ready base=0x88000000 usable=0x2000000 fdt=0x87e00000 backend=nvdimm
+pmfs: v3 disabled for direct-core test
+DIRECTCORE_READY backend=nvdimm units=524224 line=64 experimental=1
+init: starting sh
+$ directbench --force 32 64 1
+DIRECTBENCH_SAMPLE size=64 i=0 direct_ticks=1070 xv_ticks=22738 order=0
+DIRECTBENCH_SAMPLE size=64 i=1 direct_ticks=1426 xv_ticks=29431 order=1
+DIRECTBENCH_SAMPLE size=64 i=2 direct_ticks=1200 xv_ticks=26600 order=0
+DIRECTBENCH_SAMPLE size=64 i=3 direct_ticks=1186 xv_ticks=28400 order=1
+DIRECTBENCH_SAMPLE size=64 i=4 direct_ticks=1404 xv_ticks=25951 order=0
+DIRECTBENCH_SAMPLE size=64 i=5 direct_ticks=1291 xv_ticks=30970 order=1
+DIRECTBENCH_SAMPLE size=64 i=6 direct_ticks=1172 xv_ticks=28808 order=0
+DIRECTBENCH_SAMPLE size=64 i=7 direct_ticks=1225 xv_ticks=27000 order=1
+DIRECTBENCH_SAMPLE size=64 i=8 direct_ticks=1356 xv_ticks=25033 order=0
+DIRECTBENCH_SAMPLE size=64 i=9 direct_ticks=1195 xv_ticks=25694 order=1
+DIRECTBENCH_SAMPLE size=64 i=10 direct_ticks=1133 xv_ticks=26781 order=0
+DIRECTBENCH_SAMPLE size=64 i=11 direct_ticks=1242 xv_ticks=27424 order=1
+DIRECTBENCH_SAMPLE size=64 i=12 direct_ticks=1431 xv_ticks=25695 order=0
+DIRECTBENCH_SAMPLE size=64 i=13 direct_ticks=1222 xv_ticks=25696 order=1
+DIRECTBENCH_SAMPLE size=64 i=14 direct_ticks=1238 xv_ticks=28592 order=0
+DIRECTBENCH_SAMPLE size=64 i=15 direct_ticks=1225 xv_ticks=27071 order=1
+DIRECTBENCH_SAMPLE size=64 i=16 direct_ticks=1231 xv_ticks=24831 order=0
+DIRECTBENCH_SAMPLE size=64 i=17 direct_ticks=1176 xv_ticks=24632 order=1
+DIRECTBENCH_SAMPLE size=64 i=18 direct_ticks=1605 xv_ticks=27853 order=0
+DIRECTBENCH_SAMPLE size=64 i=19 direct_ticks=1311 xv_ticks=27414 order=1
+DIRECTBENCH_SAMPLE size=64 i=20 direct_ticks=1521 xv_ticks=25249 order=0
+DIRECTBENCH_SAMPLE size=64 i=21 direct_ticks=1225 xv_ticks=28772 order=1
+DIRECTBENCH_SAMPLE size=64 i=22 direct_ticks=1156 xv_ticks=29210 order=0
+DIRECTBENCH_SAMPLE size=64 i=23 direct_ticks=1274 xv_ticks=26832 order=1
+DIRECTBENCH_SAMPLE size=64 i=24 direct_ticks=1156 xv_ticks=26439 order=0
+DIRECTBENCH_SAMPLE size=64 i=25 direct_ticks=1127 xv_ticks=26461 order=1
+DIRECTBENCH_SAMPLE size=64 i=26 direct_ticks=1167 xv_ticks=29182 order=0
+DIRECTBENCH_SAMPLE size=64 i=27 direct_ticks=1202 xv_ticks=27642 order=1
+DIRECTBENCH_SAMPLE size=64 i=28 direct_ticks=1198 xv_ticks=27380 order=0
+DIRECTBENCH_SAMPLE size=64 i=29 direct_ticks=1289 xv_ticks=24383 order=1
+DIRECTBENCH_SAMPLE size=64 i=30 direct_ticks=1205 xv_ticks=24469 order=0
+DIRECTBENCH_SAMPLE size=64 i=31 direct_ticks=1262 xv_ticks=29937 order=1
+DIRECTBENCH_BATCH size=64 count=32 direct_ticks=29984 xv_ticks=794111 order=1
+DIRECTBENCH_PASS size=64 samples=32 warmup=4
+$ 

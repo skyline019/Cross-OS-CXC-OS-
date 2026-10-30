@@ -1,0 +1,37 @@
+Time captured (UTC):
+2026-10-30T11:18:27Z
+Repository base commit for these uncommitted source changes:
+7c527a9d858e440caaef0118fad7482007ce21b0
+Host kernel:
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+CPU:
+model name	: Intel(R) Xeon(R) Processor @ 2.60GHz
+Host CPU isolation was not configured. Guest uses QEMU TCG, not KVM.
+QEMU version:
+QEMU emulator version 9.2.0
+Compiler:
+clang version 18.1.6 (https://github.com/ziglang/zig-bootstrap 98bc6bf4fc4009888d33941daf6b600d20a42a56)
+Zig toolchain:
+0.13.0
+Binary and QEMU patch SHA-256:
+304ace18f67d8465581ec314860c733ac631af76b85869e628f747da02bdb43e  /home/user/.cache/pmfs-next/qemu-build/qemu-system-riscv64
+f59a4469d1e6cbcf81ecf98bb707c275a5c22f70ca3143c2f4ae484a71c8e553  tools/patches/qemu-9.2.0-riscv-pmfs-nvdimm.patch
+verify-direct-zic kernel and input disk:
+e8bad697cb9485ff527eb63b9ad4d01528ecea8ea628cefd01b1f41d64504d4d  /home/user/.cache/pmfs-next/verify-direct-zic/kernel/kernel
+5e8bb13ebc2befd1c170c2828eead90f2bfb06e8fb994cc58f2a09c9436c8a48  /home/user/.cache/pmfs-next/verify-direct-zic/fs.img
+verify-direct-small kernel and input disk:
+2c409e03fdd11d6fe65bd36a5c926e7196a176abf99c61d9ea899e271104e44f  /home/user/.cache/pmfs-next/verify-direct-small/kernel/kernel
+5e8bb13ebc2befd1c170c2828eead90f2bfb06e8fb994cc58f2a09c9436c8a48  /home/user/.cache/pmfs-next/verify-direct-small/fs.img
+verify-direct-perf kernel and input disk:
+51ecd46fef0583cabc057fe64c362295ec508809009ed052ac0054e4cd8de68d  /home/user/.cache/pmfs-next/verify-direct-perf/kernel/kernel
+5e8bb13ebc2befd1c170c2828eead90f2bfb06e8fb994cc58f2a09c9436c8a48  /home/user/.cache/pmfs-next/verify-direct-perf/fs.img
+verify-legacy-last kernel and input disk:
+d69315208fb6dc70bd6c7ca1f1ece6c2539bd5c382132b657fa5e10a2d9c6cff  /home/user/.cache/pmfs-next/verify-legacy-last/kernel/kernel
+95a262b6718fe54d5948f03ca10964e2d0b10e40842b5f81deac560c337d290a  /home/user/.cache/pmfs-next/verify-legacy-last/fs.img
+Build flags (clean isolated builds; rv64gc, -O):
+recovery: DISK=nvme DIRECT_CORE=1 PMEM_MAP PMEM_NVDIMM PMEM_ZICBOM DIRECT_CORE_FAULT_INJECT PMFS_TRACE
+enospc: DISK=nvme DIRECT_CORE=1 PMEM_MAP PMEM_NVDIMM DIRECT_CORE_LINE_LIMIT=14
+perf: DISK=nvme DIRECT_CORE=1 PMEM_MAP PMEM_NVDIMM PMEM_ZICBOM (no trace or fault injection)
+legacy: DISK=nvme PMEM_MAP PMEM_NVDIMM PMEM_ZICBOM PMFS_FAULT_INJECT
+Simulation: independent raw NVMe file cache=writeback; 32 MiB file-backed NVDIMM; QEMU process kill, not host power loss.
+No physical device or CPU isolation; measurements are guest r_time under TCG.

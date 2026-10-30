@@ -1,0 +1,54 @@
+test_ratios_use_matched_boots (test_bench_gc_hints.PairedTests.test_ratios_use_matched_boots) ... ok
+test_unmatched_counts_rejected (test_bench_gc_hints.PairedTests.test_unmatched_counts_rejected) ... ok
+test_batch_measures_complete_loop (test_bench_perf.SampleTests.test_batch_measures_complete_loop) ... ok
+test_parse_exact_counts_and_metrics (test_bench_perf.SampleTests.test_parse_exact_counts_and_metrics) ... ok
+test_rejects_missing_duplicate_and_guest_failure (test_bench_perf.SampleTests.test_rejects_missing_duplicate_and_guest_failure) ... ok
+test_throughput_uses_total_successes_and_total_time (test_bench_perf.SampleTests.test_throughput_uses_total_successes_and_total_time) ... ok
+test_rejects_truncated_and_invalid (test_bench_perf.TimebaseTests.test_rejects_truncated_and_invalid) ... ok
+test_roundtrip (test_bench_perf.TimebaseTests.test_roundtrip) ... ok
+test_default_virtio_and_nvme_nvdimm_are_distinct (test_bench_perf.TopologyTests.test_default_virtio_and_nvme_nvdimm_are_distinct) ... ok
+test_accepts_uint64_tick_values (test_bench_repro.ParseTests.test_accepts_uint64_tick_values) ... ok
+test_rejects_bad_counts_zero_and_extra_line (test_bench_repro.ParseTests.test_rejects_bad_counts_zero_and_extra_line) ... ok
+test_rejects_guest_failure_or_missing_summary (test_bench_repro.ParseTests.test_rejects_guest_failure_or_missing_summary) ... ok
+test_rejects_missing_or_duplicate_trial (test_bench_repro.ParseTests.test_rejects_missing_or_duplicate_trial) ... ok
+test_groups_boots_excludes_warmup_and_is_reproducible (test_bench_repro.StatisticsTests.test_groups_boots_excludes_warmup_and_is_reproducible) ... ok
+test_linear_percentiles (test_bench_repro.StatisticsTests.test_linear_percentiles) ... ok
+test_rejects_incomplete_or_mixed_runs (test_bench_repro.StatisticsTests.test_rejects_incomplete_or_mixed_runs) ... ok
+test_bounds_checked_elf_load (test_check_directcore_store.DirectCoreIsaAuditTests.test_bounds_checked_elf_load) ... ok
+test_rv64_store_encodings_and_negative_controls (test_check_directcore_store.DirectCoreIsaAuditTests.test_rv64_store_encodings_and_negative_controls) ... ok
+test_source_and_line_table (test_check_directcore_store.DirectCoreIsaAuditTests.test_source_and_line_table) ... ok
+test_backends_must_be_distinct (test_check_storage_topology.StorageTopologyTests.test_backends_must_be_distinct) ... ok
+test_missing_duplicate_and_wrong_class_fail (test_check_storage_topology.StorageTopologyTests.test_missing_duplicate_and_wrong_class_fail) ... ok
+test_positive (test_check_storage_topology.StorageTopologyTests.test_positive) ... ok
+test_wrong_bar_nvdimm_or_backing_fails (test_check_storage_topology.StorageTopologyTests.test_wrong_bar_nvdimm_or_backing_fails) ... ok
+test_boot_grouped_summary_and_weighted_batch (test_directcore_bench.DirectCoreBenchmarkTests.test_boot_grouped_summary_and_weighted_batch) ... ok
+test_strict_parser (test_directcore_bench.DirectCoreBenchmarkTests.test_strict_parser) ... ok
+test_corruption_and_incomplete_trace_rejected (test_directcore_trace_replay.TraceReplayTests.test_corruption_and_incomplete_trace_rejected) ... ok
+test_full_image_reconstruction_rejects_untraced_write (test_directcore_trace_replay.TraceReplayTests.test_full_image_reconstruction_rejects_untraced_write) ... ok
+test_missing_flush_and_early_root_have_counterexamples (test_directcore_trace_replay.TraceReplayTests.test_missing_flush_and_early_root_have_counterexamples) ... ok
+test_realistic_protocol_and_replay_candidates (test_directcore_trace_replay.TraceReplayTests.test_realistic_protocol_and_replay_candidates) ... ok
+test_interleaving_inside_panic (test_nvme_boot_tests.PanicMarkerTests.test_interleaving_inside_panic) ... ok
+test_many_boot_line_slices_and_interleavings (test_nvme_boot_tests.PanicMarkerTests.test_many_boot_line_slices_and_interleavings) ... ok
+test_message_is_literal_not_regex (test_nvme_boot_tests.PanicMarkerTests.test_message_is_literal_not_regex) ... ok
+test_smp_uart_prefix_and_complete_message (test_nvme_boot_tests.PanicMarkerTests.test_smp_uart_prefix_and_complete_message) ... ok
+test_complete_trace_and_order (test_nvme_trace_audit.TraceAuditTests.test_complete_trace_and_order) ... ok
+test_mismatched_completion_or_missing_flush_callback_rejected (test_nvme_trace_audit.TraceAuditTests.test_mismatched_completion_or_missing_flush_callback_rejected) ... ok
+test_missing_barrier_and_bad_home_rejected (test_nvme_trace_audit.TraceAuditTests.test_missing_barrier_and_bad_home_rejected) ... ok
+test_eager_eviction_can_persist_unflushed_data (test_pmfs_trace_replay.TraceTests.test_eager_eviction_can_persist_unflushed_data) ... ok
+test_omitted_flush_loses_data_even_when_commit_persists (test_pmfs_trace_replay.TraceTests.test_omitted_flush_loses_data_even_when_commit_persists) ... ok
+test_parse_and_reconstruct (test_pmfs_trace_replay.TraceTests.test_parse_and_reconstruct) ... ok
+test_partial_store_candidates_and_ack (test_pmfs_trace_replay.TraceTests.test_partial_store_candidates_and_ack) ... ok
+test_rejects_gaps_and_bad_ranges (test_pmfs_trace_replay.TraceTests.test_rejects_gaps_and_bad_ranges) ... ok
+test_backend_selection_is_explicit_and_writeback_is_not_noflush (test_xv6_log_recovery.DiskArgumentsTests.test_backend_selection_is_explicit_and_writeback_is_not_noflush) ... ok
+test_committed_blocks_and_partial_install (test_xv6_log_recovery.DiskLogTests.test_committed_blocks_and_partial_install) ... ok
+test_invalid_headers_are_rejected (test_xv6_log_recovery.DiskLogTests.test_invalid_headers_are_rejected) ... ok
+test_invalid_superblock_is_rejected (test_xv6_log_recovery.DiskLogTests.test_invalid_superblock_is_rejected) ... ok
+test_negative_control_changes_only_the_copy (test_xv6_log_recovery.DiskLogTests.test_negative_control_changes_only_the_copy) ... ok
+test_exact_replay_order_and_destinations (test_xv6_log_recovery.TraceTests.test_exact_replay_order_and_destinations) ... ok
+test_serial_failure_requires_a_complete_line (test_xv6_log_recovery.TraceTests.test_serial_failure_requires_a_complete_line) ... ok
+test_shell_prompt_must_be_at_line_start_and_not_a_command (test_xv6_log_recovery.TraceTests.test_shell_prompt_must_be_at_line_start_and_not_a_command) ... ok
+
+----------------------------------------------------------------------
+Ran 49 tests in 0.026s
+
+OK

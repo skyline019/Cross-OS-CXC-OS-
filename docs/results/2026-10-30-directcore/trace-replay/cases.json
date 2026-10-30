@@ -1,0 +1,1775 @@
+[
+  {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": -1,
+        "event": "BEGIN",
+        "history": "deferred",
+        "scenario": "baseline"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": -1,
+        "event": "BEGIN",
+        "history": "eager",
+        "scenario": "baseline"
+      },
+      {
+        "seq": -1,
+        "event": "BEGIN",
+        "history": "alternating",
+        "scenario": "baseline"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      }
+    ],
+    "patch": {}
+  },
+  {
+    "sha256": "90e8fd23e1b2b7f229b80233340af80c78b627951e343dbece60ac8957cf0c09",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "a44fe73d94a5e163213a83a052417c8c16540699b5bcfba1823827178ebf8785",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d60000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "6cc1699a630fb965172ad6ca16e43046f256676d8979934062cab49d2046ec74",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 0,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592"
+    }
+  },
+  {
+    "sha256": "1739795fecd6e0c6018a802d27828a2cc5425b024fc872eed4e2c827a96123e2",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "cf1418350bac74da816a721529a4956654a7ae30e5a87f34af377af762f7abef",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "ab215ca0286c547d6768896f84db3830a1d5419b323e61bbcfc2370feecc4fc2",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a"
+    }
+  },
+  {
+    "sha256": "8e3f214d77e94709aeb458810589d513e49a5f8dca5037e877a4b191abe09b3f",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "832": "0b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "460b37e07b2e1c96ae7b74d8602367fdf8363914563ba909b9a50e7c6c8315b2",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "0472ed6d66124a4d15fde664ec575c19bb833a93777b9ac1edf4bdb69450a3fb",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "896": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "1031bb5c3fc7ef2e1a98403319c338ae6b9bfa8294deda19f574321c54cc26c7",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "896": "010000000d0000000100000000000000800000000000000001000000010100000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "688d5808de6e0953b1af3eefe0e12baf0da1e1e1e99a3b415a7c297e0f04ac79",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "0585f607291e53d3cc067c90cabfeabeb4e419b3ef1802ccb0e8afdbe1816cb2",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "960": "000000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "e825536508dfcf1be47806b4a8af382f751782a0abc9b5f23ae1fc6ddac117fa",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "a087df8337ef066d48f1b1c8d35b17ab9b63a5ee2926930c40808ca5cf81f441",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "1024": "44000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "34e28b2b7eeb726d08747fb02bebccee55c4f2671b9a713584849313f108a1ec",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff07000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "8601eaca47eedf549f587715c94ea094ad63924966339d3638bcdd446ffcf943",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  },
+  {
+    "sha256": "5b7df95ac315fffef050cc5a410e35c81ac288c66e1faaacca014a99dc5cf065",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a"
+    }
+  },
+  {
+    "sha256": "ccc7cd0ddd1a6907c3035d99451770cbfedad2820af34bfe4faa3e3c27d9b0ad",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "a9057b8bf49c827a1452fcb4318e603ee34cbc3fefabc3e0bba14b726273ec80",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "cfde3d49c004e4beff943c9c7d642c2f68b0782b53f68514da86641505579d91",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "f75d1b2061dc3f7e14c92be087197c23df7e84def50e9600e7c11a6c6ef0a610",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "4c10541d55b64038fe4c84af82e3b1b8c658179f77a29a6067c0a2660af8df38",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 13,
+        "event": "D",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 13,
+        "event": "D",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 13,
+        "event": "D",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  },
+  {
+    "sha256": "381dc05663f74d7e5a538903bacaacce4cf09279adad8691eab23f5f9838b0e7",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 11,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 12,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  },
+  {
+    "sha256": "07af035796c007ac9a96ec565cb7ab96211aa4f78c1721698bd290a2e2ca258c",
+    "state": "new",
+    "requires_new": true,
+    "contexts": [
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "deferred",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "deferred",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 17,
+        "event": "D",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 18,
+        "event": "ACK",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 19,
+        "event": "END",
+        "history": "deferred",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "eager",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "eager",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 17,
+        "event": "D",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 18,
+        "event": "ACK",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 19,
+        "event": "END",
+        "history": "eager",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 14,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-none"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 16,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-alternate"
+      },
+      {
+        "seq": 17,
+        "event": "D",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 18,
+        "event": "ACK",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      },
+      {
+        "seq": 19,
+        "event": "END",
+        "history": "alternating",
+        "scenario": "guaranteed"
+      }
+    ],
+    "patch": {
+      "0": "10000000a4cb5f860000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  },
+  {
+    "sha256": "ea124054c65c91ca054a6ab37afca63ffed289329686fd50ec63d2ac57779696",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "3efc6e130808ae4f7545a89388378fadcc12e058918b54d3def01469af08ce9d",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 1,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "66371551e0ac197ce631edccd2e4bfecdce6c178bc665119bf5a924172c15eef",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "7ca31986e6a71743d497f1a5647d3766d0c86b32b4cb92d58cf7ceb1e3d5b193",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "0c291b0419870c9d3c1c4539b21b9f2699bedd01146ffc5933473817b8b95e1d",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "ab3bf4d3a9a5172201f277638dd79d54f4a3539711015a11dd522f6bfc4bb530",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "024e9fc3f6e61256d92ee7b083d4d90cc27ae4764f7a1d3bee324a61f581c4ee",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000",
+      "1024": "44000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "ebc1f792d06ce460aa7f58bdea91fe337a14667d01c20ed63850fb96e2a2597c",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "eager",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff07000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "441721fa6c4a362fb3708e8496ea1d1697caf4c8010952af600ebf4b3ddd483a",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "a543e1c31cf41f3532dc307cb47589a417c1cf185e0c1ab70086ef7efc4f0635",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 2,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "a94b3b0ff253560dc466fcbc8baad1a4aa5ae1491ffea1469baf2f7bbf8f485a",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "afdceb7d2f812c3c338b1ecff8f66e4189c07c0457fbd93e87e81a983a6151b1",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 3,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "b7d3e00f97456f75bdc53a295480e5ca181780cef69baca509704549ea023b1f",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "4c3ae3a1df621eaa779b7b5661622927b1d3436a4a3b6b8d1956f5d362681b1b",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted"
+      },
+      {
+        "seq": 4,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "last-line-evicted-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "960": "000000000e00000000000000000000000000000000000000000000000000000000000000ed9d69eb000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "0df3b1cf6cbcc72a83145548a6c48d55ba70657d570be850c0fdcb4188d5bdf5",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-1-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "1024": "44000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "6dd84e2cb5195d095d3718f688b5b4300e8a1394cc419282b20a7374d80c54ce",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-evicted"
+      },
+      {
+        "seq": 5,
+        "event": "W",
+        "history": "alternating",
+        "scenario": "partial-32-pending-all"
+      }
+    ],
+    "patch": {
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff07000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "sha256": "9ef9609f526427c1b065084c10ce8f95b7eb9103c6a0056b33857652547bd260",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 7,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 8,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  },
+  {
+    "sha256": "f509c05625d8c34ebfbceef51934e5ffc3aa85da3610f31b69d30c8d54e002b0",
+    "state": "old",
+    "requires_new": false,
+    "contexts": [
+      {
+        "seq": 9,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      },
+      {
+        "seq": 10,
+        "event": "F",
+        "history": "alternating",
+        "scenario": "pending-all"
+      }
+    ],
+    "patch": {
+      "704": "3e5b7895b2cfec092d4a6784a1bedbf81c39567390adcae70b2845627f9cb9d6fa1734516e8ba8c5e90623405d7a97b4d8f5122f4c6986a3c7e4011e3b587592",
+      "768": "b6d3f00d2a476481a5c2dffc1936537094b1ceeb0825425f83a0bddaf714314e728facc9e603203d617e9bb8d5f20f2c506d8aa7c4e1fe1b3f5c7996b3d0ed0a",
+      "832": "0b0000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "896": "010000000d0000000100000000000000800000000000000001000000010100006537a9e000000000000000000000000000000000000000000000000000000000",
+      "1024": "444643310100000003000000000000000f000000706ed48601000000c0ff0700000000000000000000000000000000000000000000000000000000000de2538a"
+    }
+  }
+]

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-30T11:18:02.770411+00:00",
+  "kernel_sha256": "51ecd46fef0583cabc057fe64c362295ec508809009ed052ac0054e4cd8de68d",
+  "fs_image_sha256": "5e8bb13ebc2befd1c170c2828eead90f2bfb06e8fb994cc58f2a09c9436c8a48",
+  "source_sha256": "ebc5ba079a04aa6550c81b8898eafa810dcbe210561a17aa6657fccd86d04646",
+  "runner_sha256": "39366413d4474c668a3eb2238105513de61899f06529c0164d0eaff7b7a69e28",
+  "qemu_sha256": "304ace18f67d8465581ec314860c733ac631af76b85869e628f747da02bdb43e",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "host": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "cpus": 1,
+  "disk": "QEMU NVMe, file backend",
+  "pmem": "QEMU NVDIMM, fresh file backend; explicit destructive format",
+  "zicbom": true,
+  "runs": 20,
+  "warmup_boots": 2,
+  "samples_per_boot": 32,
+  "sizes": [
+    64,
+    512
+  ],
+  "seed": 20261030,
+  "build_notes": "QEMU 9.2.0 TCG patched virt NVDIMM; Zig clang 18.1.6 -O; DISK=nvme; PMEM_MAP PMEM_NVDIMM PMEM_ZICBOM DIRECT_CORE=1; PMFS_TRACE and fault injection absent; single guest hart; final source",
+  "direct_operation": "whole-file replacement via test syscall; COW root publish and drain",
+  "xv6_operation": "pre-opened existing file: lseek + write + fsync (global log sync, NVMe Flush)",
+  "warning": "Unequal API/capability/durability contracts; QEMU guest time is not physical device performance.",
+  "timebase_hz": 10000000,
+  "timebase_dtb_sha256": "abf3110cefd03947dc5eb19aece04d79ebc741ebb899bf8048d450bd5edee23f",
+  "timebase_dtb_command": [
+    "/home/user/.cache/pmfs-next/qemu-build/qemu-system-riscv64",
+    "-machine",
+    "virt,dumpdtb=/tmp/directcore-bench-3oedq4ks/qemu-virt.dtb",
+    "-bios",
+    "none",
+    "-m",
+    "128M",
+    "-smp",
+    "1",
+    "-nographic"
+  ]
+}

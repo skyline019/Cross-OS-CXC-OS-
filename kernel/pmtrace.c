@@ -87,6 +87,13 @@ pmtrace_flush(void *p)
 }
 
 void
+pmtrace_order(void)
+{
+  if (trace_active)
+    printk("PMTRACE O seq=%u\n", trace_sequence++);
+}
+
+void
 pmtrace_drain(void)
 {
   if (trace_active)

@@ -1,6 +1,6 @@
 # QEMU NVDIMM 验收与 xv6 原生 NVMe 对照：架构更新
 
-> **约定和状态（2026-10-30）：**当前验收以 QEMU 软件模型为准，真实硬件实验暂不作为本阶段门槛。这里把“NVMe 原生实现”解释为在 xv6 中实现独立 PCIe NVMe 块设备路径，作为原生 xv6 FS 的 SSD 对照；NVDIMM 文件系统仍直接访问持久内存，绝不经 NVMe、`bio` 或块日志。已有 KV/CDC v3 保留不删除。本文中的无 KV/CDC 文件系统及窗口分配优化仍是**待实现设计**；仓库另有受限的 NVMe 驱动原型，具体测试证据以[实验记录](results/2026-10-30-nvme-nvdimm/README.md)为准。
+> **约定和状态（2026-10-30）：**当前验收以 QEMU 软件模型为准，真实硬件实验暂不作为本阶段门槛。这里把“NVMe 原生实现”解释为在 xv6 中实现独立 PCIe NVMe 块设备路径，作为原生 xv6 FS 的 SSD 对照；NVDIMM 直接路径不经 NVMe、`bio` 或块日志。已有 KV/CDC v3 保留不删除。完整无 KV/CDC VFS 和窗口分配优化仍是**待实现设计**；现有[独立单文件发布实验核心](THESIS-DIRECTCORE-EXPERIMENT.md)仅验证部分机制，不等于该文件系统。受限 NVMe 驱动和旧 v3 证据见[实验记录](results/2026-10-30-nvme-nvdimm/README.md)。
 
 ## 1. 两条设备路径，一组文件 API
 
@@ -125,7 +125,7 @@ cost(x) = 0 (x=0), 否则 2 + (x < run_i 长度 ? 1 : 0)
 
 | 组别 | 设备与文件系统 | 目的与当前限制 |
 |---|---|---|
-| A | 补丁 QEMU NVDIMM + 新无 KV/CDC 直接 PMEM FS | 题面主组；**文件系统尚未实现**，不能沿用 v3 的数据冒充 |
+| A | 补丁 QEMU NVDIMM + 新无 KV/CDC 直接 PMEM FS | 题面主组；**完整文件系统尚未实现**，独立单文件核心只是阶段性证据，不能沿用 v3 的数据冒充 |
 | B | QEMU NVMe + 原生 xv6 FS + 显式 NVMe Flush | 原生块设备对照；现为有限轮询驱动，报告 QD=1 |
 | C | QEMU virtio + 原生 xv6 FS | 原行为兼容；目前未协商 Flush，仅可作不等价历史对照 |
 | D | 补丁 NVDIMM + 既有 KV/CDC v3、可选 NVMe root | 回归与设备共存验证；**不计为 A 组实现或 A 组性能** |

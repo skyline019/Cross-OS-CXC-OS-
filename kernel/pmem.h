@@ -21,6 +21,11 @@ const char *pmem_backend_name(void); // emul, map, nvdimm or unavailable
 
 // Make [p, p+n) durable w.r.t. the PMEM persistence domain.
 // Protocol: store → pmem_flush (line walk) → pmem_fence → (SB store → flush → fence).
+// Order prior stores before a batch of line writeback requests, then issue
+// the requests without a completion barrier. The caller must follow the
+// batch with pmem_fence(); neither function alone is a persistence drain.
+void pmem_flush_batch_begin(void);
+void pmem_flush_batch(void *p, uint64 n);
 void pmem_flush(void *p, uint64 n);
 void pmem_fence(void);
 void pmem_persist(void *p, uint64 n); // flush + fence

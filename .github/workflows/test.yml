@@ -39,6 +39,7 @@ jobs:
           python3 -m unittest discover -s tools -p test_check_storage_topology.py
           python3 -m unittest discover -s tools -p test_nvme_trace_audit.py
           python3 -m unittest discover -s tools -p test_nvme_boot_tests.py
+          python3 -m unittest discover -s tools -p 'test_*directcore*.py'
           python3 tools/bench_repro.py --runs 2 --warmup 0 --n 4 --output .ci-logs/bench-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
           python3 tools/bench_perf.py --runs 2 --warmup 0 --samples 4 --sizes 64 --modes roundtrip,overwrite --output .ci-logs/perf-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
       - name: xv6 usertests, three harts
@@ -160,6 +161,40 @@ jobs:
             --samples 4 --sizes 64 --modes overwrite --output .ci-logs/nvdimm-nvme-perf-smoke \
             --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" \
             --build-notes 'CI QEMU 9.2 NVDIMM + NVMe; existing v3, fault hooks dormant'
+      - name: Direct-core compile guard, Zicbom recovery and trace replay
+        run: |
+          make clean
+          mkdir -p .ci-logs
+          if make DISK=nvme DIRECT_CORE=1 EXTRA_CFLAGS="-DPMEM_MAP -DPMEM_NVDIMM -DPMFS_SELFTEST" kernel/directcore.o > .ci-logs/directcore-guard.log 2>&1; then
+            echo 'destructive legacy selftest guard unexpectedly compiled' >&2
+            exit 1
+          fi
+          grep -F 'DIRECT_CORE_TEST forbids destructive legacy PMFS selftests' .ci-logs/directcore-guard.log
+          make clean
+          make -j2 DISK=nvme DIRECT_CORE=1 EXTRA_CFLAGS="-DPMEM_MAP -DPMEM_NVDIMM -DPMEM_ZICBOM -DDIRECT_CORE_FAULT_INJECT -DPMFS_TRACE" kernel/kernel fs.img
+          python3 tools/check_directcore_store.py --output .ci-logs/directcore-store-isa.json
+          python3 tools/directcore_recovery.py --backend nvme --cpus 3 --zicbom \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/directcore
+          trace=$(find .ci-logs/directcore -maxdepth 1 -name '*-trace-update.log' -print)
+          test -f "$trace"
+          python3 tools/directcore_trace_replay.py --backend nvme --cpus 3 --zicbom \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" \
+            --baseline .ci-logs/directcore/trace-baseline.pmem.gz \
+            --final .ci-logs/directcore/trace-final.pmem.gz --trace "$trace" \
+            --output .ci-logs/directcore-trace-replay
+      - name: Direct-core ENOSPC and disabled fault-injection checks
+        run: |
+          make clean
+          make -j2 DISK=nvme DIRECT_CORE=1 EXTRA_CFLAGS="-DPMEM_MAP -DPMEM_NVDIMM -DDIRECT_CORE_LINE_LIMIT=14" kernel/kernel fs.img
+          python3 tools/directcore_enospc.py --backend nvme \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/directcore-enospc
+      - name: Direct-core paired throughput smoke (not a hardware benchmark)
+        run: |
+          make clean
+          make -j2 DISK=nvme DIRECT_CORE=1 EXTRA_CFLAGS="-DPMEM_MAP -DPMEM_NVDIMM -DPMEM_ZICBOM" kernel/kernel fs.img
+          python3 tools/directcore_bench.py --runs 2 --warmup 0 --samples 4 --sizes 64 --zicbom \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --output .ci-logs/directcore-bench-smoke \
+            --build-notes 'CI smoke only, GCC, QEMU TCG, trace and fault injection not compiled'
       - name: Upload NVDIMM serial logs
         if: always()
         uses: actions/upload-artifact@v7
