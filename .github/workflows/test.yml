@@ -182,6 +182,8 @@ jobs:
             --baseline .ci-logs/directcore/trace-baseline.pmem.gz \
             --final .ci-logs/directcore/trace-final.pmem.gz --trace "$trace" \
             --output .ci-logs/directcore-trace-replay
+          python3 tools/directcore_boundary_recovery.py --backend nvme --cpus 3 --zicbom --random-steps 8 \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --output .ci-logs/directcore-boundaries
       - name: Direct-core ENOSPC and disabled fault-injection checks
         run: |
           make clean

@@ -33,6 +33,7 @@
 
 - **三核 NVDIMM + NVMe + Zicbom**：正常启动、显式格式化、相同内容无写、缩短至空、400 次覆写、两个并发写者各 100 次、旧 v3 syscall 隔离、6 个软件故障点、4 类元数据损坏和数据 CRC 关闭负控，共 35 次启动通过。故障点 1–3 本次恢复旧值，4–6 本次恢复新值；协议只要求 4–5 允许旧或新，6 必须新。
 - **低空间**：14 行设备、关闭故障注入的独立构建，8 次启动验证全量预留失败不修改介质、重启保留旧值、关闭的注入调用不写，以及缩短为空成功。并不代表完整文件系统已实现近满/长期回收。
+- **缓存行边界与双根内容**：额外覆盖 0、1、63、64、65、127、128、129、255、256、257、511、512 B 和固定种子的长短交替/重复写，共 53 个更新、107 次三核重启；host oracle 在每次更新后检查两个根的期望内容，53 次只读重启不改变介质。原始串口、逐例哈希和首尾镜像见[补充结果](results/2026-10-30-directcore-boundaries/README.md)。
 - **实际操作轨迹**：某次 128 B 更新的已观测轨迹含 6 个 64 B 候选对象 store、2 个预 flush 顺序 fence 事件、7 个行 flush、2 个 drain 组、1 个 8 B 根 store 和 ACK。每个 drain 组对应当前 `pmem_fence()` 中的 `__sync_synchronize()` 与显式 `fence rw,rw`，不是把两条 CPU 指令当作一次指令。64 B store 事件记录 `memmove` 后的完整行，而非逐机器指令跟踪；预先写回、flush 子集和部分写仅做有限采样。实际轨迹所有 store 重建整个 32 MiB NVDIMM，与实测最终镜像**逐字节一致**；对 43 个不同候选镜像以及漏数据 flush、提前发布根、覆盖受保护数据 3 个负控进行 46 次重启，guest 和独立 oracle 一致。
 - **机器码宽度审计**：[`tools/check_directcore_store.py`](../tools/check_directcore_store.py) 使用最终 RV64 ELF 的 DWARF 行表和原始指令字，检查根 store 映射到的 `sd`/`c.sd`。这只确认本次编译产物使用单个 64 位存储指令，并不能证明故障原子性，也不能替代对其他编译器、标志及真实平台的验证。
 - 另验证默认 virtio 三核 VFS 和并发日志写；对保留的旧 v3 在 NVDIMM+NVMe 的恢复做独立回归。旧实现的数据不能被当作新核心结果。
@@ -58,6 +59,8 @@ TRACE=$(find /tmp/directcore-recovery -name '*-trace-update.log' -print)
 python3 tools/directcore_trace_replay.py --qemu "$QEMU" --backend nvme --cpus 3 --zicbom \
   --baseline /tmp/directcore-recovery/trace-baseline.pmem.gz \
   --final /tmp/directcore-recovery/trace-final.pmem.gz --trace "$TRACE" --output /tmp/directcore-replay
+python3 tools/directcore_boundary_recovery.py --qemu "$QEMU" --backend nvme --cpus 3 --zicbom \
+  --random-steps 24 --seed 20261030 --output /tmp/directcore-boundaries
 # B. 另一独立副本：14 行、故障注入关闭
 make clean
 make -j2 DISK=nvme DIRECT_CORE=1 \

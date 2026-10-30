@@ -1,0 +1,29 @@
+{
+  "cases": 53,
+  "completed": 53,
+  "failures": [],
+  "guest_boots": 107,
+  "final_epoch": 44,
+  "changed_writes": 43,
+  "identical_writes": 10,
+  "sizes": [
+    0,
+    1,
+    63,
+    64,
+    65,
+    127,
+    128,
+    129,
+    255,
+    256,
+    257,
+    511,
+    512
+  ],
+  "read_only_reboots_unchanged": 53,
+  "initial_image_gzip_sha256": "23463d17b9b8775b2d1aa5b7c9c0c602f2f6557c1d49babe40cd9436b6be28ae",
+  "final_image_gzip_sha256": "dbe96efeff0f0872dcaee13463cd554d48fd17854ad8d4b3f2b0c24d2b0857e5",
+  "both_root_content_oracle": "checked after each completed update",
+  "source_images_unchanged": true
+}

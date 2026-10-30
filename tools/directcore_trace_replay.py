@@ -129,8 +129,8 @@ def expected_pattern(generation, size):
     return bytes((i * 29 + (i >> 3) * 7 + generation * 31) & 255 for i in range(size))
 
 
-def inspect(base, patch):
-    """Validate both metadata graphs and check each root's expected bytes."""
+def inspect_graph(base, patch, expected_by_epoch):
+    """Independently validate both roots and their caller-supplied contents."""
     units = len(base) // LINE
     all_objects = {}
 
@@ -198,15 +198,20 @@ def inspect(base, patch):
         elif tree or tree_crc:
             raise ValueError("nonempty tree for empty file")
         content = b"".join(read(index) for index in pointers[:count])[:length]
-        expected = {1: b"", 2: expected_pattern(1, 128), 3: expected_pattern(2, 128)}
-        if epoch not in expected or content != expected[epoch]:
+        if epoch not in expected_by_epoch or content != expected_by_epoch[epoch]:
             raise ValueError("external content oracle")
-        return {"epoch": epoch, "checkpoint": cp_id, "data": pointers[:count]}
+        return {"epoch": epoch, "checkpoint": cp_id, "data": pointers[:count], "size": length}
 
     roots = [view(0), view(1)]
     if roots[0]["epoch"] == roots[1]["epoch"] and roots[0]["checkpoint"] != roots[1]["checkpoint"]:
         raise ValueError("equal epoch with distinct roots")
-    active = max(roots, key=lambda root: root["epoch"])
+    return max(roots, key=lambda root: root["epoch"])
+
+
+def inspect(base, patch):
+    """Trace fixture oracle: epoch 2 is old, epoch 3 is new."""
+    expected = {1: b"", 2: expected_pattern(1, 128), 3: expected_pattern(2, 128)}
+    active = inspect_graph(base, patch, expected)
     if active["epoch"] not in (2, 3):
         raise ValueError("unexpected active epoch")
     return ("old" if active["epoch"] == 2 else "new"), active

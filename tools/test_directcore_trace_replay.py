@@ -4,7 +4,7 @@ import zlib
 
 from directcore_trace_replay import (LINE, MAGIC, SALT, audit_protocol,
                                      expected_pattern, first_bad, inspect,
-                                     parse_trace, validate_reconstruction)
+                                     inspect_graph, parse_trace, validate_reconstruction)
 from pmfs_trace_replay import apply_all_stores, candidates
 
 
@@ -122,6 +122,16 @@ class TraceReplayTests(unittest.TestCase):
         index = next(i for i, e in enumerate(early) if e["kind"] == "W" and e["atomic"])
         early.insert(0, early.pop(index))
         first_bad(base, early)
+
+    def test_generic_epoch_oracle_checks_both_roots(self):
+        base, events = fixture()
+        expected = {1: b"", 2: expected_pattern(1, 128), 3: expected_pattern(2, 128)}
+        self.assertEqual(inspect_graph(base, {}, expected)["epoch"], 2)
+        final = apply_all_stores(base, events)
+        self.assertEqual(inspect_graph(final, {}, expected)["epoch"], 3)
+        expected[2] = b"bad-old-version"
+        with self.assertRaises(ValueError):
+            inspect_graph(final, {}, expected)
 
     def test_full_image_reconstruction_rejects_untraced_write(self):
         base, events = fixture()
