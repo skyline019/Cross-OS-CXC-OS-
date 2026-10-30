@@ -39,6 +39,8 @@ jobs:
           python3 -m unittest discover -s tools -p test_check_storage_topology.py
           python3 -m unittest discover -s tools -p test_nvme_trace_audit.py
           python3 -m unittest discover -s tools -p test_nvme_boot_tests.py
+          python3 -m unittest discover -s tools -p test_fs_parity_gate.py
+          python3 -m unittest discover -s tools -p test_native_sparse_recovery.py
           python3 -m unittest discover -s tools -p 'test_*directcore*.py'
           python3 tools/bench_repro.py --runs 2 --warmup 0 --n 4 --output .ci-logs/bench-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
           python3 tools/bench_perf.py --runs 2 --warmup 0 --samples 4 --sizes 64 --modes roundtrip,overwrite --output .ci-logs/perf-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
@@ -46,6 +48,20 @@ jobs:
         run: ./test-xv6.py usertests
       - name: VFS namespace, descriptors and atomic rename, three harts
         run: ./test-xv6.py vfs
+      - name: Native API diagnostics and fail-closed parity negative control
+        run: |
+          python3 tools/fs_parity_probe.py --backend virtio --target /par --cpus 3 --output .ci-logs/native-api.log
+          python3 tools/check_native_api_regression.py .ci-logs/native-api.log
+          # Legacy volatile v3 is a negative control, NOT the new direct VFS.
+          python3 tools/fs_parity_probe.py --backend virtio --target /pm/par --cpus 3 --output .ci-logs/legacy-api-negative.log
+          set +e
+          python3 tools/fs_parity_gate.py --native-report .ci-logs/native-api.log --direct-report .ci-logs/legacy-api-negative.log > .ci-logs/parity-negative.log
+          rc=$?
+          set -e
+          test "$rc" -eq 1
+          grep -F 'FS_PARITY_GATE_BLOCKED' .ci-logs/parity-negative.log
+      - name: Native sparse I/O and ENOSPC smoke, virtio
+        run: python3 tools/native_sparse_recovery.py --backend virtio --cpus 3 --no-fault --log-dir .ci-logs/native-sparse-virtio
       - name: PMFS write avoidance and indexed query regression
         run: ./test-xv6.py efficiency
       - name: PMFS explicit compaction and metadata reclamation
@@ -91,6 +107,7 @@ jobs:
           python3 tools/nvme_boot_tests.py --cpus 3 --log-dir .ci-logs/nvme-boot
           python3 tools/xv6_log_recovery.py --backend nvme --cpus 1 --log-dir .ci-logs/nvme-log
           python3 tools/native_rename_recovery.py --backend nvme --cpus 1 --log-dir .ci-logs/nvme-rename
+          python3 tools/native_sparse_recovery.py --backend nvme --cpus 3 --log-dir .ci-logs/nvme-sparse-sync
           XV6_TEST_OUTPUT=.ci-logs/nvme-vfs.log DISK=nvme CPUS=3 ./test-xv6.py 'test_vfs$'
           XV6_TEST_OUTPUT=.ci-logs/nvme-stress.log DISK=nvme CPUS=3 ./test-xv6.py 'test_stress$'
           XV6_TEST_OUTPUT=.ci-logs/nvme-usertests.log DISK=nvme CPUS=3 ./test-xv6.py -q 'test_usertests$'

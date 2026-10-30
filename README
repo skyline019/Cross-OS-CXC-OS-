@@ -53,6 +53,7 @@ THESIS PMFS PROTOTYPE (v3)
 Current status, test evidence and limits: THESIS.md and
   docs/PMFS-REPAIR-REPORT.md          Chinese repair/test report
   docs/SEMANTICS.md                   exact supported subset and error semantics
+  docs/THESIS-FS-PARITY-CONTRACT.md   non-degradable API/persistence gate and blockers
   docs/PERFORMANCE-ENDURANCE.md       software I/O counters and wear limitations
   docs/MAINTENANCE.md                two-slot GC and explicit COW compaction
   docs/TRACE-REPLAY.md                actual PMFS operation trace and replay limits
@@ -74,7 +75,10 @@ checkpoints, explicit formatting, and coarse-grained PMFS serialization. Pages
 unreachable from either checkpoint may be recycled for metadata or new runs;
 explicit COW compaction still needs disjoint scratch space and can fail near
 full. It remains a bounded teaching prototype, not a complete VFS, POSIX FS,
-full-device GC or hardware wear leveling.
+full-device GC or hardware wear leveling. The separate directcore experiment
+is a single-object test syscall, not the required no-KV/CDC VFS. Full ordinary
+API and crash/persistence parity are hard goals that are still blocked; see the
+parity contract rather than treating the common subset as a completed system.
 
 Unpatched MAP is ordinary guest RAM, NOT an NVDIMM. An experimental QEMU
 9.2.0 patch supports one separately backed cold-plugged NVDIMM on virt and

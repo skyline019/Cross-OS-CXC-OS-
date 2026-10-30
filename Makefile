@@ -205,6 +205,8 @@ UPROGS=\
 	$U/_pmcompact\
 	$U/_pmfs_gc\
 	$U/_vfstest\
+	$U/_nativeio\
+	$U/_fsparity\
 
 ifeq ($(DIRECT_CORE),1)
 UPROGS += $U/_directcore $U/_directbench

@@ -43,10 +43,10 @@ struct logheader {
 struct log {
   struct spinlock lock;
   int start;
-  int outstanding; // how many FS sys calls are executing.
-  int committing;  // in commit(), please wait.
+  int outstanding;  // how many FS sys calls are executing.
+  int committing;   // in commit(), please wait.
+  int sync_waiters; // block new operations until a requested barrier completes
   int dev;
-  int ncommit;
   uint disk_blocks;
   uint log_blocks;
   struct logheader lh;
@@ -62,13 +62,18 @@ static void commit();
 #ifdef XV6_LOG_FAULT_INJECT
 static int log_fault_stage;
 static int log_fault_pid;
+static int log_fault_reached;
+static int log_fault_resume;
 
 static void
 log_fault_point(int stage)
 {
   if (log_fault_stage == stage && myproc() && myproc()->pid == log_fault_pid) {
     printk("XV6_LOG_FAULT stage=%d blocks=%d\n", stage, log.lh.n);
-    for (;;)
+    __atomic_store_n(&log_fault_reached, stage, __ATOMIC_RELEASE);
+    // Existing recovery tests kill QEMU here. A separate synchronization test
+    // may explicitly release this cut point after observing a waiting fsync.
+    while (!__atomic_load_n(&log_fault_resume, __ATOMIC_ACQUIRE))
       asm volatile("" ::: "memory");
   }
 }
@@ -82,6 +87,21 @@ sys_xv6_log_fault(void)
 #ifdef XV6_LOG_FAULT_INJECT
   int stage;
   argint(0, &stage);
+  // Test-only observation/release commands; stage 0 remains invalid.
+  if (stage == 6)
+    return __atomic_load_n(&log_fault_reached, __ATOMIC_ACQUIRE);
+  if (stage == 7) {
+    acquire(&log.lock);
+    int waiting = log.sync_waiters;
+    release(&log.lock);
+    return waiting;
+  }
+  if (stage == 8) {
+    if (!__atomic_load_n(&log_fault_reached, __ATOMIC_ACQUIRE) ||
+        __atomic_exchange_n(&log_fault_resume, 1, __ATOMIC_ACQ_REL))
+      return -1;
+    return 0;
+  }
   if (stage < 1 || stage > 5)
     return -1;
   acquire(&log.lock);
@@ -195,7 +215,7 @@ begin_op(void)
 {
   acquire(&log.lock);
   while (1) {
-    if (log.committing) {
+    if (log.committing || log.sync_waiters) {
       sleep_prepare(&log);
       release(&log.lock);
       sleep();
@@ -242,7 +262,6 @@ end_op(void)
     commit();
     acquire(&log.lock);
     log.committing = 0;
-    log.ncommit += 1;
     wakeup(&log);
     release(&log.lock);
   }
@@ -316,20 +335,29 @@ log_write(struct buf *b)
   release(&log.lock);
 }
 
+// Wait for every transaction already in flight to commit. New transactions
+// cannot continuously overtake the barrier, but existing operations can finish.
+// Callers must not hold an outstanding log operation or an inode lock.
+void
+log_sync(void)
+{
+  acquire(&log.lock);
+  log.sync_waiters++;
+  while (log.committing || log.outstanding > 0) {
+    sleep_prepare(&log);
+    release(&log.lock);
+    sleep();
+    acquire(&log.lock);
+  }
+  log.sync_waiters--;
+  wakeup(&log);
+  release(&log.lock);
+}
+
 uint64
 sys_sync(void)
 {
-  acquire(&log.lock);
-  if (log.committing || log.outstanding > 0) {
-    int n = log.ncommit + 1;
-    while (log.ncommit < n) {
-      sleep_prepare(&log);
-      release(&log.lock);
-      sleep();
-      acquire(&log.lock);
-    }
-  }
-  release(&log.lock);
+  log_sync();
   // Flush PMFS open-file buffers as well; no xv6 log spinlock is held here.
   return filepm_sync_all();
 }

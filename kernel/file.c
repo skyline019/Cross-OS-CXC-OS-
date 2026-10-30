@@ -18,8 +18,6 @@
 #include "vfs.h"
 #include "fcntl.h"
 
-extern uint64 sys_sync(void);
-
 struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
@@ -101,8 +99,10 @@ filefsync(struct file *f)
     pmfs_unlock();
     return rc;
   }
-  if (f->type == FD_INODE)
-    return (int)sys_sync(); // xv6 exposes only global log sync
+  if (f->type == FD_INODE) {
+    log_sync(); // native log is global; do not make an unrelated PMFS fail it
+    return 0;
+  }
   return -1;
 }
 
@@ -275,9 +275,11 @@ filestat(struct file *f, uint64 addr)
                                                                            : 0;
   }
   if (f->type == FD_INODE || f->type == FD_DEVICE) {
+    acquiresleep(&f->ip->iolock);
     ilock(f->ip);
     stati(f->ip, &st);
     iunlock(f->ip);
+    releasesleep(&f->ip->iolock);
     if (copyout(p->pagetable, p->sz, addr, (char *)&st, sizeof(st)) < 0)
       return -1;
     return 0;
@@ -349,10 +351,12 @@ fileread(struct file *f, uint64 addr, int n)
       return -1;
     r = devsw[f->major].read(1, addr, n);
   } else if (f->type == FD_INODE) {
+    acquiresleep(&f->ip->iolock);
     ilock(f->ip);
     if ((r = readi(f->ip, 1, addr, f->off, n)) > 0)
       f->off += r;
     iunlock(f->ip);
+    releasesleep(&f->ip->iolock);
   } else {
     panic("fileread");
   }
@@ -416,26 +420,54 @@ filewrite(struct file *f, uint64 addr, int n)
     // and 2 blocks of slop for non-aligned writes.
     int max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
     int i = 0;
+    struct proc *p = myproc();
+    char *staged;
+    if (n == 0)
+      return 0;
+    if (max > PGSIZE)
+      max = PGSIZE;
+    if ((staged = kalloc()) == 0)
+      return -1;
+    // Acquire before begin_op: an operation waiting for this lock must not
+    // hold a log reservation that the writer needs for its next chunk.
+    // This also keeps large O_APPEND writes contiguous across transactions.
+    acquiresleep(&f->ip->iolock);
     while (i < n) {
-      int n1 = n - i;
+      int copied = 0, n1 = n - i;
       if (n1 > max)
         n1 = max;
+
+      // Stage before allocating disk blocks. copyin may fail at a user page
+      // boundary; commit and report only the successfully copied prefix.
+      while (copied < n1) {
+        uint64 src = addr + (uint)i + (uint)copied;
+        int part = PGSIZE - src % PGSIZE;
+        if (part > n1 - copied)
+          part = n1 - copied;
+        if (src < addr ||
+            copyin(p->pagetable, p->sz, staged + copied, src, part) < 0)
+          break;
+        copied += part;
+      }
+      if (copied == 0)
+        break;
 
       begin_op();
       ilock(f->ip);
       uint off = f->append ? f->ip->size : f->off;
-      if ((r = writei(f->ip, 1, addr + i, off, n1)) > 0)
+      if ((r = writei(f->ip, 0, (uint64)staged, off, copied)) > 0)
         f->off = off + r;
       iunlock(f->ip);
       end_op();
 
-      if (r != n1) {
-        // error from writei
+      if (r > 0)
+        i += r;
+      if (r != copied || copied != n1)
         break;
-      }
-      i += r;
     }
-    ret = (i == n ? n : -1);
+    releasesleep(&f->ip->iolock);
+    kfree(staged);
+    ret = i ? i : -1;
   } else {
     panic("filewrite");
   }
@@ -444,7 +476,8 @@ filewrite(struct file *f, uint64 addr, int n)
 }
 
 // SEEK_SET/CUR/END for regular files; directory descriptors can be rewound.
-// Native xv6 does not implement sparse writes; PMFS fills bounded holes with 0.
+// Native xv6 represents holes without allocating them; legacy PMFS fills its
+// bounded in-memory working buffer with zeroes.
 long
 fileseek(struct file *f, long offset, int whence)
 {
@@ -456,6 +489,7 @@ fileseek(struct file *f, long offset, int whence)
     end = dir ? (PMFILE_MAX_INO + 2) * sizeof(struct dirent) : f->pm->len;
     max = dir ? end : PMFILE_MAX_SIZE;
   } else if (f->type == FD_INODE) {
+    acquiresleep(&f->ip->iolock);
     ilock(f->ip);
     dir = f->ip->type == T_DIR;
     end = f->ip->size;
@@ -485,8 +519,10 @@ fileseek(struct file *f, long offset, int whence)
 out:
   if (f->type == FD_PMFS || f->type == FD_PMFS_DIR)
     pmfs_unlock();
-  else
+  else {
     iunlock(f->ip);
+    releasesleep(&f->ip->iolock);
+  }
   return result;
 }
 
@@ -530,9 +566,11 @@ filegetdents(struct file *f, uint64 addr, int n)
   }
   if (f->type != FD_INODE)
     return -1;
+  acquiresleep(&f->ip->iolock);
   ilock(f->ip);
   if (f->ip->type != T_DIR || f->off % sizeof(de)) {
     iunlock(f->ip);
+    releasesleep(&f->ip->iolock);
     return -1;
   }
   while (n - done >= (int)sizeof(ent)) {
@@ -549,9 +587,9 @@ filegetdents(struct file *f, uint64 addr, int n)
         continue;
       }
       ent.ino = de.inum;
+      ent.type = itype(f->ip->dev, de.inum);
       memmove(ent.name, de.name, DIRSIZ);
       ent.name[DIRSIZ] = 0;
-      // Native type is available through fstat/stat, as in xv6's old dirent.
     } else if (root && f->off == f->ip->size && pmfs_mounted()) {
       ent.ino = PMFILE_ROOT_INO;
       ent.type = T_DIR;
@@ -569,5 +607,6 @@ filegetdents(struct file *f, uint64 addr, int n)
     done += sizeof(ent);
   }
   iunlock(f->ip);
+  releasesleep(&f->ip->iolock);
   return done;
 }
