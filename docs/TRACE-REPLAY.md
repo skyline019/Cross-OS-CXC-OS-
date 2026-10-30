@@ -1,6 +1,6 @@
 # 实际 PMFS 操作轨迹与有界故障重放
 
-> 这是以**真实执行的内核 PMFS 写入、flush 请求和 fence**为输入的软件模型，不是 RISC-V 机器指令级跟踪，也不是实际掉电试验。默认 `pmem_flush` 仅 touch；即使启用 Zicbom，QEMU TCG 也不模拟缓存持久化。模型的结论取决于下列显式假设。
+> 这是以**真实执行的内核 PMFS 写入、flush 请求和 fence**为输入的软件模型，不是 RISC-V 机器指令级跟踪，也不是实际掉电试验。默认 `pmem_flush` 仅 touch；即使启用 Zicbom，QEMU TCG 也不模拟缓存持久化。模型的结论取决于下列显式假设。结果目录：[results/2026-10-28-trace](results/2026-10-28-trace/README.md)；总索引：[README.md](README.md)。
 
 ## 如何取得轨迹
 

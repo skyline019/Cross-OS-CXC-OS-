@@ -1,6 +1,7 @@
 # PMFS 软件回归契约与故障覆盖
 
-> 所有 `contract*`、基准、`test-recovery*` 的构建会 `make clean` 并重建 `fs.img`，旧 boot 自测还会修改 PMFS。只在可丢弃副本运行。没有任何一项单独证明硬件掉电安全。
+> 所有 `contract*`、基准、`test-recovery*` 的构建会 `make clean` 并重建 `fs.img`，旧 boot 自测还会修改 PMFS。只在可丢弃副本运行。没有任何一项单独证明硬件掉电安全。  
+> 文档总索引：[README.md](README.md)；里程碑：[MILESTONES.md](MILESTONES.md)。
 
 ## 自测和 API 冒烟
 

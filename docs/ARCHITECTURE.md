@@ -1,6 +1,6 @@
 # PMFS v3 架构与发布顺序
 
-> 这是受限 xv6 实验系统。普通 MAP 是 QEMU RAM；另有需打补丁的独立实验性 NVDIMM，默认持久操作不提供硬件写回。验收证据见[修复报告](PMFS-REPAIR-REPORT.md)，精确 API 限制见[语义](SEMANTICS.md)。
+> 这是受限 xv6 实验系统。普通 MAP 是 QEMU RAM；另有需打补丁的独立实验性 NVDIMM，默认持久操作不提供硬件写回。验收证据见[修复报告](PMFS-REPAIR-REPORT.md)，精确 API 限制见[语义](SEMANTICS.md)，调用链直讲见[CORE-WALKTHROUGH](CORE-WALKTHROUGH.md)，文档总索引见[docs/README](README.md)。
 
 ```text
 用户程序：路径（绝对/相对）、目录 fd、seek/append、PM 内 rename

@@ -3,100 +3,82 @@
 
 \section{产品形态与非目标}
 
-PMFS 的产品形态是：\textbf{并行于 virtio 根的字节寻址文件子系统}。用户态通过 \texttt{pmfs\_create}/\texttt{mkdir}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{readdir}/\texttt{funlink} 访问文件对象；并保留 \texttt{put}/\texttt{get}/\texttt{seal} 作批量引擎与融合证明。\textbf{不}替换根 FS，\textbf{不}做完整 VFS。
+PMFS v3 的产品形态是：\textbf{保留 virtio 根，经固定合成挂载点 \texttt{/pm} 提供受限文件子系统}。用户可用普通 \texttt{open}/\texttt{read}/\texttt{write}/\texttt{lseek}/\texttt{fsync}/\texttt{getdents} 等访问 PM 文件；并保留专用 KV/stream 接口。\textbf{不}替换根 FS，\textbf{不}做动态 mount table 或完整 POSIX。
 
-明确非目标：挂载替换 `/`；真物理 NVDIMM 驱动主线；并入 FCS/Aurora 源码树；\texttt{lseek}/\texttt{mmap}/\texttt{rename}/硬链接；多写者字节范围锁。
+非目标：上游通用 NVDIMM/NFIT/热插拔；无平台假设的物理掉电证明；符号链接、权限、\texttt{mmap}、跨后端 rename、打开后删除最后链接；全设备 GC/硬件磨损均衡。
 
-\section{地址空间与三种后端}
+\section{地址空间与后端}
 
-内核约定物理/虚拟布局（相对地址）：
-
-\begin{lstlisting}[caption={PMEM 窗口相对布局示意},label={lst:layout}]
-KERNBASE  ---------- 0x80000000
-  kernel + user pages（易失 DRAM）
-PHYSTOP   ---------- KERNBASE + 128MiB
-PMEMBASE  ---------- PHYSTOP
-  字节寻址持久区（双槽 SB / inode / dentry / run）
-PMEMEND   ---------- PMEMBASE + 32MiB
+\begin{lstlisting}[caption={地址布局示意（MAP / 实验 NVDIMM）},label={lst:layout}]
+KERNBASE ---------- 0x80000000
+  kernel + user（易失 DRAM，典型 128MiB）
+PHYSTOP  ---------- KERNBASE + 128MiB
+PMEMBASE ---------- PHYSTOP（如 0x88000000）
+  PMFS 窗口：双槽 checkpoint / 元数据 / run
+PMEMEND  ---------- PMEMBASE + 32MiB（名义；MAP 受 DTB 截断）
 \end{lstlisting}
 
 \begin{table}[htbp]
   \centering
-  \caption{三种物理后端}
+  \caption{物理后端与可验证范围}
   \label{tab:backends}
-  \begin{tabular}{lll}
+  \begin{tabular}{p{2.2cm}p{5.0cm}p{5.2cm}}
     \toprule
-    模式 & 构建 & 运行要点 \\
+    模式 & 含义 & 不可据此声称 \\
     \midrule
-    EMUL & 默认 & $-m$\,128M，8\,MiB 静态缓冲（契约+扫参余量） \\
-    MAP & \texttt{-DPMEM\_MAP} & $-m$\,160M，映射 \texttt{[PMEMBASE,PMEMEND)} \\
-    PMEM2 & \texttt{-DPMEM\_MAP} & \texttt{memory-backend-file,share=on} 杀启 \\
+    EMUL & 8\,MiB 静态易失缓冲 & 跨启动保留、硬件持久 \\
+    普通 MAP & \texttt{PHYSTOP} 后 guest RAM & 独立 NVDIMM 设备 \\
+    共享 RAM 文件 & file-backend，便于杀进程重启 & 宿主掉电、独立设备 \\
+    实验 NVDIMM & QEMU 9.2.0 补丁冷插拔 \texttt{nvdimm}+私有 FDT
+      & 上游通用 virt、NFIT、物理掉电 \\
+    Zicbom（可选） & 发出 \texttt{CBO.CLEAN} & TCG 下的真实缓存写回 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-EMUL 用于算法与契约快速回归，\textbf{不}代表真 NVDIMM 延迟；MAP/PMEM2 验证窗口级映射与文件后端掉电存活（QEMU 文件内存后端配置见官方文档~\cite{qemu}）。
+MAP 在窗口不足或设备缺失时\textbf{拒绝挂载}，不静默降级为 EMUL。
 
-\section{软件分层}
+\section{软件分层与对象图}
 
-自上而下：
+自上而下：VFS 逐组件遍历（原生 inode 与 PM inode pin）$\rightarrow$ \texttt{pmfile}（共享工作缓冲、COW 元数据）$\rightarrow$ \texttt{pmstream}/\texttt{pmcdc} $\rightarrow$ \texttt{pmalgo}/\texttt{pmindex} $\rightarrow$ \texttt{pmfs}（双槽 checkpoint、可达性、页复用）$\rightarrow$ \texttt{pmdev}/\texttt{pmem}。
 
-\begin{enumerate}[leftmargin=2em]
-  \item 用户 API：文件 \texttt{create/mkdir/open/read/write/fsync/readdir} 与 KV \texttt{put/get/seal}；
-  \item \texttt{pmfile}：目录树 + extent 元数据（inode/dentry 页，magic+校验）；
-  \item \texttt{pmcdc}/\texttt{pmstream}：Rabin 式滑动哈希切分与窗口刷写（Fixed 模式供消融）；
-  \item \texttt{pmalgo}：chunk$\to$memtable$\to$不可变 run、B1/B2/B3、融合计数 \texttt{fuse\_*}；
-  \item \texttt{pmindex}：量化键、posting、查询 LRU（qcache）；
-  \item \texttt{pmfs}：双槽超级块与 commit；
-  \item \texttt{pmdev}/\texttt{pmem\_persist}：行级 flush+fence，落 EMUL 或 MAP 窗口。
-\end{enumerate}
-
-盘上布局：页 0/1 为超级块双槽；页 2/3 为 inode/目录项元数据；其后为 run 数据页。文件内容不以页内联为主，而以 KV chunk（extent）承载，保证与索引核同一提交路径。容量边界由实现常数约束：约 \texttt{PMFILE\_MAX\_INO}${}={}$40、\texttt{PMFILE\_MAX\_EXT}${}={}$4、\texttt{PM\_VAL\_MAX}${}={}$512，单文件量级约 2\,KiB（刻意不声称大文件生产能力）。
+文件内容以 KV chunk（extent）承载；元数据为不可变快照页。容量边界（量级）：约 40 inode/dentry、每文件 4 extent、文件 $\le$1024\,B。
 
 \section{崩溃可见点与 POSIX 差集}
 \label{sec:semantics}
 
-设计层先写死「哪些写在 remount/掉电后可见」，再谈实现：
-
 \begin{table}[htbp]
   \centering
-  \caption{崩溃一致可见点（设计契约）}
+  \caption{提交可见性（软件协议）}
   \label{tab:visibility}
-  \begin{tabular}{p{3.6cm}p{2.2cm}p{6.5cm}}
+  \begin{tabular}{p{3.4cm}p{2.4cm}p{6.5cm}}
     \toprule
-    操作 & remount 后可见？ & 机制要点 \\
+    操作 & 故障后承诺 & 说明 \\
     \midrule
-    \texttt{write}（未 \texttt{fsync}） & \textbf{否} & chunk 可在 memtable/stream；inode extent 未落页 \\
-    \texttt{fsync}/\texttt{fclose}(dirty) & \textbf{是} & stream flush$\to$\texttt{pm\_seal} + meta 页 + SB commit \\
-    KV \texttt{put} 未 \texttt{seal} & \textbf{否} & 与文件 nosync 同模型 \\
-    活动 SB / inode 半页撕坏 & 检测/拒绝 & 回退另一槽；magic+chk 拒绝垃圾真相 \\
+    未成功 \texttt{fsync} 的写 & \textbf{不承诺}保留 & 工作缓冲/memtable \\
+    成功 \texttt{fsync} & 完整新版本可读回 & 数据+元数据+提交词 \\
+    空白/v2/校验损坏 & 拒绝挂载 & 不自动 format \\
+    单槽损坏 & 可回退另一槽 & 双槽均坏则失败 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-与 POSIX 的差集（主动不实现）包括：多层完整 \texttt{namei}、\texttt{O\_APPEND}/\texttt{lseek}、多进程共享 fd、\texttt{rename}/硬链接、\texttt{mmap}、权限模型、根挂载替换。用户态 \texttt{pmfs\_posix} 走真实 \texttt{mkdir/readdir/fsync/reopen}，用于证明文件 API 深化，而非仅 path-hash 到 KV 的薄 shim。
+差集包括：动态挂载、完整跨目录/跨后端 rename、符号链接、权限、\texttt{mmap}、多写者线性化证明等。硬链接、\texttt{lseek}/\texttt{O\_APPEND}、PM 内子树 rename、\texttt{getdents} 已支持（见实现章）。
 
-\section{刷写协议与双槽提交}
+\section{刷写与 checkpoint 发布顺序}
 
-持久化协议固定为：
-\[
-  \mathrm{store}\ \rightarrow\ \mathrm{flush}(64\mathrm{B\ lines})\ \rightarrow\ \mathrm{fence}
-  \ \rightarrow\ \mathrm{store\ SB}\ \rightarrow\ \mathrm{flush}\ \rightarrow\ \mathrm{fence}.
-\]
-文件路径上，\texttt{fsync} $=$ 刷 stream 窗 + 写 inode/dentry 页 + \texttt{pmfs\_commit}。提交以 \texttt{seal}/commit 为显式边界：批量 \texttt{put} 进入内存表后，\texttt{seal} 将 run 持久化并原子翻转活动超级块槽位（epoch + 校验）。设计保证：半写活动槽可检测并回退；未提交数据对读路径不可见；索引可自 run 重建。
+持久化请求语义依赖平台：默认 \texttt{pmem\_flush} 为按行 touch+\texttt{fence}（可观测、可排序）；可选 Zicbom 发出 \texttt{CBO.CLEAN}。一次根发布的设计顺序为：
 
-\section{CDC、stream 与公平消融}
+\begin{enumerate}[leftmargin=2em]
+  \item 追加 run / 分配 COW 元数据页；对各页请求 persist + fence；
+  \item 非当前槽：清提交词并 persist；写入新头（未提交）并 persist；
+  \item \textbf{一次 8\,B store}写入提交状态与校验 $\rightarrow$ persist + fence；再更新内存 epoch/槽。
+\end{enumerate}
 
-文件写流经 Rabin 式 CDC 切分为 chunk（定长 Fixed 仅作对照），再经 stream 窗口聚合后 \texttt{pm\_put}；flush/seal 边界由策略开关控制。公平消融 A0--A4 在\textbf{同一 payload、同一页设备与 KV 核}上只切换「CDC 开/关」与「批量 seal / 每 chunk 立即 seal」，输出 \texttt{cycles} 与 \texttt{wa\_x100} 作为公平面效应量。架构面（相对 xv6 日志栈的量级差）与公平面（策略效应）\textbf{分表陈述、禁止混读}。
+该协议还依赖：屏障顺序、提交词故障原子性、映射有效、校验未碰撞等假设。QEMU TCG 不模拟缓存持久域，故正文将「掉电安全」表述为\textbf{声明假设下的协议正确性}，并以进程重启 oracle 验证。
 
-\section{写放大与可观测性}
+\section{维护、CDC 与评测意图}
 
-定义
-\[
-  \mathrm{wa\_x100} = \frac{\mathrm{phys}\times 100}{\mathrm{logical}},
-\]
-其中 logical 为用户 payload 字节，phys 为整页写入（对齐、run、B3 重写）。小 value（如 8\,B）相对 4\,KiB 页必然放大；该放大与 xv6 日志放大\textbf{不同源}，论文中分开叙述。\texttt{fuse\_puts}/\texttt{fuse\_seals} 用于证明文件路径未旁路 KV 核。
+双槽可达性保护两代根；双槽均不可达页可复用。显式 \texttt{pmcompact} 做全链 COW 压缩，近满或缺暂存空间可失败。普通写优先 CDC，超预算则固定分块；\textbf{无内容去重}。
 
-\section{性能对比的设计意图}
-
-实验对比三条路径：PMFS-KV、PMFS-File、xv6 \texttt{fs+log}。File 路径为 $N$ 次小文件 \texttt{create/write/fsync}；KV 为 $N$ 次 \texttt{put} + 一次 \texttt{seal} + $N$ 次 \texttt{get}；xv6 为每键一次小文件 + \texttt{sync}。目的是说明「避免 virtio 日志与块栈」的\textbf{量级}差异，而非宣称同等完整 POSIX 下的绝对加速比。公平面效应量只引用 A0--A4。
+评测分两平面：\textbf{架构面}——相对 xv6 的同工作量延迟/吞吐（持久契约不等价）；\textbf{公平面}——同 PMFS 内软件请求/策略消融。禁止混读。

@@ -1,6 +1,6 @@
 # NVDIMM 与替代后端：设备选择备忘
 
-> 题目要求的是 QEMU 模拟的 NVDIMM 设备；当前 file-backed guest RAM 不满足这一设备描述。完整决策、时间门槛和验收见[优秀毕设路线图](EXCELLENCE-ROADMAP.md)。
+> 题目要求的是 QEMU 模拟的 NVDIMM 设备；未打补丁的 MAP / 整机共享 RAM **不**等于 NVDIMM。本仓已有实验性补丁路径，细节见[QEMU-NVDIMM.md](QEMU-NVDIMM.md)。完整决策与验收见[优秀毕设路线图](EXCELLENCE-ROADMAP.md)；总索引见[README.md](README.md)。
 
 | 路线 | 与现有 RISC-V 基础的关系 | 可宣称的范围 | 风险 |
 |---|---|---|---|

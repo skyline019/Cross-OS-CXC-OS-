@@ -1,6 +1,8 @@
 # PMFS vs xv6 评测：新冒烟方法及历史数据
 
-> 以下历史表**不得作为论文性能结论**。N=32 时旧 PMFS 实际只做 24 个文件，读操作与同步语义也不对齐；MAP/PMEM2 不是 NVDIMM。最新运行和原始日志见[修复报告](PMFS-REPAIR-REPORT.md)。
+> 以下历史表**不得作为论文性能结论**。N=32 时旧 PMFS 实际只做 24 个文件，读操作与同步语义也不对齐；MAP/PMEM2 不是 NVDIMM。  
+> **新性能证据：** [results/2026-10-28-perf/README.md](results/2026-10-28-perf/README.md)；写法见[EXPERIMENT.md](EXPERIMENT.md)；总索引见[README.md](README.md)。  
+> 最新契约/恢复运行见[修复报告](PMFS-REPAIR-REPORT.md)。
 
 ## 当前可复现冒烟（不是正式性能结论）
 

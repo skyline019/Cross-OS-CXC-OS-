@@ -1,23 +1,35 @@
-\chapter{复现命令与扩展说明}
+\chapter{复现命令与设备说明}
 \label{app:repro}
 
-\section{一键契约与评测}
+\section{安全警告}
 
-在仓库根目录（WSL）执行：
+\texttt{contract*}、\texttt{test-recovery*}、\texttt{bench-sweep}、部分 \texttt{test-xv6.py} 目标会 \texttt{make clean} 并重建 \texttt{fs.img}；boot 自测与 \texttt{pmformat --force} 会破坏介质。请仅在可丢弃 checkout 运行并先备份。
+
+\section{推荐验收命令}
 
 \begin{lstlisting}
-make contract           # EMUL 总闸 -> ONBOX_PMFS_PASS
-make contract-strict    # 另检 POS/NEG、A0--A4、FAULT_*
-make contract-pmem      # MAP
-make contract-pmem2     # 文件后端掉电二次启动
-make bench-sweep        # N=8/16/32 中位数，回填 docs/BENCH.md
+make test-model
+CPUS=3 make test-vfs
+make test-recovery CPUS=3 RECOVERY_ARGS="--log-dir .ci-logs/recovery"
+make test-recovery-zicbom CPUS=3 RECOVERY_ARGS="--log-dir .ci-logs/zicbom"
+# 补丁 QEMU 后：
+# python3 tools/check_nvdimm_device.py --qemu /path/to/qemu-system-riscv64
+# make test-recovery-nvdimm QEMU=/path/to/qemu-system-riscv64
+make contract-full          # 破坏性旧自测
+python3 tools/bench_perf.py --runs 10 --warmup 1 --samples 32 \
+  --output /tmp/pmfs-matched
 \end{lstlisting}
 
-宿主解析脚本位于 \texttt{tools/contract\_pmfs.py}、\texttt{tools/contract\_pmem2.py} 与 bench 相关脚本。语义清单与故障矩阵见仓库 \texttt{docs/SEMANTICS.md}；消融口径见 \texttt{docs/ABLATION.md}。
+文档索引见仓库 \texttt{docs/README.md}（含语义、契约、QEMU/NVDIMM 入口）。
 
-\section{关于真 NVDIMM}
+\section{关于「NVDIMM」与「掉电」}
 
-主线以 QEMU 窗口与文件后端验证语义与契约。若需真 NVDIMM：在具备硬件与内核/固件支持的平台上，将 MAP 窗口替换为实际持久区映射，并重新校准延迟与 \texttt{pmem\_persist} 屏障语义。该路径不改变契约阶段码表的方法学，但会影响绝对延迟数字；故正文不以其为依赖。
+\begin{itemize}[leftmargin=2em]
+  \item 未打补丁的 MAP / 整机共享 RAM \textbf{不是} NVDIMM 设备。
+  \item 实验补丁提供独立 \texttt{nvdimm} 冷插拔与私有 FDT，可经 QMP 核验；非上游通用、无 NFIT/热插拔。
+  \item 默认 \texttt{pmem\_flush} 非硬件写回；可选 CBO 在 TCG 下仍无真实持久域。
+  \item 进程 \texttt{SIGKILL} 验证的是该故障模型下的读回，\textbf{不是}物理掉电。
+\end{itemize}
 
 \section{论文 PDF 编译}
 
@@ -26,4 +38,4 @@ cd thesis/latex
 make          # xelatex + bibtex + xelatex x2
 \end{lstlisting}
 
-要求：TeX Live（含 \texttt{ctex}、\texttt{pgfplots}）、Noto CJK 字体。封面姓名/学院等宏可在 \texttt{main.tex} 中替换为学校正式模板。
+封面姓名/学院等宏在 \texttt{main.tex}；请替换为学校正式模板后再印刷提交。

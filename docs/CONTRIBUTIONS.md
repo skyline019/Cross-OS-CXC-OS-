@@ -1,6 +1,9 @@
 # 候选贡献、已实现组合与研究假设
 
-> 这是可核验的工程组合和待检验假设，不是“算法首创”结论。证据和限制见[优化验证](results/2026-10-28-efficiency/README.md)、[软件耐久风险](PERFORMANCE-ENDURANCE.md)与[路线图](EXCELLENCE-ROADMAP.md)。
+> 这是可核验的工程组合和待检验假设，不是“算法首创”结论。证据和限制见[优化验证](results/2026-10-28-efficiency/README.md)、[软件耐久风险](PERFORMANCE-ENDURANCE.md)、[修复报告](PMFS-REPAIR-REPORT.md)与[路线图](EXCELLENCE-ROADMAP.md)。总索引：[README.md](README.md)。
+
+**答辩 15 秒：** 不可替代点是教学 OS 上**可机器判定/可复现**的提交与故障验收（进程重启 oracle + 有界模型 + 诚实假设），而不是又一个双槽结构或完整生产 FS。  
+完整提纲：[DEFENSE.md](DEFENSE.md)；论文正文：`thesis/latex/main.pdf`（v3 已重写）。
 
 ## 核心问题
 

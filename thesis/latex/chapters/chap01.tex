@@ -3,43 +3,46 @@
 
 \section{研究背景}
 
-操作系统存储子系统长期以块设备为中心：文件内容经缓冲缓存、日志与块 I/O 栈落盘，崩溃一致性依赖有序刷写与检查点。教学操作系统 xv6~\cite{xv6book} 以 virtio-blk 与日志型文件系统讲授这一经典路径，语义清晰、代码可阅读，但延迟受块设备与元数据更新约束，且难以自然表达字节寻址持久内存（Persistent Memory, PMEM）上的提交与掉电语义。
+操作系统存储子系统长期以块设备为中心：文件内容经缓冲缓存、日志与块 I/O 栈落盘，崩溃一致性依赖有序刷写与检查点。教学操作系统 xv6~\cite{xv6book} 以 virtio-blk 与日志型文件系统讲授这一经典路径，语义清晰、代码可阅读，但延迟与吞吐受块设备与元数据日志路径约束，且难以直接表达字节寻址持久内存（Persistent Memory, PMEM）上的提交与故障模型。
 
-PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数据~\cite{nvmm2021}。学术界与工业界已出现面向 PMEM 的文件系统与编程模型，如 PMFS~\cite{pmfs2014}、NOVA~\cite{nova2016}、BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 等。它们多面向通用或接近生产的 Linux 环境；将完整 POSIX VFS 移植进 xv6 既超出本科毕设合理体量，也易掩盖「如何验收崩溃正确性」这一更尖锐的工程问题。合题要求的「文件子系统 + 刷写/NVDIMM 仿真 + 吞吐」，需要的是\textbf{可陈述、可测的子集语义}，而非声称完整生产 FS。
+PMEM 以字节寻址提供近似 DRAM 的访问延迟，并在掉电后保留数据~\cite{nvmm2021}。学术界已出现面向 PMEM 的文件系统与编程模型，如 PMFS~\cite{pmfs2014}、NOVA~\cite{nova2016}、BPFS~\cite{bpfs2009}、Mnemosyne~\cite{mnemosyne2011} 等。它们多面向通用或接近生产的 Linux 环境。将完整 POSIX VFS 移植进 xv6 既超出本科毕设合理体量，也易掩盖「如何声明假设并验收提交正确性」这一更尖锐的工程问题。
 
-\section{问题陈述}
+\section{题面与问题陈述}
 
-本文关注三个相互耦合的问题：
+原题要求在 xv6 内核中设计原生支持持久化内存的文件系统，核心包括四项：（1）改造内存管理以映射 QEMU 模拟的 NVDIMM；（2）重构元数据与数据布局以适配字节寻址并消除传统块设备抽象层；（3）设计基于缓存行刷写的轻量崩溃一致性机制以保障掉电安全；（4）在 QEMU 中完成集成，并通过对比测试验证相对原生文件系统在延迟与吞吐上的架构级优势。
+
+本文将上述要求落实为三个相互耦合的研究问题：
 
 \begin{enumerate}[leftmargin=2em]
-  \item \textbf{形态选择：}在 xv6 上如何提供并行于 virtio 根的 PMEM \textbf{文件子系统}（目录/extent + \texttt{create}/\texttt{fsync}），同时以 KV/run 核承载切分后的内容块，而不替换根 FS、也不假装完整 VFS？
-  \item \textbf{一致性模型：}双槽超级块、不可变 run、批量 seal、inode 页 magic+校验，如何共同保证「未 \texttt{fsync}/未提交不可见、半写活动槽与半页元数据可检测」？
-  \item \textbf{验收方法：}如何让崩溃、remount 字节等价与故障注入语义\textbf{可机器判定}（串口一行、宿主脚本、CI），而非仅靠人工读日志？
+  \item \textbf{形态：}在保留 virtio 根的前提下，如何提供可经普通文件 API 访问的 PM 文件路径（固定挂载点 \texttt{/pm}），而非声称完整 POSIX/VFS？
+  \item \textbf{一致性：}COW 元数据、不可变 run 与双槽 checkpoint 如何共同保证「成功 \texttt{fsync} 后可读回完整版本」？平台刷写与掉电假设如何显式陈述？
+  \item \textbf{验收与评测：}如何用可复现的进程重启切点、有界规格模型与对齐工作量基准，分别支撑正确性与架构级性能叙事？
 \end{enumerate}
 
 \section{研究内容与目标}
 
-本文设计并实现 \textbf{PMFS}：并行于 virtio 根的 PMEM 文件子系统（\texttt{create}/\texttt{mkdir}/\texttt{fopen}/\texttt{fread}/\texttt{fwrite}/\texttt{fsync}/\texttt{readdir}/\texttt{funlink}）与融合 KV 引擎（\texttt{put}/\texttt{get}/\texttt{seal}）；写入经 CDC/stream 切分后落入同一 run 核；后端支持 EMUL、MAP 与 PMEM2。研究目标：
+本文设计并实现 \textbf{PMFS v3}：并行于根文件系统的受限 PM 文件子系统。主要内容包括：
 
 \begin{itemize}[leftmargin=2em]
-  \item 映射 QEMU NVDIMM 仿真窗；inode/dentry 去块设备布局；行级刷写协议；
-  \item 建立含 \texttt{PERSIST}/\texttt{FILE}/\texttt{REMOUNT}/\texttt{FAULT}/\texttt{PMEM2} 的 \texttt{ONBOX\_PMFS\_*} 契约验收门；
-  \item 报告文件 API 延迟中位数与相对吞吐，并以 A0--A4 公平消融给出切分/刷写效应量；
-  \item 写死崩溃可见点与 POSIX 差集（见语义清单），使答辩口径可复核。
+  \item 后端：EMUL、普通 MAP（guest RAM）、共享文件后端，以及面向 QEMU 9.2.0 的\textbf{实验性独立 NVDIMM}补丁与私有 FDT 发现；可选 Zicbom \texttt{CBO.CLEAN}；
+  \item 布局：不可变 KV run + COW inode/dentry；双槽 checkpoint 以对齐 8\,B 提交词发布根；数据路径不经 \texttt{bio}/\texttt{log}/\texttt{virtio}；
+  \item 语义：\texttt{/pm} 上普通 \texttt{open}/\texttt{read}/\texttt{write}/\texttt{lseek}/\texttt{fsync}、目录、硬链接与子树 \texttt{rename}；写死 POSIX 差集与资源上限；
+  \item 验收：进程重启故障切点 oracle、有界协议模型负控、源级轨迹重放；
+  \item 评测：同 API、同成功数、内容读回校验的延迟/短批吞吐；同 PMFS 内软件请求消融。
 \end{itemize}
 
 \section{主要贡献}
 
-对照相关工作与作者前序原生项目（FCS / Aurora），本文贡献收敛为一条尖刺与两条支撑柱~\cite{fcsown,auroraown,cxcos}：
+贡献表述为可核验的工程组合与方法学，\textbf{不}声称算法首创~\cite{fcsown,auroraown,cxcos}：
 
 \begin{description}[leftmargin=2em,style=nextline]
-  \item[尖刺（C1）] 教学 OS 上可机器判定的崩溃与掉电契约套件（含 remount 字节等价与故障注入）：相对同类，不可替代的是方法学验收，而非又一个双槽。
-  \item[系统柱（C2）] 去块设备文件布局 + CDC/stream 融合 KV 核 + 行级 persist + 双槽/B3/WA。
-  \item[实验柱（C3）] PMEM2 掉电一行过 + A0--A4 公平消融效应量（\texttt{cycles}/\texttt{wa\_x100}）。
+  \item[C1 方法学] 教学 OS 上可复现的提交验收：QEMU 进程重启切点、损坏拒绝挂载、有界规格负控与轨迹采样；相对「演示双槽 UI」，强调可脚本判定。
+  \item[C2 系统] 受限 VFS+\texttt{/pm}、COW/KV/CDC 协同、双槽保护下的页复用与显式压缩；行级 flush 请求与可选 CBO。
+  \item[C3 实验] 对齐工作量的架构面延迟/吞吐，以及同契约软件消融；明确持久语义不等价与设备模型边界。
 \end{description}
 
-主动不宣称的内容包括：完整内核 VFS、真 NVDIMM 主线化、将 FCS/Aurora 源码并入库、多写者并发、\texttt{lseek}/\texttt{mmap}/\texttt{rename}。
+主动不宣称：完整内核 VFS 替换根、上游通用 NVDIMM/NFIT、无假设的物理掉电证明、真实器件磨损改善、完整 POSIX。
 
 \section{论文结构}
 
-第~\ref{chap:related}~章综述相关工作与借鉴边界；第~\ref{chap:design}~章给出总体设计（含可见点与差集）；第~\ref{chap:impl}~章描述实现与契约；第~\ref{chap:eval}~章报告实验、消融、性能图与踩坑；第~\ref{chap:concl}~章总结并展望。附录给出真 NVDIMM 与复现命令。
+第~\ref{chap:related}~章综述相关工作；第~\ref{chap:design}~章给出设计；第~\ref{chap:impl}~章描述实现；第~\ref{chap:eval}~章报告实验与威胁效度；第~\ref{chap:concl}~章总结。附录给出复现命令与设备路线。

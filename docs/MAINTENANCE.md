@@ -1,6 +1,6 @@
 # PMFS 双槽可达性回收与显式 COW 压缩
 
-> 本文是受限 xv6 原型的软件协议及其已测试范围，不是硬件掉电证明、完整文件系统 GC 或磨损均衡。所有 `make` 重建、`test-xv6.py` 和格式化命令必须在**可丢弃的 checkout 与镜像**中运行。量化、负控及逐启动日志见[本轮实验](results/2026-10-28-gc/README.md)。
+> 本文是受限 xv6 原型的软件协议及其已测试范围，不是硬件掉电证明、完整文件系统 GC 或磨损均衡。所有 `make` 重建、`test-xv6.py` 和格式化命令必须在**可丢弃的 checkout 与镜像**中运行。量化、负控及逐启动日志见[本轮实验](results/2026-10-28-gc/README.md)。软件计数边界见[PERFORMANCE-ENDURANCE](PERFORMANCE-ENDURANCE.md)；总索引见[README.md](README.md)。
 
 ## 范围与接口
 
