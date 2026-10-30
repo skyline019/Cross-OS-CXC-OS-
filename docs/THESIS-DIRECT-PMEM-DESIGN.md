@@ -1,6 +1,6 @@
 # 无 KV、无 CDC 的 xv6 原生 PMEM 文件系统设计
 
-> **状态：从零设计的独立方案，不是当前内核实现或新的性能结果。** 此方案不使用 KV API、KV run、CDC、内容寻址、去重或 FCS 存储引擎；inode 表及目录加速只是文件系统内部结构。它与现有 v3 格式不兼容，讨论此方案不意味着删除仓库中已有 KV/CDC 代码。附带的[有界模型](../tools/check_directfs_design.py)仅检验其中一个抽象提交场景，不执行内核。
+> **状态：从零设计的独立方案，不是当前内核实现或新的性能结果。** 此方案不使用 KV API、KV run、CDC、内容寻址、去重或 FCS 存储引擎；inode 表及目录加速只是文件系统内部结构。它与现有 v3 格式不兼容，讨论此方案不意味着删除仓库中已有 KV/CDC 代码。附带的[有界模型](../tools/check_directfs_design.py)仅检验其中一个抽象提交场景，不执行内核。关于以 QEMU NVDIMM 为当前验收、NVMe 原生对照、窗口/链群/动态规划取舍的更新，见[新架构](THESIS-QEMU-NVDIMM-NVME-ARCHITECTURE.md)。
 
 ## 1. 题面与设计取舍
 

@@ -28,7 +28,7 @@ main()
     binit();            // buffer cache
     iinit();            // inode table
     fileinit();         // file table
-    virtio_disk_init(); // emulated hard disk
+    rootdisk_init();    // virtio by default; optional QEMU PCIe NVMe
     pmem_init();        // thesis: PMEM window (may soft-disable)
     pmfs_init();        // thesis: PMEM-native FS scaffold
     userinit();         // first user process

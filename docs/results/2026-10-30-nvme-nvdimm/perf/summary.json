@@ -1,0 +1,352 @@
+{
+  "method": "Latency: interleaved per-operation guest ticks; p50/p95 pooled descriptive and intervals bootstrap independent boots. Batch throughput: completed transactions / whole timed batch, including pattern and loop overhead but excluding printing/metrics; backends run sequentially.",
+  "frequency_hz": 10000000,
+  "bootstrap_seed": 20261028,
+  "bootstrap_samples": 2000,
+  "failures": [],
+  "durability_equivalent": false,
+  "results": {
+    "overwrite:64": {
+      "mode": "overwrite",
+      "size": 64,
+      "measured_boots": 10,
+      "operations": 320,
+      "pmfs": {
+        "p50_us_pooled": 1234.15,
+        "p95_us_pooled": 2061.795,
+        "median_boot_p50_us": 1236.425,
+        "median_boot_p50_us_bootstrap95": [
+          1218.4,
+          1249.6
+        ],
+        "service_transactions_per_guest_second": 749.7279307626256,
+        "throughput_bootstrap95": [
+          725.2169268354677,
+          777.3936079341397
+        ],
+        "sum_ticks": 4268215
+      },
+      "xv6": {
+        "p50_us_pooled": 5689.95,
+        "p95_us_pooled": 8480.61,
+        "median_boot_p50_us": 5699.45,
+        "median_boot_p50_us_bootstrap95": [
+          5603.225,
+          5801.35
+        ],
+        "service_transactions_per_guest_second": 166.1437810357881,
+        "throughput_bootstrap95": [
+          161.45412853595263,
+          171.14605296510544
+        ],
+        "sum_ticks": 19260426
+      },
+      "pmfs_software_requests_per_transaction": {
+        "pm_write_bytes": 8320.0,
+        "pm_read_bytes": 12480.0,
+        "pm_flush_lines": 134.0
+      }
+    },
+    "overwrite:1024": {
+      "mode": "overwrite",
+      "size": 1024,
+      "measured_boots": 10,
+      "operations": 320,
+      "pmfs": {
+        "p50_us_pooled": 1505.95,
+        "p95_us_pooled": 1919.05,
+        "median_boot_p50_us": 1502.275,
+        "median_boot_p50_us_bootstrap95": [
+          1484.55,
+          1528.45
+        ],
+        "service_transactions_per_guest_second": 640.4716433181395,
+        "throughput_bootstrap95": [
+          628.8514705162127,
+          651.4500855097967
+        ],
+        "sum_ticks": 4996318
+      },
+      "xv6": {
+        "p50_us_pooled": 5656.75,
+        "p95_us_pooled": 6713.530000000003,
+        "median_boot_p50_us": 5609.225,
+        "median_boot_p50_us_bootstrap95": [
+          5534.45,
+          5754.850624999998
+        ],
+        "service_transactions_per_guest_second": 173.8681590350317,
+        "throughput_bootstrap95": [
+          170.31278417831433,
+          177.98463134272473
+        ],
+        "sum_ticks": 18404750
+      },
+      "pmfs_software_requests_per_transaction": {
+        "pm_write_bytes": 8320.0,
+        "pm_read_bytes": 41152.0,
+        "pm_flush_lines": 134.0
+      }
+    },
+    "roundtrip:64": {
+      "mode": "roundtrip",
+      "size": 64,
+      "measured_boots": 10,
+      "operations": 320,
+      "pmfs": {
+        "p50_us_pooled": 1774.05,
+        "p95_us_pooled": 2349.2150000000006,
+        "median_boot_p50_us": 1771.8,
+        "median_boot_p50_us_bootstrap95": [
+          1746.9,
+          1817.975
+        ],
+        "service_transactions_per_guest_second": 543.5631002868824,
+        "throughput_bootstrap95": [
+          531.5521796655944,
+          555.5775362618435
+        ],
+        "sum_ticks": 5887081
+      },
+      "xv6": {
+        "p50_us_pooled": 15085.4,
+        "p95_us_pooled": 18603.455,
+        "median_boot_p50_us": 15063.925,
+        "median_boot_p50_us_bootstrap95": [
+          14765.325,
+          15239.225
+        ],
+        "service_transactions_per_guest_second": 65.08045398253635,
+        "throughput_bootstrap95": [
+          63.57601537023311,
+          66.5046396627871
+        ],
+        "sum_ticks": 49169909
+      },
+      "pmfs_software_requests_per_transaction": {
+        "pm_write_bytes": 24832.0,
+        "pm_read_bytes": 12672.0,
+        "pm_flush_lines": 396.0
+      }
+    },
+    "roundtrip:1024": {
+      "mode": "roundtrip",
+      "size": 1024,
+      "measured_boots": 10,
+      "operations": 320,
+      "pmfs": {
+        "p50_us_pooled": 1981.15,
+        "p95_us_pooled": 3334.815000000001,
+        "median_boot_p50_us": 1983.0,
+        "median_boot_p50_us_bootstrap95": [
+          1949.15,
+          2000.8
+        ],
+        "service_transactions_per_guest_second": 474.09542592733067,
+        "throughput_bootstrap95": [
+          453.1998052004689,
+          495.06807771321
+        ],
+        "sum_ticks": 6749696
+      },
+      "xv6": {
+        "p50_us_pooled": 15143.8,
+        "p95_us_pooled": 21485.785000000003,
+        "median_boot_p50_us": 15138.65,
+        "median_boot_p50_us_bootstrap95": [
+          15015.55,
+          15332.15
+        ],
+        "service_transactions_per_guest_second": 63.55240801662785,
+        "throughput_bootstrap95": [
+          61.13474915467033,
+          65.76267875942897
+        ],
+        "sum_ticks": 50352144
+      },
+      "pmfs_software_requests_per_transaction": {
+        "pm_write_bytes": 24832.0,
+        "pm_read_bytes": 24960.0,
+        "pm_flush_lines": 396.0
+      }
+    }
+  },
+  "batch_throughput": {
+    "overwrite:64": {
+      "measured_boots": 10,
+      "transactions": 320,
+      "pmfs": {
+        "transactions_per_guest_second": 793.6706747862484,
+        "median_boot_transactions_per_guest_second": 811.6411973985332,
+        "bootstrap95": [
+          743.5168424508223,
+          831.7333945258482
+        ],
+        "per_boot_transactions_per_guest_second": [
+          790.386919096489,
+          806.6996405144727,
+          816.5827542825938,
+          640.2573834681542,
+          857.7869632465092,
+          867.7024865099379,
+          823.7444332895719,
+          858.3161446584572,
+          732.5302969952523,
+          802.6044514449388
+        ]
+      },
+      "xv6": {
+        "transactions_per_guest_second": 160.33135681512982,
+        "median_boot_transactions_per_guest_second": 159.71764606851164,
+        "bootstrap95": [
+          153.53942321671593,
+          167.71288709078436
+        ],
+        "per_boot_transactions_per_guest_second": [
+          174.46659564422336,
+          157.3989818253363,
+          162.03631031168698,
+          149.27615061590407,
+          176.23484173835845,
+          153.40334917862094,
+          144.32220654221584,
+          178.1549714423148,
+          165.7256556780199,
+          150.46113988419194
+        ]
+      }
+    },
+    "overwrite:1024": {
+      "measured_boots": 10,
+      "transactions": 320,
+      "pmfs": {
+        "transactions_per_guest_second": 633.6070317708386,
+        "median_boot_transactions_per_guest_second": 649.4110194211025,
+        "bootstrap95": [
+          604.531005224282,
+          663.0815161885357
+        ],
+        "per_boot_transactions_per_guest_second": [
+          629.4504111097998,
+          545.9157822546663,
+          641.4098187816821,
+          688.1098911496166,
+          657.412220060523,
+          671.1536081847182,
+          572.9017473503294,
+          687.9220240385753,
+          610.3178039239621,
+          666.1656545806175
+        ]
+      },
+      "xv6": {
+        "transactions_per_guest_second": 168.09430384610798,
+        "median_boot_transactions_per_guest_second": 169.53241924369618,
+        "bootstrap95": [
+          163.80419099720694,
+          172.3916319632287
+        ],
+        "per_boot_transactions_per_guest_second": [
+          169.74308323458175,
+          162.16268261671786,
+          172.00528056211326,
+          169.32175525281062,
+          181.8606504132499,
+          172.8720530717203,
+          163.69500551191777,
+          172.82574412284453,
+          154.82744722924187,
+          164.59330537304558
+        ]
+      }
+    },
+    "roundtrip:64": {
+      "measured_boots": 10,
+      "transactions": 320,
+      "pmfs": {
+        "transactions_per_guest_second": 571.2182407120806,
+        "median_boot_transactions_per_guest_second": 571.3935614017369,
+        "bootstrap95": [
+          553.8896055758053,
+          590.4511667282657
+        ],
+        "per_boot_transactions_per_guest_second": [
+          539.5844188254259,
+          565.2292181113572,
+          550.4060104336339,
+          603.3228003227777,
+          535.0240092024129,
+          596.0952038552457,
+          537.0605334353749,
+          605.3268765133172,
+          577.5579046921165,
+          618.2117452503951
+        ]
+      },
+      "xv6": {
+        "transactions_per_guest_second": 56.26386684537008,
+        "median_boot_transactions_per_guest_second": 56.638915431530044,
+        "bootstrap95": [
+          52.7090540825409,
+          59.73522739673802
+        ],
+        "per_boot_transactions_per_guest_second": [
+          54.89038133548641,
+          56.32560282036375,
+          61.14498182178798,
+          61.345094721618835,
+          58.73791673863591,
+          50.13585249280159,
+          56.89255024056659,
+          56.3852806224935,
+          46.08879005403911,
+          66.11058027528858
+        ]
+      }
+    },
+    "roundtrip:1024": {
+      "measured_boots": 10,
+      "transactions": 320,
+      "pmfs": {
+        "transactions_per_guest_second": 510.86269702936534,
+        "median_boot_transactions_per_guest_second": 517.6246713958135,
+        "bootstrap95": [
+          495.1598205135802,
+          525.778090644404
+        ],
+        "per_boot_transactions_per_guest_second": [
+          502.17189343912423,
+          519.8999842405317,
+          479.6493763059204,
+          542.9590931225747,
+          515.3493585510953,
+          542.5080486155025,
+          467.7083896653985,
+          526.6709458681019,
+          498.7126978486781,
+          524.210326288165
+        ]
+      },
+      "xv6": {
+        "transactions_per_guest_second": 58.67104509119167,
+        "median_boot_transactions_per_guest_second": 58.524181553732134,
+        "bootstrap95": [
+          57.02556454763692,
+          60.41493355895065
+        ],
+        "per_boot_transactions_per_guest_second": [
+          59.30107750057819,
+          57.56534566191153,
+          56.49029337880802,
+          64.26631962854067,
+          57.747285606886074,
+          60.74246655795031,
+          61.20190988210026,
+          59.60737738157085,
+          57.53525787572276,
+          53.5660958752767
+        ]
+      }
+    }
+  }
+}

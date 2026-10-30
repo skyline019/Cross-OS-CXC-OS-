@@ -19,6 +19,8 @@ OBJS = \
   $K/syscall.o \
   $K/sysproc.o \
   $K/bio.o \
+  $K/rootdisk.o \
+  $K/nvme.o \
   $K/fs.o \
   $K/log.o \
   $K/sleeplock.o \
@@ -68,6 +70,19 @@ endif
 QEMU = qemu-system-riscv64
 MIN_QEMU_VERSION = 7.2
 
+# The default remains virtio. Changing DISK requires a clean rebuild: make
+# does not otherwise track command-line CFLAGS changes in existing objects.
+DISK ?= virtio
+ifeq ($(DISK),nvme)
+DISK_CFLAGS = -DXV6_DISK_NVME
+DISK_QEMU_DEVICE = nvme,id=nvme0,serial=xv6nvme,drive=x0
+else ifeq ($(DISK),virtio)
+DISK_CFLAGS =
+DISK_QEMU_DEVICE = virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+else
+$(error DISK must be virtio or nvme)
+endif
+
 CC = $(TOOLPREFIX)gcc
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
@@ -93,7 +108,7 @@ CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I.
 # Opt-in experimental modes; rebuild cleanly after changing these flags.
-CFLAGS += $(EXTRA_CFLAGS)
+CFLAGS += $(EXTRA_CFLAGS) $(DISK_CFLAGS)
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -205,14 +220,14 @@ endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -global virtio-mmio.force-legacy=false
-QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
-QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0,cache=writeback
+QEMUOPTS += -device $(DISK_QEMU_DEVICE)
 
 # MAP mode: DRAM past PHYSTOP backs PMEMBASE (32MiB) → total 160MiB.
 QEMUOPTS_PMEM = -machine virt -bios none -kernel $K/kernel -m 160M -smp $(CPUS) -nographic
 QEMUOPTS_PMEM += -global virtio-mmio.force-legacy=false
-QEMUOPTS_PMEM += -drive file=fs.img,if=none,format=raw,id=x0
-QEMUOPTS_PMEM += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS_PMEM += -drive file=fs.img,if=none,format=raw,id=x0,cache=writeback
+QEMUOPTS_PMEM += -device $(DISK_QEMU_DEVICE)
 
 # File-backed guest RAM for PMEM2 cold-reboot (set PMEM_RAM_FILE).
 # -m must match backend size or QEMU rejects NUMA layout.
@@ -221,8 +236,8 @@ QEMUOPTS_PMEM_FILE = -machine virt -bios none -kernel $K/kernel -m 160M -smp $(C
 QEMUOPTS_PMEM_FILE += -object memory-backend-file,id=mem,size=160M,mem-path=$(PMEM_RAM_FILE),share=on
 QEMUOPTS_PMEM_FILE += -numa node,memdev=mem
 QEMUOPTS_PMEM_FILE += -global virtio-mmio.force-legacy=false
-QEMUOPTS_PMEM_FILE += -drive file=fs.img,if=none,format=raw,id=x0
-QEMUOPTS_PMEM_FILE += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS_PMEM_FILE += -drive file=fs.img,if=none,format=raw,id=x0,cache=writeback
+QEMUOPTS_PMEM_FILE += -device $(DISK_QEMU_DEVICE)
 
 qemu: check-qemu-version $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)
@@ -287,6 +302,7 @@ test-model:
 	python3 tools/check_gc_model.py
 	python3 tools/check_txn_design.py
 	python3 tools/check_directfs_design.py
+	python3 tools/check_window_allocator.py
 
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.
@@ -301,7 +317,7 @@ test-xv6-crash: native-log-build
 
 .PHONY: test-native-rename-recovery
 test-native-rename-recovery: native-log-build
-	python3 tools/native_rename_recovery.py --cpus $(CPUS) --qemu $(QEMU)
+	python3 tools/native_rename_recovery.py --cpus $(CPUS) --qemu $(QEMU) --backend $(DISK)
 
 # Software-boundary fault injection is test-only and can hang the guest.
 # The harness uses temporary copies of fs.img and the shared guest-RAM file.

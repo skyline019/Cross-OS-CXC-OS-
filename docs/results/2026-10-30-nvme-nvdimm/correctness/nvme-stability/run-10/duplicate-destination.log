@@ -1,0 +1,11 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+NVME_READY nsid=1 lba=512 qdepth=16 vwc=1 mdts=7 blocks=4000
+pmem: instrumentation only; no hardware cache writeback
+pmem: MAP unavailable: insufficient RAM or missing DTB
+pmfs: MAP unavailable; refusing volatile fallback
+hart 1 starting
+hart 2 starting
+panic: log: duplicate header destination

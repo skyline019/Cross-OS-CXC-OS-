@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Matched-count file latency/throughput on fresh QEMU boots.
 
-Build a default EMUL kernel/fs.img first, in a disposable checkout. Each boot
-gets a private copy of fs.img; the input kernel and disk are checked unchanged.
-PMFS and native xv6 call fsync but DO NOT have equivalent durability contracts.
-Time is QEMU guest r_time ticks converted using the generated virt DTB's
-`timebase-frequency`; neither guest time nor software byte counters are physical
-PMEM performance. Failed runs and their serial logs remain in the output.
+Build the selected kernel/fs.img first, in a disposable checkout. Each boot
+gets a private copy of fs.img and, when requested, a fresh file-backed NVDIMM;
+the input kernel and disk are checked unchanged. The default is volatile EMUL
+with virtio; --nvdimm --backend nvme requires a patched QEMU and a kernel built
+with PMEM_MAP, PMEM_NVDIMM, and DISK=nvme. The blank NVDIMM is explicitly
+formatted outside the timed workload. PMFS and native xv6 call fsync but DO NOT
+have equivalent durability contracts. Time is QEMU guest r_time ticks converted
+using the generated virt DTB's `timebase-frequency`; neither guest time nor
+software byte counters are physical PMEM performance. Failed runs and their
+serial logs remain in the output.
 """
 import argparse
 from datetime import datetime, timezone
@@ -160,16 +164,32 @@ def parse_batch(text, mode, size, count, order):
             "pm_read_bytes": reads, "pm_flush_lines": flush, "order": actual_order}
 
 
-def boot(qemu, kernel, disk, mode, size, count, timeout, log_path, batch_order,
-         expected_hints=None):
-    cmd = [qemu, "-machine", "virt", "-bios", "none", "-kernel", str(kernel),
-           "-m", "128M", "-smp", "1", "-nographic",
+def qemu_command(qemu, kernel, disk, root_backend="virtio", nvdimm_file=None):
+    if root_backend not in ("virtio", "nvme"):
+        raise ValueError("unknown root disk backend")
+    machine = "virt,nvdimm=on" if nvdimm_file else "virt"
+    memory = "128M,slots=1,maxmem=160M" if nvdimm_file else "128M"
+    cmd = [qemu, "-machine", machine, "-bios", "none", "-kernel", str(kernel),
+           "-m", memory, "-smp", "1", "-nographic",
            "-global", "virtio-mmio.force-legacy=false",
-           "-drive", f"file={disk},if=none,format=raw,id=x0",
-           "-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]
+           "-drive", f"file={disk},if=none,format=raw,cache=writeback,id=x0"]
+    if root_backend == "nvme":
+        cmd += ["-device", "nvme,id=nvme0,serial=xv6nvme,drive=x0"]
+    else:
+        cmd += ["-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]
+    if nvdimm_file:
+        cmd += ["-object", f"memory-backend-file,id=pmem0,share=on,"
+                f"mem-path={nvdimm_file},size=32M",
+                "-device", "nvdimm,id=nvdimm0,memdev=pmem0"]
+    return cmd
+
+
+def boot(qemu, kernel, disk, mode, size, count, timeout, log_path, batch_order,
+         expected_hints=None, root_backend="virtio", nvdimm_file=None):
+    cmd = qemu_command(qemu, kernel, disk, root_backend, nvdimm_file)
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
-    output, sent = bytearray(), False
+    output, sent, initialized, format_requested = bytearray(), False, False, False
     selector = selectors.DefaultSelector()
     selector.register(proc.stdout, selectors.EVENT_READ)
     deadline, wall_start = time.monotonic() + timeout, None
@@ -181,15 +201,30 @@ def boot(qemu, kernel, disk, mode, size, count, timeout, log_path, batch_order,
                     output.extend(chunk)
             if b"panic:" in output or b"PMFS_PERF_FAIL" in output:
                 raise RuntimeError("guest reported failure or kernel panic")
-            if not sent and b"init: starting sh" in output and PROMPT.search(output):
-                if b"ONBOX_PMFS_PMEM0_PASS mode=EMUL backend=emul" not in output:
-                    raise RuntimeError("expected the default EMUL kernel")
+            if not initialized and b"init: starting sh" in output and PROMPT.search(output):
+                expected = (b"ONBOX_PMFS_PMEM0_PASS mode=MAP backend=nvdimm" if nvdimm_file
+                            else b"ONBOX_PMFS_PMEM0_PASS mode=EMUL backend=emul")
+                if expected not in output:
+                    raise RuntimeError("kernel does not match selected PMEM backend")
                 if b"ONBOX_PMFS_STORE_PASS" in output:
                     raise RuntimeError("destructive boot selftests are enabled")
                 if expected_hints is not None:
                     marker = f"ONBOX_PMFS_GC_HINTS mode={expected_hints}".encode()
                     if marker not in output:
                         raise RuntimeError(f"expected GC hints {expected_hints}")
+                if nvdimm_file:
+                    if b"no valid v3 checkpoint" not in output:
+                        raise RuntimeError("NVDIMM is not blank and unmounted")
+                    proc.stdin.write(b"pmformat --force\n")
+                    proc.stdin.flush()
+                    format_requested = True
+                initialized = True
+            if format_requested and b"pmformat: failed" in output:
+                raise RuntimeError("guest could not format the fresh NVDIMM")
+            formatted = re.search(rb"^pmformat: v3 ready\r?$", output, re.MULTILINE)
+            ready = (initialized and not format_requested) or (
+                formatted is not None and PROMPT.search(output, formatted.end()))
+            if ready and not sent:
                 wall_start = time.monotonic()
                 proc.stdin.write(f"pmfs_perf {mode} {count} {size} {batch_order}\n".encode())
                 proc.stdin.flush()
@@ -307,6 +342,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--qemu", default=os.environ.get("QEMU", "qemu-system-riscv64"))
+    parser.add_argument("--backend", choices=("virtio", "nvme"), default="virtio",
+                        help="root disk; the kernel must use the same DISK= setting")
+    parser.add_argument("--nvdimm", action="store_true",
+                        help="use a fresh 32 MiB file-backed NVDIMM instead of EMUL")
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--samples", type=int, default=32)
@@ -339,15 +378,23 @@ def main(argv=None):
                 "kernel_sha256": sha256(kernel), "image_sha256": sha256(image),
                 "source_sha256": source_hash(ROOT), "qemu_sha256": sha256(Path(qemu)),
                 "qemu_path": qemu, "qemu_version": version.stdout.splitlines()[0],
-                "host": platform.platform(), "cpus": 1, "backend": "volatile EMUL",
+                "runner_sha256": sha256(Path(__file__)),
+                "host": platform.platform(), "cpus": 1,
+                "backend": "file-backed QEMU NVDIMM" if args.nvdimm else "volatile EMUL",
+                "root_disk_backend": args.backend,
+                "qemu_command_template": qemu_command(
+                    qemu, kernel, "<private-root-disk>", args.backend,
+                    "<fresh-32MiB-nvdimm>" if args.nvdimm else None),
                 "runs": args.runs, "warmup_boots": args.warmup,
                 "guest_warmup_transactions_per_backend": 4, "samples": args.samples,
                 "batch_transactions_per_backend": args.samples,
                 "batch_order": "alternates by boot; batch after interleaved latency samples",
                 "sizes": sizes, "modes": modes, "seed": args.seed,
                 "build_notes": args.build_notes,
-                "durability": "NOT equivalent: PMFS touch+fence, native xv6 global log sync without virtio flush",
-                "warning": "QEMU TCG guest time and software requests, not physical PMEM performance"}
+                "durability": ("NOT equivalent: PMFS touch+fence; native xv6 global log sync "
+                               + ("with NVMe Flush" if args.backend == "nvme"
+                                  else "without virtio Flush")),
+                "warning": "QEMU TCG guest time and software requests, not physical PMEM or SSD performance"}
     (out / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     records, batches, failures, rng = [], [], [], random.Random(args.seed)
     with tempfile.TemporaryDirectory(prefix="pmfs-perf-") as tmp, \
@@ -365,10 +412,16 @@ def main(argv=None):
             for mode, size in tasks:
                 disk = tmp / "disk.img"
                 shutil.copyfile(image, disk)
+                nvdimm = None
+                if args.nvdimm:
+                    nvdimm = tmp / "nvdimm.img"
+                    with nvdimm.open("wb") as media:
+                        media.truncate(32 * 1024 * 1024)
                 label = f"{run:03d}-{mode}-{size}"
                 try:
                     samples, batch, wall = boot(qemu, kernel, disk, mode, size, args.samples,
-                                                args.timeout, out / f"{label}.log", run % 2)
+                                                args.timeout, out / f"{label}.log", run % 2,
+                                                root_backend=args.backend, nvdimm_file=nvdimm)
                     batch.update(run=run, warmup=run < args.warmup, mode=mode, size=size,
                                  status="success")
                     batches.append(batch)

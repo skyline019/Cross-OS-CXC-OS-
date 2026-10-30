@@ -203,6 +203,16 @@ void            plicinithart(void);
 int             plic_claim(void);
 void            plic_complete(int);
 
+// rootdisk.c: one selected root block device
+void            rootdisk_init(void);
+void            rootdisk_rw(struct buf*, int);
+void            rootdisk_log_barrier(void);
+
+// nvme.c: optional QEMU virt PCIe root disk
+void            nvme_disk_init(void);
+void            nvme_disk_rw(struct buf*, int);
+void            nvme_disk_flush(void);
+
 // virtio_disk.c
 void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);

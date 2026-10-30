@@ -11,7 +11,7 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-26.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       CPUS: 3
     steps:
@@ -36,6 +36,9 @@ jobs:
           python3 -m unittest discover -s tools -p test_bench_perf.py
           python3 -m unittest discover -s tools -p test_bench_gc_hints.py
           python3 -m unittest discover -s tools -p test_pmfs_trace_replay.py
+          python3 -m unittest discover -s tools -p test_check_storage_topology.py
+          python3 -m unittest discover -s tools -p test_nvme_trace_audit.py
+          python3 -m unittest discover -s tools -p test_nvme_boot_tests.py
           python3 tools/bench_repro.py --runs 2 --warmup 0 --n 4 --output .ci-logs/bench-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
           python3 tools/bench_perf.py --runs 2 --warmup 0 --samples 4 --sizes 64 --modes roundtrip,overwrite --output .ci-logs/perf-smoke --build-notes 'CI default GCC kernel, QEMU TCG'
       - name: xv6 usertests, three harts
@@ -80,6 +83,16 @@ jobs:
         run: make test-trace-replay
       - name: Compaction low-space preflight (tiny disposable EMUL device)
         run: make test-pmfs-gc-nospace
+      - name: Native NVMe root, fail-closed cases and log recovery
+        run: |
+          make clean
+          make -j2 DISK=nvme EXTRA_CFLAGS="-DXV6_LOG_FAULT_INJECT" kernel/kernel fs.img
+          python3 tools/nvme_boot_tests.py --cpus 3 --log-dir .ci-logs/nvme-boot
+          python3 tools/xv6_log_recovery.py --backend nvme --cpus 1 --log-dir .ci-logs/nvme-log
+          python3 tools/native_rename_recovery.py --backend nvme --cpus 1 --log-dir .ci-logs/nvme-rename
+          XV6_TEST_OUTPUT=.ci-logs/nvme-vfs.log DISK=nvme CPUS=3 ./test-xv6.py 'test_vfs$'
+          XV6_TEST_OUTPUT=.ci-logs/nvme-stress.log DISK=nvme CPUS=3 ./test-xv6.py 'test_stress$'
+          XV6_TEST_OUTPUT=.ci-logs/nvme-usertests.log DISK=nvme CPUS=3 ./test-xv6.py -q 'test_usertests$'
       - name: Upload test serial logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -116,7 +129,9 @@ jobs:
             --disable-gtk --disable-sdl --disable-vnc --disable-slirp --disable-plugins
           ninja -j2 qemu-system-riscv64
       - name: Verify distinct QEMU NVDIMM via QMP
-        run: python3 tools/check_nvdimm_device.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64"
+        run: |
+          python3 tools/check_nvdimm_device.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64"
+          python3 tools/check_storage_topology.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64"
       - name: NVDIMM process-restart and fault-boundary oracle
         run: make test-recovery-nvdimm QEMU="$RUNNER_TEMP/qemu-build/qemu-system-riscv64" RECOVERY_ARGS="--log-dir .ci-logs/nvdimm"
       - name: VFS namespace and dual-slot reclamation on NVDIMM
@@ -129,6 +144,22 @@ jobs:
         run: python3 tools/vfs_recovery.py --nvdimm --zicbom --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/vfs-nvdimm-zicbom
       - name: COW compaction and reclamation with Zicbom
         run: python3 tools/pmfs_gc_recovery.py --nvdimm --zicbom --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/gc-nvdimm-zicbom
+      - name: NVMe root and existing v3 PMFS on NVDIMM, together
+        run: |
+          make clean
+          make -j2 DISK=nvme EXTRA_CFLAGS="-DPMEM_MAP -DPMEM_NVDIMM -DPMFS_FAULT_INJECT" kernel/kernel fs.img
+          python3 tools/nvme_trace_audit.py --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" \
+            --output .ci-logs/nvme-trace
+          python3 tools/pmfs_recovery.py --nvdimm --backend nvme --cpus 3 \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/nvdimm-nvme
+          python3 tools/vfs_recovery.py --nvdimm --backend nvme --cpus 3 \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/vfs-nvdimm-nvme
+          python3 tools/pmfs_gc_recovery.py --nvdimm --backend nvme --cpus 3 \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" --log-dir .ci-logs/gc-nvdimm-nvme
+          python3 tools/bench_perf.py --nvdimm --backend nvme --runs 2 --warmup 0 \
+            --samples 4 --sizes 64 --modes overwrite --output .ci-logs/nvdimm-nvme-perf-smoke \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-riscv64" \
+            --build-notes 'CI QEMU 9.2 NVDIMM + NVMe; existing v3, fault hooks dormant'
       - name: Upload NVDIMM serial logs
         if: always()
         uses: actions/upload-artifact@v7

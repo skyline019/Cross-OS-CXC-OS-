@@ -1,0 +1,9 @@
+{
+  "flush_tokens": 18,
+  "io_commands": 97,
+  "journal_transactions": 4,
+  "negative_controls": 1,
+  "scope": "one QEMU 9.2 trace, not physical persistence or torn sectors",
+  "source_image_unchanged": true,
+  "write_tokens": 31
+}

@@ -1,7 +1,8 @@
 import struct
 import unittest
 
-from bench_perf import dtb_timebase, parse_batch, parse_samples, summarize, summarize_batches
+from bench_perf import (dtb_timebase, parse_batch, parse_samples, qemu_command,
+                        summarize, summarize_batches)
 
 
 def tree(frequency=10_000_000):
@@ -25,6 +26,22 @@ def text():
             "PMFS_PERF_SAMPLE mode=roundtrip size=64 i=1 pm_ticks=30 xv_ticks=40 "
             "pm_write=12 pm_read=6 pm_flush=2 order=1\n"
             "PMFS_PERF_PASS mode=roundtrip size=64 samples=2 warmup=4\n")
+
+
+class TopologyTests(unittest.TestCase):
+    def test_default_virtio_and_nvme_nvdimm_are_distinct(self):
+        default = qemu_command("qemu", "kernel", "root.img")
+        self.assertIn("virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0", default)
+        self.assertNotIn("virt,nvdimm=on", default)
+        combined = qemu_command("qemu", "kernel", "root.img", "nvme", "pmem.img")
+        self.assertIn("virt,nvdimm=on", combined)
+        self.assertIn("nvme,id=nvme0,serial=xv6nvme,drive=x0", combined)
+        self.assertIn("nvdimm,id=nvdimm0,memdev=pmem0", combined)
+        self.assertIn("memory-backend-file,id=pmem0,share=on,mem-path=pmem.img,size=32M",
+                      combined)
+        self.assertNotIn("virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0", combined)
+        with self.assertRaises(ValueError):
+            qemu_command("qemu", "kernel", "root.img", "unknown")
 
 
 class TimebaseTests(unittest.TestCase):

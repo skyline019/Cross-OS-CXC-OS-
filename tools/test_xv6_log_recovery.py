@@ -7,7 +7,21 @@ import tempfile
 import unittest
 
 from xv6_log_recovery import (BSIZE, DiskLog, FAILURE_LINE, FSMAGIC, SHELL_PROMPT,
-                              TestFailure, check_recovery_trace)
+                              TestFailure, check_recovery_trace, disk_arguments)
+
+
+class DiskArgumentsTests(unittest.TestCase):
+    def test_backend_selection_is_explicit_and_writeback_is_not_noflush(self):
+        for backend, device in (("virtio", "virtio-blk-device"), ("nvme", "nvme,")):
+            with self.subTest(backend=backend):
+                args = disk_arguments(Path("/tmp/test.img"), backend)
+                self.assertEqual(args[0], "-drive")
+                self.assertIn("cache=writeback", args[1])
+                self.assertNotIn("no-flush", args[1])
+                self.assertEqual(args[2], "-device")
+                self.assertTrue(args[3].startswith(device))
+        with self.assertRaises(ValueError):
+            disk_arguments(Path("/tmp/test.img"), "unknown")
 
 
 class DiskLogTests(unittest.TestCase):

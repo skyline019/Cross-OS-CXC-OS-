@@ -1,0 +1,3 @@
+NVME_TEN_REPEAT_PASS
+10 runs, each positive_boots=4 negative_cases=6 cpus=3 original_image=unchanged
+All logs use the post-fix interleaving-aware matcher.

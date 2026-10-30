@@ -47,6 +47,8 @@ struct log {
   int committing;  // in commit(), please wait.
   int dev;
   int ncommit;
+  uint disk_blocks;
+  uint log_blocks;
   struct logheader lh;
 };
 struct log log;
@@ -102,9 +104,14 @@ initlog(int dev, struct superblock *sb)
   if (sizeof(struct logheader) >= BSIZE)
     panic("initlog: too big logheader");
 
+  if (sb->nlog < 2 || sb->logstart >= sb->size ||
+      sb->nlog > sb->size - sb->logstart)
+    panic("initlog: invalid disk layout");
   initlock(&log.lock, "log");
   log.start = sb->logstart;
   log.dev = dev;
+  log.disk_blocks = sb->size;
+  log.log_blocks = sb->nlog;
   recover_from_log();
 }
 
@@ -139,8 +146,17 @@ read_head(void)
   struct logheader *lh = (struct logheader *)(buf->data);
   int i;
   log.lh.n = lh->n;
+  if (log.lh.n < 0 || log.lh.n > LOGBLOCKS || (uint)log.lh.n >= log.log_blocks)
+    panic("log: invalid header count");
   for (i = 0; i < log.lh.n; i++) {
-    log.lh.block[i] = lh->block[i];
+    uint block = lh->block[i];
+    if (block >= log.disk_blocks ||
+        (block >= (uint)log.start && block - log.start < log.log_blocks))
+      panic("log: invalid header destination");
+    for (int j = 0; j < i; j++)
+      if (log.lh.block[j] == (int)block)
+        panic("log: duplicate header destination");
+    log.lh.block[i] = block;
   }
   brelse(buf);
 }
@@ -166,9 +182,11 @@ static void
 recover_from_log(void)
 {
   read_head();
-  install_trans(1); // if committed, copy from log to disk
+  install_trans(1);       // if committed, copy from log to disk
+  rootdisk_log_barrier(); // installed blocks before the clear on NVMe
   log.lh.n = 0;
   write_head(); // clear the log
+  rootdisk_log_barrier();
 }
 
 // called at the start of each FS system call.
@@ -250,14 +268,18 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
-    write_log(); // Write modified blocks from cache to log
+    write_log();            // Write modified blocks from cache to log
+    rootdisk_log_barrier(); // log data before commit header on NVMe
     log_fault_point(1);
-    write_head(); // Write header to disk -- the real commit
+    write_head();           // Write header to disk -- the real commit
+    rootdisk_log_barrier(); // header before home writes on NVMe
     log_fault_point(2);
     install_trans(0); // Now install writes to home locations (point 3 inside)
+    rootdisk_log_barrier(); // home writes before log clear on NVMe
     log_fault_point(4);
     log.lh.n = 0;
-    write_head(); // Erase the transaction from the log
+    write_head();           // Erase the transaction from the log
+    rootdisk_log_barrier(); // clear before acknowledgement on NVMe
     log_fault_point(5);
   }
 }

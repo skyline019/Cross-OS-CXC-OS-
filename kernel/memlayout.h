@@ -25,6 +25,13 @@
 #define VIRTIO0     0x10001000
 #define VIRTIO0_IRQ 1
 
+// QEMU RISC-V virt PCIe ECAM (bus 0 only) and a bounded BAR0 window.
+// These are used only by the optional, single-controller NVMe root disk.
+#define PCIE_ECAM      0x30000000L
+#define PCIE_ECAM_SIZE 0x00100000L
+#define PCIE_MMIO      0x40000000L
+#define PCIE_MMIO_SIZE 0x01000000L
+
 // core-local interrupt controller (CLINT)
 #define CLINT_BASE  0x02000000L
 #define CLINT(hart) (CLINT_BASE + (hart) * 4)

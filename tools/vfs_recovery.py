@@ -24,6 +24,8 @@ def main():
     parser.add_argument("--log-dir", type=Path)
     parser.add_argument("--nvdimm", action="store_true")
     parser.add_argument("--zicbom", action="store_true")
+    parser.add_argument("--backend", choices=("virtio", "nvme"), default="virtio",
+                        help="root disk backend, independent of the PMEM device")
     args = parser.parse_args()
     root = args.root.resolve()
     if args.cpus < 1 or args.cpus > 8 or args.timeout < 1:
@@ -43,7 +45,7 @@ def main():
         with base.open("wb") as f:
             f.truncate(recovery.RAM_SIZE)
         run = recovery.Runner(root, args.qemu, directory, args.timeout, args.cpus,
-                              args.zicbom, args.log_dir, args.nvdimm)
+                              args.zicbom, args.log_dir, args.nvdimm, args.backend)
 
         def vfs(ram, mode, label=None):
             return run.boot(ram, label or mode, f"vfstest {mode}",
