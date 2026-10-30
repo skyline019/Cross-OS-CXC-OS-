@@ -280,11 +280,13 @@ bench-fill: kernel-emul
 bench-sweep: kernel-emul
 	python3 tools/run_bench_sweep.py
 
-# Independent protocol specification model with three mutation controls.
+# Independent bounded protocol specifications, not kernel or hardware proofs.
 test-model:
 	python3 tools/check_persist_model.py
 	python3 tools/check_vfs_model.py
 	python3 tools/check_gc_model.py
+	python3 tools/check_txn_design.py
+	python3 tools/check_directfs_design.py
 
 # Native block-log software cut points are test-only and can hang the guest.
 # This target runs make clean and rebuilds fs.img: use a disposable checkout.

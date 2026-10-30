@@ -27,6 +27,8 @@
 
 | 文档 | 内容 |
 |---|---|
+| [题面对齐与收敛设计](docs/THESIS-OPTIMIZED-DESIGN.md) | 保留 KV/CDC 的 v3 单次提交与 v4 字节记录方案；明确为待实现设计 |
+| [无 KV/CDC 的直接 PMEM 设计](docs/THESIS-DIRECT-PMEM-DESIGN.md) | 条件性的独立方案：直接索引、COW 双根和可重建回收；尚未实现 |
 | [修复与验证报告](docs/PMFS-REPAIR-REPORT.md) | 实际代码、测试命令、通过结果和残余风险 |
 | [语义与限制](docs/SEMANTICS.md) | API、持久边界、失败行为及不支持项 |
 | [软件读写放大与耐久](docs/PERFORMANCE-ENDURANCE.md)、[维护设计](docs/MAINTENANCE.md) | CDC/索引、双槽保护与 COW 压缩、软件请求计数及硬件磨损限制 |
