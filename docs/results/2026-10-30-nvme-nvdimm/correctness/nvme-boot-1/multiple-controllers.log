@@ -1,0 +1,4 @@
+
+xv6 kernel is booting
+
+panic: nvme requires exactly one PCI controller on bus 0

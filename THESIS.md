@@ -29,6 +29,9 @@
 
 | 文档 | 内容 |
 |---|---|
+| [题面对齐与收敛设计](docs/THESIS-OPTIMIZED-DESIGN.md) | 保留 KV/CDC 的 v3 单次提交与 v4 字节记录方案；明确为待实现设计 |
+| [无 KV/CDC 的直接 PMEM 设计](docs/THESIS-DIRECT-PMEM-DESIGN.md) | 条件性的独立方案：直接索引、COW 双根和可重建回收；尚未实现 |
+| [QEMU NVDIMM 与 NVMe 架构更新](docs/THESIS-QEMU-NVDIMM-NVME-ARCHITECTURE.md) | 当前模拟验收、原生 NVMe 对照、无 KV/CDC 的窗口/链群设计和可复验计划 |
 | [修复与验证报告](docs/PMFS-REPAIR-REPORT.md) | 实际代码、测试命令、通过结果和残余风险 |
 | [语义与限制](docs/SEMANTICS.md) | API、持久边界、失败行为及不支持项 |
 | [架构](docs/ARCHITECTURE.md) / [核心代码直讲](docs/CORE-WALKTHROUGH.md) | 分层、checkpoint、调用链 |

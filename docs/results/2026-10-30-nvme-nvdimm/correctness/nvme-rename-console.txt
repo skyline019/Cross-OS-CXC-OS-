@@ -1,0 +1,27 @@
+PASS native-initialize
+PASS native-baseline
+PASS native-stage-1-crash
+PASS native-stage-1-recover
+PASS native-stage-1-reboot
+PASS native stage=1 state=native-old blocks=0
+PASS native-stage-2-crash
+PASS native-negative-drop-log
+PASS negative control: discarding committed rename loses new name
+PASS native-stage-2-recover
+PASS native-stage-2-reboot
+PASS native stage=2 state=native-new blocks=2
+PASS native-stage-3-crash
+PASS native-stage-3-recover
+PASS native-stage-3-reboot
+PASS native stage=3 state=native-new blocks=2
+PASS native-stage-4-crash
+PASS native-stage-4-recover
+PASS native-stage-4-reboot
+PASS native stage=4 state=native-new blocks=2
+PASS native-stage-5-crash
+PASS native-stage-5-recover
+PASS native-stage-5-reboot
+PASS native stage=5 state=native-new blocks=0
+PASS native-normal-move
+PASS native-normal-reboot
+NATIVE_RENAME_RECOVERY_PASS stages=5 negative_controls=1

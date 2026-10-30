@@ -45,7 +45,7 @@ class QEMU(object):
 
     def save_output(self):
       try:
-        with open("test-xv6.out", "w") as f:
+        with open(os.environ.get("XV6_TEST_OUTPUT", "test-xv6.out"), "w") as f:
             f.write(self.output)
             f.close()
       except OSError as e:
@@ -85,6 +85,10 @@ class QEMU(object):
         self.read()
         self.proc.stdin.close()
         self.proc.stdout.close()
+        # Preserve successful serial output only when explicitly requested.
+        # A multi-boot test overwrites this path on each stop.
+        if os.environ.get("XV6_TEST_OUTPUT"):
+            self.save_output()
 
     def crash(self):
         print("kill qemu process group", self.proc.pid)

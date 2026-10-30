@@ -38,6 +38,8 @@ def main(argv=None):
     parser.add_argument("--qemu", default="qemu-system-riscv64")
     parser.add_argument("--cpus", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=45)
+    parser.add_argument("--backend", choices=("virtio", "nvme"), default="virtio",
+                        help="must match the root-disk backend compiled into the kernel")
     parser.add_argument("--log-dir", type=Path)
     args = parser.parse_args(argv)
     root = args.root.resolve()
@@ -45,7 +47,7 @@ def main(argv=None):
     if not 1 <= args.cpus <= 8 or args.timeout < 1 or not image.is_file():
         parser.error("invalid CPU/timeout or missing fs.img")
     before = digest(image)
-    runner = Runner(root, args.qemu, args.cpus, args.timeout, args.log_dir)
+    runner = Runner(root, args.qemu, args.cpus, args.timeout, args.log_dir, args.backend)
     with tempfile.TemporaryDirectory(prefix="native-rename-") as temporary:
         directory = Path(temporary)
         baseline = directory / "baseline.img"

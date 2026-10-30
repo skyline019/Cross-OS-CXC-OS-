@@ -1,0 +1,18 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+NVME_READY nsid=1 lba=512 qdepth=16 vwc=1 mdts=7 blocks=4000
+pmem: instrumentation only; no hardware cache writeback
+pmem: MAP ready base=0x88000000 usable=0x2000000 fdt=0x87e00000 backend=nvdimm
+ONBOX_PMFS_PMEM0_PASS mode=MAP backend=nvdimm size=33550336
+pmfs: mount ok epoch=19 slot=0 tail=12 pages=8191
+ONBOX_PMFS_MOUNT_PASS epoch=19 slot=0 emul=0
+ONBOX_PMFS_GC_HINTS mode=enabled
+pmfs: ready (v3, boot selftests disabled)
+hart 2 starting
+hart 1 starting
+init: starting sh
+$ pmfs_regress fd-write
+PMFS_REGRESS_PASS mode=fd-write
+$ 

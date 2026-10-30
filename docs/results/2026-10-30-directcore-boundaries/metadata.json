@@ -1,0 +1,16 @@
+{
+  "timestamp_utc": "2026-10-30T11:26:05.855758+00:00",
+  "kernel_sha256": "e8bad697cb9485ff527eb63b9ad4d01528ecea8ea628cefd01b1f41d64504d4d",
+  "fs_image_sha256": "5e8bb13ebc2befd1c170c2828eead90f2bfb06e8fb994cc58f2a09c9436c8a48",
+  "source_sha256": "ebc5ba079a04aa6550c81b8898eafa810dcbe210561a17aa6657fccd86d04646",
+  "runner_sha256": "06c1476185a7659868b88b001c72d06cb7c3d3babdf25597b25d8d71522b4366",
+  "qemu_sha256": "304ace18f67d8465581ec314860c733ac631af76b85869e628f747da02bdb43e",
+  "qemu_version": "QEMU emulator version 9.2.0",
+  "host": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "cpus": 3,
+  "backend": "nvme",
+  "zicbom": true,
+  "random_steps": 24,
+  "seed": 20261030,
+  "scope": "bounded test-only single-file core; QEMU file-backed NVDIMM; not physical power loss"
+}

@@ -92,13 +92,27 @@ class DiskLog:
             os.fsync(f.fileno())
 
 
+def disk_arguments(disk, backend):
+    """QEMU root disk; PMEM is not part of this block-device path."""
+    drive = f"file={disk},if=none,format=raw,id=x0,cache=writeback"
+    if backend == "virtio":
+        device = "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"
+    elif backend == "nvme":
+        device = "nvme,id=nvme0,serial=xv6nvme,drive=x0"
+    else:
+        raise ValueError(f"unknown root disk backend: {backend}")
+    return ["-drive", drive, "-device", device]
+
+
 class Runner:
-    def __init__(self, root, qemu, cpus, timeout, log_dir):
+    def __init__(self, root, qemu, cpus, timeout, log_dir, backend="virtio"):
         self.root = root
         self.qemu = qemu
         self.cpus = cpus
         self.timeout = timeout
         self.log_dir = log_dir
+        self.backend = backend
+        disk_arguments("unused", backend)  # fail early for a bad selection
         if log_dir is not None:
             log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,9 +121,7 @@ class Runner:
         cmd = [self.qemu, "-machine", "virt", "-bios", "none",
                "-kernel", str(self.root / "kernel/kernel"), "-m", "128M",
                "-smp", str(self.cpus), "-nographic", "-global",
-               "virtio-mmio.force-legacy=false", "-drive",
-               f"file={disk},if=none,format=raw,id=x0", "-device",
-               "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]
+               "virtio-mmio.force-legacy=false"] + disk_arguments(disk, self.backend)
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, start_new_session=True)
         output = bytearray()
@@ -149,6 +161,8 @@ class Runner:
         try:
             wait_for(lambda: b"init: starting sh" in output and SHELL_PROMPT.search(output) is not None,
                      "shell prompt")
+            if self.backend == "nvme" and b"NVME_READY " not in output:
+                raise TestFailure(f"{label}: guest did not initialize the NVMe backend")
             offset = len(output)
             proc.stdin.write((command + "\n").encode())
             proc.stdin.flush()
@@ -251,6 +265,9 @@ def main():
     parser.add_argument("--qemu", default=os.environ.get("QEMU", "qemu-system-riscv64"))
     parser.add_argument("--cpus", type=int, default=int(os.environ.get("CPUS", "1")))
     parser.add_argument("--timeout", type=int, default=45)
+    parser.add_argument("--backend", choices=("virtio", "nvme"),
+                        default=os.environ.get("DISK", "virtio"),
+                        help="must match the root-disk backend compiled into the kernel")
     parser.add_argument("--log-dir", type=Path,
                         default=Path(os.environ["XV6_LOG_DIR"]) if os.environ.get("XV6_LOG_DIR") else None)
     parser.add_argument("--expect-disabled", action="store_true",
@@ -261,7 +278,7 @@ def main():
         parser.error("cpus must be 1..8 and timeout must be positive")
     if not (root / "kernel/kernel").is_file() or not (root / "fs.img").is_file():
         parser.error("build kernel/kernel and fs.img (containing logtest) first")
-    runner = Runner(root, args.qemu, args.cpus, args.timeout, args.log_dir)
+    runner = Runner(root, args.qemu, args.cpus, args.timeout, args.log_dir, args.backend)
     with tempfile.TemporaryDirectory(prefix="xv6-log-recovery-") as tmp:
         directory = Path(tmp)
         if args.expect_disabled:

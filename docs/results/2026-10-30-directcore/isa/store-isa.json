@@ -1,0 +1,31 @@
+{
+  "source_line": 292,
+  "sites": [
+    {
+      "address": "0x80004b34",
+      "instruction": "sd",
+      "bytes": "23300500"
+    },
+    {
+      "address": "0x80004b4e",
+      "instruction": "sd",
+      "bytes": "23b00504"
+    },
+    {
+      "address": "0x80004dea",
+      "instruction": "c.sd",
+      "bytes": "0ce1"
+    },
+    {
+      "address": "0x80004e6e",
+      "instruction": "c.sd",
+      "bytes": "2ce2"
+    },
+    {
+      "address": "0x80005964",
+      "instruction": "c.sd",
+      "bytes": "0ce1"
+    }
+  ],
+  "scope": "one compiler/build; instruction width is not failure atomicity"
+}

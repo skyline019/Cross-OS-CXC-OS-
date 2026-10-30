@@ -23,6 +23,8 @@ import sys
 import tempfile
 import time
 
+from xv6_log_recovery import disk_arguments
+
 RAM_SIZE = 160 * 1024 * 1024
 PMEM_START = 128 * 1024 * 1024
 FS_START = PMEM_START + 4096
@@ -99,7 +101,8 @@ def flip_byte(path, offset):
 
 
 class Runner:
-    def __init__(self, root, qemu, directory, timeout, cpus, zicbom, log_dir, nvdimm):
+    def __init__(self, root, qemu, directory, timeout, cpus, zicbom, log_dir, nvdimm,
+                 backend="virtio"):
         self.root = root
         self.qemu = qemu
         self.directory = directory
@@ -108,6 +111,8 @@ class Runner:
         self.zicbom = zicbom
         self.nvdimm = nvdimm
         self.log_dir = log_dir
+        self.backend = backend
+        disk_arguments("unused", backend)
         self.count = 0
 
     def boot(self, ram, label, command=None, marker=None, expect_shell=True,
@@ -128,9 +133,8 @@ class Runner:
                    "-nographic", "-object",
                    f"memory-backend-file,id=mem,size={ram_mb}M,mem-path={ram},share=on",
                    "-numa", "node,memdev=mem"]
-        cmd += ["-global", "virtio-mmio.force-legacy=false",
-                "-drive", f"file={disk},if=none,format=raw,id=x0",
-                "-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]
+        cmd += ["-global", "virtio-mmio.force-legacy=false"]
+        cmd += disk_arguments(disk, self.backend)
         if self.zicbom:
             cmd += ["-cpu", "rv64,zicbom=true"]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -170,6 +174,8 @@ class Runner:
 
         try:
             wait_for(lambda: b"init: starting sh" in output and prompt_after(0), "shell")
+            if self.backend == "nvme" and b"NVME_READY " not in output:
+                raise RuntimeError(f"{label}: guest did not initialize the NVMe root disk")
             expected_backend = b"nvdimm" if self.nvdimm else b"map"
             if expect_map and (b"ONBOX_PMFS_PMEM0_PASS mode=MAP backend=" + expected_backend) not in output:
                 raise RuntimeError(f"{label}: expected PMFS backend {expected_backend.decode()}")
@@ -223,6 +229,8 @@ def main():
     parser.add_argument("--zicbom", action="store_true")
     parser.add_argument("--nvdimm", action="store_true",
                         help="use the patched QEMU virt NVDIMM and PMEM_NVDIMM guest")
+    parser.add_argument("--backend", choices=("virtio", "nvme"), default="virtio",
+                        help="root disk backend, independent of the PMEM device")
     parser.add_argument("--log-dir", type=Path)
     args = parser.parse_args()
     root = args.root.resolve()
@@ -240,7 +248,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="pmfs-recovery-") as tmp:
         d = Path(tmp)
         run = Runner(root, args.qemu, d, args.timeout, args.cpus, args.zicbom, args.log_dir,
-                     args.nvdimm)
+                     args.nvdimm, args.backend)
         base = d / "base.ram"
         with base.open("wb") as f:
             f.truncate(RAM_SIZE)

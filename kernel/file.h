@@ -20,11 +20,12 @@ struct file {
 
 // in-memory copy of an inode
 struct inode {
-  uint dev;              // Device number
-  uint inum;             // Inode number
-  int ref;               // Reference count
-  struct sleeplock lock; // protects everything below here
-  int valid;             // inode has been read from disk?
+  uint dev;                // Device number
+  uint inum;               // Inode number
+  int ref;                 // Reference count
+  struct sleeplock iolock; // serializes whole ordinary file I/O syscalls
+  struct sleeplock lock;   // protects everything below here
+  int valid;               // inode has been read from disk?
 
   short type; // copy of disk inode
   short major;

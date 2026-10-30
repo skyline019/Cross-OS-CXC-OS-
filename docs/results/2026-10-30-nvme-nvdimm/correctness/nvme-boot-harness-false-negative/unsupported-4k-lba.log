@@ -1,0 +1,5 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+panic: nvme requires 512/1024-byte LBA without metadata

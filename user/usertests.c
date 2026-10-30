@@ -360,9 +360,15 @@ truncate2(char *s)
 
   int fd2 = open("truncfile", O_TRUNC | O_WRONLY);
 
+  // Truncation does not reset another descriptor's offset. A subsequent
+  // write at that offset creates a zero-filled sparse hole.
   int n = write(fd1, "x", 1);
-  if (n != -1) {
-    printf("%s: write returned %d, expected -1\n", s, n);
+  char sparse[5];
+  int rd = open("truncfile", O_RDONLY);
+  if (n != 1 || rd < 0 || read(rd, sparse, sizeof(sparse)) != sizeof(sparse) ||
+      sparse[0] != 0 || sparse[1] != 0 || sparse[2] != 0 || sparse[3] != 0 ||
+      sparse[4] != 'x' || close(rd) != 0) {
+    printf("%s: truncate followed by sparse write failed\n", s);
     exit(1);
   }
 
@@ -2829,11 +2835,9 @@ void
 partial_write(char *s)
 {
   // Create testfile containing "A".
-  // write() 2 bytes that span page boundary: first is "X", second is unmapped.
-  // Potential problem: write errors, forgets to log the updated first byte.
-  // read() from file returns "X".
-  // Flush buffer cache with some large writes.
-  // read() from file should still return "X" (but might return "A" due to bug).
+  // write() 2 bytes that span a page boundary: first is "X", second unmapped.
+  // It must return the one-byte prefix and log that byte. After flushing the
+  // buffer cache with large writes, it must still read as "X", not "A".
 
   unlink("testfile");
   int fd = open("testfile", O_CREATE | O_RDWR);
@@ -2867,8 +2871,8 @@ partial_write(char *s)
   p[-1] = 'X';
 
   cc = write(fd, p - 1, 2);
-  if (cc != -1) {
-    printf("%s: write succeeded, should have failed\n", s);
+  if (cc != 1 || lseek(fd, 0, SEEK_CUR) != 1) {
+    printf("%s: write must report the one-byte prefix and offset\n", s);
     exit(1);
   }
 

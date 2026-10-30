@@ -123,6 +123,9 @@ extern uint64 sys_pmfs_format(void);
 extern uint64 sys_pmfs_fstat(void);
 extern uint64 sys_pmfs_fault(void);
 extern uint64 sys_pmfs_trace(void);
+#ifdef DIRECT_CORE_TEST
+extern uint64 sys_directcore(void);
+#endif
 extern uint64 sys_fsync(void);
 extern uint64 sys_xv6_log_fault(void);
 extern uint64 sys_lseek(void);
@@ -162,6 +165,9 @@ static uint64 (*syscalls[])(void) = {
   [SYS_pmfs_metrics] = sys_pmfs_metrics,
   [SYS_pmfs_compact] = sys_pmfs_compact,
   [SYS_pmfs_trace]   = sys_pmfs_trace,
+#ifdef DIRECT_CORE_TEST
+  [SYS_directcore]   = sys_directcore,
+#endif
   [SYS_cycles]       = sys_cycles,
   [SYS_pmfs_create]  = sys_pmfs_create,
   [SYS_pmfs_fopen]   = sys_pmfs_fopen,
@@ -190,6 +196,17 @@ syscall(void)
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
+#ifdef DIRECT_CORE_TEST
+  // The legacy format, file, KV and trace controls must not operate on the
+  // experimental device or disturb its tracing. These are the contiguous
+  // ranges assigned to legacy PMFS syscalls in syscall.h.
+  if ((num >= SYS_pmfs_put && num <= SYS_pmfs_stat) ||
+      (num >= SYS_pmfs_create && num <= SYS_pmfs_fault) ||
+      (num >= SYS_pmfs_metrics && num <= SYS_pmfs_trace)) {
+    p->trapframe->a0 = -1;
+    return;
+  }
+#endif
   if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0

@@ -3,6 +3,7 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
+#include "directcore.h"
 
 volatile static int started = 0;
 
@@ -28,10 +29,13 @@ main()
     binit();            // buffer cache
     iinit();            // inode table
     fileinit();         // file table
-    virtio_disk_init(); // emulated hard disk
+    rootdisk_init();    // virtio by default; optional QEMU PCIe NVMe
     pmem_init();        // thesis: PMEM window (may soft-disable)
     pmfs_init();        // thesis: PMEM-native FS scaffold
-    userinit();         // first user process
+#ifdef DIRECT_CORE_TEST
+    directcore_init(); // independent experimental device, never v3 in this build
+#endif
+    userinit(); // first user process
 
     __atomic_store_n(&started, 1, __ATOMIC_RELEASE);
   } else {

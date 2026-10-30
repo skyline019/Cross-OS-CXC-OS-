@@ -1,0 +1,44 @@
+python3 tools/check_persist_model.py
+MODEL_PASS protocol=cow checkpoints=64 early_eviction=all_subsets
+MODEL_NEGATIVE_PASS mutation=no_data_flush checks=987 counterexample=(17, 'store', ('word',), 'corrupt-new-root', False)
+MODEL_NEGATIVE_PASS mutation=early_publish checks=13 counterexample=(7, 'store', ('word',), 'corrupt-new-root', False)
+MODEL_NEGATIVE_PASS mutation=no_commit_flush checks=63 counterexample=(25, 'ack', (), 'old', True)
+python3 tools/check_vfs_model.py
+VFS_MODEL_PASS protocol=cow-rename crash_states=14 evictions=all_subsets outcomes=old,new
+VFS_MODEL_PASS protocol=reuse-inode crash_states=10 evictions=all_subsets outcomes=old,new
+VFS_MODEL_NEG_PASS mutation=reuse-early counterexample=(4, ['header', 'inode', 'word'])
+VFS_MODEL_NEG_PASS mutation=early-publish counterexample=(5, ['header', 'word'])
+VFS_MODEL_NEG_PASS mutation=partial-subtree counterexample=(6, ['dentry', 'header', 'inode', 'word'])
+VFS_MODEL_PASS protocol=hard-link graphs=old,new negative=mixed-roots model=bounded-not-kernel-trace
+VFS_MODEL_NEG_PASS mutation=in-place counterexample=[2]
+python3 tools/check_gc_model.py
+GC_MODEL_PASS allocations=3750 root_checks=36000 slots=two model=bounded-not-kernel-trace
+GC_MODEL_NEG_PASS mutation=ignore-inactive overwritten_page=1
+GC_MODEL_NEG_PASS mutation=release-old-run-before-slot-retirement
+python3 tools/check_txn_design.py
+TXN_DESIGN_MODEL_PASS crash_images=78 early_eviction=all_dirty_subsets scope=single-bounded-proposal
+TXN_DESIGN_MODEL_PASS pre_ack_crash_outcomes=old,new
+TXN_DESIGN_MODEL_PASS enospc=preflight-no-state-change
+TXN_DESIGN_MODEL_NEG_PASS mutation=ignore_older_root checks=3 step=1 op=store evicted=('page2:0',) slot=b epoch=1 view=None
+TXN_DESIGN_MODEL_NEG_PASS mutation=reuse_staged_page checks=42 step=16 op=store evicted=('b:word',) slot=b epoch=3 view=None
+TXN_DESIGN_MODEL_NEG_PASS mutation=skip_run_flush checks=103 step=14 op=store evicted=('b:word',) slot=b epoch=3 view=None
+TXN_DESIGN_MODEL_NEG_PASS mutation=early_publish checks=13 step=7 op=store evicted=('b:word',) slot=b epoch=3 view=None
+TXN_DESIGN_MODEL_NEG_PASS mutation=skip_commit_flush checks=77 step=18 op=ack evicted=() acknowledged-new-root-not-durable
+TXN_DESIGN_MODEL_NEG_PASS mutation=drop_public_kv checks=74 step=16 op=store evicted=('b:word',) slot=b epoch=3 view=('new-file', 'old-kv')
+TXN_DESIGN_MODEL_NEG_PASS mutation=clear_pending_early checks=3 step=2 op=clear-pending pre-ack pending-or-draft-lost
+python3 tools/check_directfs_design.py
+DIRECT_DESIGN_MODEL_PASS crash_images=260 early_eviction=all_dirty_subsets scope=one-bounded-transaction
+DIRECT_DESIGN_MODEL_PASS pre_ack_crash_outcomes=old,new
+DIRECT_DESIGN_MODEL_PASS refresh_crash_images=7 slot_refresh=duplicate-root-without-allocation
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=reuse-before-refresh-durable
+DIRECT_DESIGN_MODEL_PASS shared_dag=incremental-vs-rebuild
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=drop-shared-child-per-root
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=overwrite_older checks=3 step=1 op=store evicted=('p3:0',) slot_b epoch=1 bytes=('new-left', 'older-right')
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=alias_staged checks=80 step=14 op=store evicted=('slot_b',) slot_b epoch=3 bytes=(('head', 'inode', 'new-inode'), ('body', 'inode', Inode(identity='new-inode', data=6)))
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=skip_data_flush checks=255 step=12 op=store evicted=('slot_b',) slot_b epoch=3 bytes=(None, None)
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=skip_checkpoint_flush checks=165 step=12 op=store evicted=('slot_b',) slot_b points to incomplete/corrupt metadata
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=early_publish checks=3 step=1 op=store evicted=('slot_b',) slot_b points to incomplete/corrupt metadata
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=skip_slot_flush checks=259 step=16 op=ack evicted=() acknowledged-checkpoint-not-durable
+DIRECT_DESIGN_MODEL_NEG_PASS mutation=discard_dirty_early checks=3 step=2 pre-ack-dirty-data-lost
+python3 tools/check_window_allocator.py
+WINDOW_ALLOCATOR_MODEL_PASS cases=2304 capped_fallback=1 negative_controls=3 (bounded proxy; no kernel or QEMU execution)

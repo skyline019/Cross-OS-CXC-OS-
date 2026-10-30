@@ -1,0 +1,4 @@
+kernel/directcore.c:8:2: error: "DIRECT_CORE_TEST requires a dedicated PMEM_MAP + PMEM_NVDIMM device"
+    8 | #error "DIRECT_CORE_TEST requires a dedicated PMEM_MAP + PMEM_NVDIMM device"
+      |  ^
+1 error generated.

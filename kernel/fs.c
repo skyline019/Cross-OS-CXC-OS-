@@ -187,6 +187,7 @@ iinit()
 
   initlock(&itable.lock, "itable");
   for (i = 0; i < NINODE; i++) {
+    initsleeplock(&itable.inode[i].iolock, "inodeio");
     initsleeplock(&itable.inode[i].lock, "inode");
   }
 }
@@ -414,17 +415,17 @@ ireclaim(int dev)
 // are listed in ip->addrs[].  The next NINDIRECT blocks are
 // listed in block ip->addrs[NDIRECT].
 
-// Return the disk block address of the nth block in inode ip.
-// If there is no such block, bmap allocates one.
-// returns 0 if out of disk space.
+// Return the disk block address of the nth block in inode ip. A lookup must
+// not allocate: reading a sparse hole is legal outside a log transaction.
+// Writes allocate on demand; zero means a hole or allocation failure.
 static uint
-bmap(struct inode *ip, uint bn)
+bmap(struct inode *ip, uint bn, int allocate)
 {
   uint addr, *a;
   struct buf *bp;
 
   if (bn < NDIRECT) {
-    if ((addr = ip->addrs[bn]) == 0) {
+    if ((addr = ip->addrs[bn]) == 0 && allocate) {
       addr = balloc(ip->dev);
       if (addr == 0)
         return 0;
@@ -435,8 +436,9 @@ bmap(struct inode *ip, uint bn)
   bn -= NDIRECT;
 
   if (bn < NINDIRECT) {
-    // Load indirect block, allocating if necessary.
     if ((addr = ip->addrs[NDIRECT]) == 0) {
+      if (!allocate)
+        return 0;
       addr = balloc(ip->dev);
       if (addr == 0)
         return 0;
@@ -444,7 +446,7 @@ bmap(struct inode *ip, uint bn)
     }
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
-    if ((addr = a[bn]) == 0) {
+    if ((addr = a[bn]) == 0 && allocate) {
       addr = balloc(ip->dev);
       if (addr) {
         a[bn] = addr;
@@ -490,6 +492,24 @@ itrunc(struct inode *ip)
   iupdate(ip);
 }
 
+// Return an inode's type from the coherent block cache without taking its
+// inode lock. Directory enumeration holds the directory inode lock, so taking
+// a child's (or '..' parent's) inode lock here could invert namespace locks.
+int
+itype(uint dev, uint inum)
+{
+  struct buf *bp;
+  struct dinode *dip;
+  int type;
+  if (inum == 0 || inum >= sb.ninodes)
+    return 0;
+  bp = bread(dev, IBLOCK(inum, sb));
+  dip = (struct dinode *)bp->data + inum % IPB;
+  type = dip->type;
+  brelse(bp);
+  return type;
+}
+
 // Copy stat information from inode.
 // Caller must hold ip->lock.
 void
@@ -518,17 +538,23 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
     n = ip->size - off;
 
   for (tot = 0; tot < n; tot += m, off += m, dst += m) {
-    uint addr = bmap(ip, off / BSIZE);
-    if (addr == 0)
-      break;
-    bp = bread(ip->dev, addr);
+    // One user page at a time makes a later invalid page a short read,
+    // rather than copying bytes and then reporting that none were read.
+    static char zero[BSIZE];
+    uint addr = bmap(ip, off / BSIZE, 0);
     m = min(n - tot, BSIZE - off % BSIZE);
-    if (either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
-      brelse(bp);
-      tot = -1;
-      break;
+    if (user_dst)
+      m = min(m, PGSIZE - dst % PGSIZE);
+    bp = addr ? bread(ip->dev, addr) : 0;
+    if (either_copyout(user_dst, dst,
+                       bp ? (void *)(bp->data + off % BSIZE) : (void *)zero,
+                       m) == -1) {
+      if (bp)
+        brelse(bp);
+      return tot ? (int)tot : -1;
     }
-    brelse(bp);
+    if (bp)
+      brelse(bp);
   }
   return tot;
 }
@@ -546,13 +572,15 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
-  if (off > ip->size || off + n < off)
+  // Seeking beyond EOF creates a hole. At the format's maximum size, keep
+  // any writable prefix and let the caller report a short write.
+  if (off > MAXFILE * BSIZE)
     return -1;
-  if (off + n > MAXFILE * BSIZE)
-    return -1;
+  if (n > MAXFILE * BSIZE - off)
+    n = MAXFILE * BSIZE - off;
 
   for (tot = 0; tot < n; tot += m, off += m, src += m) {
-    uint addr = bmap(ip, off / BSIZE);
+    uint addr = bmap(ip, off / BSIZE, 1);
     if (addr == 0)
       break;
     bp = bread(ip->dev, addr);
@@ -567,7 +595,10 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
     brelse(bp);
   }
 
-  if (off > ip->size)
+  // An allocation/copy failure before the first byte must not extend EOF to
+  // the requested sparse offset. A partially allocated indirect block still
+  // needs to be recorded below so it can subsequently be reclaimed.
+  if (tot && off > ip->size)
     ip->size = off;
 
   // write the i-node back to disk even if the size didn't change

@@ -261,7 +261,16 @@ pmem_flush_lines_reset(void)
 // a compatible platform, privilege setup and a documented persistence domain.
 // QEMU TCG implements CBO as a no-op and cannot validate hardware durability.
 void
-pmem_flush(void *p, uint64 n)
+pmem_flush_batch_begin(void)
+{
+  // Order prior CPU writes before the subsequent cache-block operations.
+  // This is not a persistence completion/drain.
+  asm volatile("fence rw, rw" ::: "memory");
+  pmtrace_order();
+}
+
+void
+pmem_flush_batch(void *p, uint64 n)
 {
   uint64 a, end;
 #ifndef PMEM_ZICBOM
@@ -271,9 +280,11 @@ pmem_flush(void *p, uint64 n)
   if (p == 0 || n == 0)
     return;
 
+  if (n > ~(uint64)0 - (uint64)p)
+    panic("pmem flush range overflow");
   a = (uint64)p & ~(uint64)(PMEM_LINE - 1);
   end = (uint64)p + n;
-  for (; a < end; a += PMEM_LINE) {
+  for (;;) {
 #ifdef PMEM_ZICBOM
     // CBO.CLEAN encoding: opcode=0x0f, funct3=2, imm=1, rd=x0.
     // .insn avoids requiring a recent assembler's zicbom mnemonic parser.
@@ -284,7 +295,19 @@ pmem_flush(void *p, uint64 n)
 #endif
     flush_lines_total++;
     pmtrace_flush((void *)a);
+    if (end - a <= PMEM_LINE)
+      break;
+    a += PMEM_LINE;
   }
+}
+
+void
+pmem_flush(void *p, uint64 n)
+{
+  if (p == 0 || n == 0)
+    return;
+  pmem_flush_batch(p, n);
+  // Preserve the historical ordering semantics for existing PMFS callers.
   __sync_synchronize();
 }
 

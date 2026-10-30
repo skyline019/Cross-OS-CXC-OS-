@@ -48,3 +48,4 @@
 #define SYS_pmfs_metrics 45
 #define SYS_pmfs_compact 46
 #define SYS_pmfs_trace   47
+#define SYS_directcore   48

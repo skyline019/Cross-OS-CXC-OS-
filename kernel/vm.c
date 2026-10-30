@@ -32,6 +32,12 @@ kvmmake(void)
   // virtio mmio disk interface
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
+#ifdef XV6_DISK_NVME
+  // Only the optional QEMU virt NVMe backend uses these PCIe windows.
+  kvmmap(kpgtbl, PCIE_ECAM, PCIE_ECAM, PCIE_ECAM_SIZE, PTE_R | PTE_W);
+  kvmmap(kpgtbl, PCIE_MMIO, PCIE_MMIO, PCIE_MMIO_SIZE, PTE_R | PTE_W);
+#endif
+
   // PLIC
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W);
 

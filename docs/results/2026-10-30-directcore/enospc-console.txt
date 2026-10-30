@@ -1,0 +1,9 @@
+PASS format
+PASS baseline
+PASS enospc
+PASS old-after-enospc
+PASS fault-disabled
+PASS old-after-disabled-fault
+PASS small-truncate
+PASS small-truncate-reboot
+DIRECTCORE_ENOSPC_PASS boots=8 lines=14 preflight_unchanged=1 fault_disabled=1

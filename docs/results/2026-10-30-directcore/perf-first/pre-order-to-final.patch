@@ -1,0 +1,47 @@
+--- a/kernel/pmem.c
++++ b/kernel/pmem.c
+@@ -266,6 +266,7 @@
+   // Order prior CPU writes before the subsequent cache-block operations.
+   // This is not a persistence completion/drain.
+   asm volatile("fence rw, rw" ::: "memory");
++  pmtrace_order();
+ }
+ 
+ void
+--- a/kernel/pmtrace.c
++++ b/kernel/pmtrace.c
+@@ -87,6 +87,13 @@
+ }
+ 
+ void
++pmtrace_order(void)
++{
++  if (trace_active)
++    printk("PMTRACE O seq=%u\n", trace_sequence++);
++}
++
++void
+ pmtrace_drain(void)
+ {
+   if (trace_active)
+--- a/kernel/pmtrace.h
++++ b/kernel/pmtrace.h
+@@ -9,6 +9,7 @@
+ int pmtrace_control(int mode);
+ void pmtrace_store(void *p, uint32 n, int atomic_word);
+ void pmtrace_flush(void *p);
++void pmtrace_order(void);
+ void pmtrace_drain(void);
+ #else
+ static inline void
+@@ -36,6 +37,10 @@
+   (void)p;
+ }
+ static inline void
++pmtrace_order(void)
++{
++}
++static inline void
+ pmtrace_drain(void)
+ {
+ }

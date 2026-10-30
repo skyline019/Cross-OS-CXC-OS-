@@ -1,0 +1,54 @@
+Experimental environment captured after tests; timestamps of measurements are in perf/metadata.json.
+Captured UTC: 2026-10-30T10:43:31Z
+Base commit before uncommitted experiment source: af70b6762f1e89b5a61ddab90e6062a967ae28ad
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+model name	: Intel(R) Xeon(R) Processor @ 2.60GHz
+QEMU:
+QEMU emulator version 9.2.0
+Copyright (c) 2003-2024 Fabrice Bellard and the QEMU Project developers
+Zig version: 0.13.0
+Python version: Python 3.11.2
+Selected SHA256s:
+f59a4469d1e6cbcf81ecf98bb707c275a5c22f70ca3143c2f4ae484a71c8e553  tools/patches/qemu-9.2.0-riscv-pmfs-nvdimm.patch
+4ebf2c9b14fddcb882bfc88114dfca77bb96223120b2a69a6a4c6a8b30231510  /home/user/.cache/pmfs-next/src/qemu.tgz
+304ace18f67d8465581ec314860c733ac631af76b85869e628f747da02bdb43e  /home/user/.cache/pmfs-next/qemu-build/qemu-system-riscv64
+94336a1f38e8e6a41bcf77180b85e7bf3af270f0f11b6808528eb54926c8ab5b  /home/user/.cache/pmfs-next/bin/riscv64-unknown-elf-gcc
+d4bd91accbf2577d8decb1aa4f57ed0362d6975c5c6d1f8c8e2d0b9761d5ec2b  /home/user/.cache/pmfs-next/bin/riscv64-unknown-elf-ld
+a9b6712baac9d40aa7481cf4253c64aa88237b704b2efda725383adca9b03bb7  /home/user/.cache/pmfs-next/test-perf/kernel/kernel
+af2529ee1a64df425ace66889fcd00797bb1764b0b1f6648a588ca9650b60fbb  /home/user/.cache/pmfs-next/test-perf/fs.img
+b06c563024db3a5a5ef772e70d506225d63f54fd4499efa03bae782315e2606e  /home/user/.cache/pmfs-next/test-combined/kernel/kernel
+27eeaafc4c3ab73837be04c31254609612401b69578e35279bad0f1598f1cae2  /home/user/.cache/pmfs-next/test-nvme/kernel/kernel
+ca6c48d6b52d328920a1a875835d7e1942242668f018553c99ef1848bd761b52  /home/user/.cache/pmfs-next/test-default/kernel/kernel
+Sandbox compiler wrapper:
+#!/usr/bin/env bash
+args=()
+for arg in "$@"; do case "$arg" in -march=rv64gc) ;; *) args+=("$arg");; esac; done
+exec /home/user/.cache/pmfs-next/python/ziglang/zig cc -target riscv64-freestanding -mcpu=generic_rv64+m+a+f+d+c+zicsr+zifencei -Wno-typedef-redefinition -Wno-unused-command-line-argument -fno-sanitize=all "${args[@]}"
+Sandbox linker wrapper:
+#!/usr/bin/env bash
+set -e
+extra=(); out=''; prev=''
+for arg in "$@"; do
+  if [[ "$arg" == user/user.ld ]]; then extra=(--no-rosegment -e start); fi
+  if [[ "$prev" == -o ]]; then out="$arg"; fi
+  prev="$arg"
+done
+Z=/home/user/.cache/pmfs-next/python/ziglang/zig
+"$Z" ld.lld "${extra[@]}" "$@"
+if [[ "$out" == user/_* ]]; then "$Z" objcopy --strip-all "$out" "$out.stripped"; mv "$out.stripped" "$out"; fi
+The objdump wrapper emitted no disassembly; the sandbox artifacts are not ISA verification.
+TCG, no host CPU isolation; NVDIMM is a shared ordinary file, NVMe backend is a distinct raw file with cache=writeback.
+Final test harness SHA256s:
+d8216a43e6afa6012fbfc9c30d5cd2e31eab4963cfa661f4dba4009754f63799  tools/check_storage_topology.py
+bb721c4d0a90756930bdfe3c626b2d1aef195fac7bd11fb5b7afeb08eeaf15e3  tools/check_window_allocator.py
+3f828f66da9488956041cadfb7d7e5d1e6450c979d1a99f98396163172d33a1b  tools/nvme_boot_tests.py
+d7f54fafd6f90a382273564861b5d0710d14901d664bdd6a807f52388889a648  tools/nvme_trace_audit.py
+22c1c2e831a56cbf77baba27dc017ad1c3dc9cb4fc4038736e34ae1bd838caf0  tools/bench_perf.py
+7df208677acab38407eae2dff26d78cc6d865d8fc42de3615b053c253680bcf2  tools/xv6_log_recovery.py
+5ca43a3980a66b636f56bf264badb987b2aa76b0fe2ad399c527b553e6ca3572  tools/native_rename_recovery.py
+744b320bbae05f6e11cfef3021a94de0409e6f0c9d03391c74c50e018a322909  tools/pmfs_recovery.py
+6426940c5c97a79dd1f7de2e471239fb26f7031f582567a9e67b52329002467c  tools/vfs_recovery.py
+abfdd6829d1bf471303c91118c1c168d6dce7613dd32e0f3ff8a4865af230f4e  tools/pmfs_gc_recovery.py
+90a31ad1f2590ffb54ae6644c59219fa6f746590d50d1251e3feae7932bde2a2  test-xv6.py
+Post-user-test fresh native fault-oracle fs.img:
+af2529ee1a64df425ace66889fcd00797bb1764b0b1f6648a588ca9650b60fbb  /home/user/.cache/pmfs-next/test-nvme/fs.img

@@ -58,6 +58,7 @@ struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, int, uint64, uint, uint);
 void            stati(struct inode*, struct stat*);
+int             itype(uint, uint);
 int             writei(struct inode*, int, uint64, uint, uint);
 void            itrunc(struct inode*);
 void            ireclaim(int);
@@ -72,6 +73,7 @@ void            initlog(int, struct superblock*);
 void            log_write(struct buf*);
 void            begin_op(void);
 void            end_op(void);
+void            log_sync(void);
 
 // pipe.c
 int             pipealloc(struct file**, struct file**);
@@ -202,6 +204,16 @@ void            plicinit(void);
 void            plicinithart(void);
 int             plic_claim(void);
 void            plic_complete(int);
+
+// rootdisk.c: one selected root block device
+void            rootdisk_init(void);
+void            rootdisk_rw(struct buf*, int);
+void            rootdisk_log_barrier(void);
+
+// nvme.c: optional QEMU virt PCIe root disk
+void            nvme_disk_init(void);
+void            nvme_disk_rw(struct buf*, int);
+void            nvme_disk_flush(void);
 
 // virtio_disk.c
 void            virtio_disk_init(void);

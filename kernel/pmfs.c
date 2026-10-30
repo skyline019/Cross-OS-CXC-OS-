@@ -755,6 +755,9 @@ pmfs_unlock(void)
 int
 pmfs_format_unmounted(void)
 {
+#ifdef DIRECT_CORE_TEST
+  return -1; // Defense in depth: formats are incompatible.
+#endif
   if (g_fs.mounted || g_fs.dev.base == 0)
     return -1;
   if (pmfs_format(&g_fs) != 0)
@@ -781,6 +784,12 @@ pmfs_init(void)
   initsleeplock(&pmfs_api_lock, "pmfs");
   pmfile_ref_init();
   memset(&g_fs, 0, sizeof(g_fs));
+#ifdef DIRECT_CORE_TEST
+  // A direct-core test kernel must never mount or format the same NVDIMM
+  // through the incompatible v3 implementation.
+  printk("pmfs: v3 disabled for direct-core test\n");
+  return;
+#endif
 #ifdef PMEM_MAP
   if (!pmem_ready()) {
     printk("pmfs: MAP unavailable; refusing volatile fallback\n");

@@ -1,0 +1,14 @@
+
+xv6 kernel is booting
+
+nvme: PCI bus=0 slot=1 function=0 BAR0=40000000 size=16384
+NVME_READY nsid=1 lba=1024 qdepth=16 vwc=1 mdts=7 blocks=2000
+pmem: instrumentation only; no hardware cache writeback
+pmem: MAP unavailable: insufficient RAM or missing DTB
+pmfs: MAP unavailable; refusing volatile fallback
+hart 2 starting
+hart 1 starting
+init: starting sh
+$ cat nv1k
+NVME_1K_VALUE
+$ 

@@ -9,6 +9,7 @@ void pmtrace_bind(void *base, uint64 nbytes);
 int pmtrace_control(int mode);
 void pmtrace_store(void *p, uint32 n, int atomic_word);
 void pmtrace_flush(void *p);
+void pmtrace_order(void);
 void pmtrace_drain(void);
 #else
 static inline void
@@ -34,6 +35,10 @@ static inline void
 pmtrace_flush(void *p)
 {
   (void)p;
+}
+static inline void
+pmtrace_order(void)
+{
 }
 static inline void
 pmtrace_drain(void)

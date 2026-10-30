@@ -1,0 +1,89 @@
+PASS run-000-size-512
+DIRECTBENCH_BOOT_PASS run=0 size=512 samples=32
+PASS run-000-size-64
+DIRECTBENCH_BOOT_PASS run=0 size=64 samples=32
+PASS run-001-size-64
+DIRECTBENCH_BOOT_PASS run=1 size=64 samples=32
+PASS run-001-size-512
+DIRECTBENCH_BOOT_PASS run=1 size=512 samples=32
+PASS run-002-size-64
+DIRECTBENCH_BOOT_PASS run=2 size=64 samples=32
+PASS run-002-size-512
+DIRECTBENCH_BOOT_PASS run=2 size=512 samples=32
+PASS run-003-size-512
+DIRECTBENCH_BOOT_PASS run=3 size=512 samples=32
+PASS run-003-size-64
+DIRECTBENCH_BOOT_PASS run=3 size=64 samples=32
+PASS run-004-size-64
+DIRECTBENCH_BOOT_PASS run=4 size=64 samples=32
+PASS run-004-size-512
+DIRECTBENCH_BOOT_PASS run=4 size=512 samples=32
+PASS run-005-size-64
+DIRECTBENCH_BOOT_PASS run=5 size=64 samples=32
+PASS run-005-size-512
+DIRECTBENCH_BOOT_PASS run=5 size=512 samples=32
+PASS run-006-size-512
+DIRECTBENCH_BOOT_PASS run=6 size=512 samples=32
+PASS run-006-size-64
+DIRECTBENCH_BOOT_PASS run=6 size=64 samples=32
+PASS run-007-size-64
+DIRECTBENCH_BOOT_PASS run=7 size=64 samples=32
+PASS run-007-size-512
+DIRECTBENCH_BOOT_PASS run=7 size=512 samples=32
+PASS run-008-size-64
+DIRECTBENCH_BOOT_PASS run=8 size=64 samples=32
+PASS run-008-size-512
+DIRECTBENCH_BOOT_PASS run=8 size=512 samples=32
+PASS run-009-size-64
+DIRECTBENCH_BOOT_PASS run=9 size=64 samples=32
+PASS run-009-size-512
+DIRECTBENCH_BOOT_PASS run=9 size=512 samples=32
+PASS run-010-size-512
+DIRECTBENCH_BOOT_PASS run=10 size=512 samples=32
+PASS run-010-size-64
+DIRECTBENCH_BOOT_PASS run=10 size=64 samples=32
+PASS run-011-size-512
+DIRECTBENCH_BOOT_PASS run=11 size=512 samples=32
+PASS run-011-size-64
+DIRECTBENCH_BOOT_PASS run=11 size=64 samples=32
+PASS run-012-size-512
+DIRECTBENCH_BOOT_PASS run=12 size=512 samples=32
+PASS run-012-size-64
+DIRECTBENCH_BOOT_PASS run=12 size=64 samples=32
+PASS run-013-size-512
+DIRECTBENCH_BOOT_PASS run=13 size=512 samples=32
+PASS run-013-size-64
+DIRECTBENCH_BOOT_PASS run=13 size=64 samples=32
+PASS run-014-size-512
+DIRECTBENCH_BOOT_PASS run=14 size=512 samples=32
+PASS run-014-size-64
+DIRECTBENCH_BOOT_PASS run=14 size=64 samples=32
+PASS run-015-size-64
+DIRECTBENCH_BOOT_PASS run=15 size=64 samples=32
+PASS run-015-size-512
+DIRECTBENCH_BOOT_PASS run=15 size=512 samples=32
+PASS run-016-size-512
+DIRECTBENCH_BOOT_PASS run=16 size=512 samples=32
+PASS run-016-size-64
+DIRECTBENCH_BOOT_PASS run=16 size=64 samples=32
+PASS run-017-size-64
+DIRECTBENCH_BOOT_PASS run=17 size=64 samples=32
+PASS run-017-size-512
+DIRECTBENCH_BOOT_PASS run=17 size=512 samples=32
+PASS run-018-size-64
+DIRECTBENCH_BOOT_PASS run=18 size=64 samples=32
+PASS run-018-size-512
+DIRECTBENCH_BOOT_PASS run=18 size=512 samples=32
+PASS run-019-size-64
+DIRECTBENCH_BOOT_PASS run=19 size=64 samples=32
+PASS run-019-size-512
+DIRECTBENCH_BOOT_PASS run=19 size=512 samples=32
+PASS run-020-size-64
+DIRECTBENCH_BOOT_PASS run=20 size=64 samples=32
+PASS run-020-size-512
+DIRECTBENCH_BOOT_PASS run=20 size=512 samples=32
+PASS run-021-size-512
+DIRECTBENCH_BOOT_PASS run=21 size=512 samples=32
+PASS run-021-size-64
+DIRECTBENCH_BOOT_PASS run=21 size=64 samples=32
+DIRECTBENCH_EXPERIMENT_PASS groups=2 measured_boots_per_group=20 frequency_hz=10000000 durability_equivalent=0

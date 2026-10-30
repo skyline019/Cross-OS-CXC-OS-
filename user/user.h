@@ -30,6 +30,8 @@ long lseek(int fd, long offset, int whence);
 int getdents(int fd, void *entries, int bytes);
 int rename(const char *oldpath, const char *newpath);
 // Test-only: returns -1 unless the kernel was built with XV6_LOG_FAULT_INJECT.
+// Stages 1..5 arm a log cut; 6 queries the reached cut, 7 queries sync waiters,
+// and 8 releases a reached cut. Stage 0 is invalid.
 int xv6_log_fault(int stage);
 int pmfs_put(unsigned long key, const void *val, int len);
 int pmfs_get(unsigned long key, void *dst, int cap, unsigned int *len);
@@ -52,6 +54,8 @@ int pmfs_format(void);
 int pmfs_fault(int stage, int skip);
 // Test-only; returns -1 unless the kernel is built with PMFS_TRACE.
 int pmfs_trace(int mode);
+// Only available in an explicitly built DIRECT_CORE_TEST kernel.
+int directcore(int op, void *data, int size, int stage);
 int pmfs_fstat(const char *path, unsigned int *size, unsigned int *type);
 
 // ulib.c

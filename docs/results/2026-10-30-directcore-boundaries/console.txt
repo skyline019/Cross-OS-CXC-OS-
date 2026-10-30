@@ -1,0 +1,161 @@
+PASS format
+PASS write-001
+PASS reboot-001
+DIRECTCORE_BOUNDARY_PASS index=1 size=0 generation=1 changed=0 epoch=1
+PASS write-002
+PASS reboot-002
+DIRECTCORE_BOUNDARY_PASS index=2 size=1 generation=2 changed=1 epoch=2
+PASS write-003
+PASS reboot-003
+DIRECTCORE_BOUNDARY_PASS index=3 size=63 generation=3 changed=1 epoch=3
+PASS write-004
+PASS reboot-004
+DIRECTCORE_BOUNDARY_PASS index=4 size=64 generation=4 changed=1 epoch=4
+PASS write-005
+PASS reboot-005
+DIRECTCORE_BOUNDARY_PASS index=5 size=65 generation=5 changed=1 epoch=5
+PASS write-006
+PASS reboot-006
+DIRECTCORE_BOUNDARY_PASS index=6 size=127 generation=6 changed=1 epoch=6
+PASS write-007
+PASS reboot-007
+DIRECTCORE_BOUNDARY_PASS index=7 size=128 generation=7 changed=1 epoch=7
+PASS write-008
+PASS reboot-008
+DIRECTCORE_BOUNDARY_PASS index=8 size=129 generation=8 changed=1 epoch=8
+PASS write-009
+PASS reboot-009
+DIRECTCORE_BOUNDARY_PASS index=9 size=255 generation=9 changed=1 epoch=9
+PASS write-010
+PASS reboot-010
+DIRECTCORE_BOUNDARY_PASS index=10 size=256 generation=10 changed=1 epoch=10
+PASS write-011
+PASS reboot-011
+DIRECTCORE_BOUNDARY_PASS index=11 size=257 generation=11 changed=1 epoch=11
+PASS write-012
+PASS reboot-012
+DIRECTCORE_BOUNDARY_PASS index=12 size=511 generation=12 changed=1 epoch=12
+PASS write-013
+PASS reboot-013
+DIRECTCORE_BOUNDARY_PASS index=13 size=512 generation=13 changed=1 epoch=13
+PASS write-014
+PASS reboot-014
+DIRECTCORE_BOUNDARY_PASS index=14 size=1 generation=50 changed=1 epoch=14
+PASS write-015
+PASS reboot-015
+DIRECTCORE_BOUNDARY_PASS index=15 size=512 generation=51 changed=1 epoch=15
+PASS write-016
+PASS reboot-016
+DIRECTCORE_BOUNDARY_PASS index=16 size=0 generation=52 changed=1 epoch=16
+PASS write-017
+PASS reboot-017
+DIRECTCORE_BOUNDARY_PASS index=17 size=512 generation=53 changed=1 epoch=17
+PASS write-018
+PASS reboot-018
+DIRECTCORE_BOUNDARY_PASS index=18 size=65 generation=254 changed=1 epoch=18
+PASS write-019
+PASS reboot-019
+DIRECTCORE_BOUNDARY_PASS index=19 size=65 generation=254 changed=0 epoch=18
+PASS write-020
+PASS reboot-020
+DIRECTCORE_BOUNDARY_PASS index=20 size=65 generation=510 changed=0 epoch=18
+PASS write-021
+PASS reboot-021
+DIRECTCORE_BOUNDARY_PASS index=21 size=0 generation=1 changed=1 epoch=19
+PASS write-022
+PASS reboot-022
+DIRECTCORE_BOUNDARY_PASS index=22 size=0 generation=257 changed=0 epoch=19
+PASS write-023
+PASS reboot-023
+DIRECTCORE_BOUNDARY_PASS index=23 size=64 generation=10 changed=1 epoch=20
+PASS write-024
+PASS reboot-024
+DIRECTCORE_BOUNDARY_PASS index=24 size=64 generation=266 changed=0 epoch=20
+PASS write-025
+PASS reboot-025
+DIRECTCORE_BOUNDARY_PASS index=25 size=63 generation=42 changed=1 epoch=21
+PASS write-026
+PASS reboot-026
+DIRECTCORE_BOUNDARY_PASS index=26 size=64 generation=42 changed=1 epoch=22
+PASS write-027
+PASS reboot-027
+DIRECTCORE_BOUNDARY_PASS index=27 size=65 generation=42 changed=1 epoch=23
+PASS write-028
+PASS reboot-028
+DIRECTCORE_BOUNDARY_PASS index=28 size=64 generation=42 changed=1 epoch=24
+PASS write-029
+PASS reboot-029
+DIRECTCORE_BOUNDARY_PASS index=29 size=63 generation=42 changed=1 epoch=25
+PASS write-030
+PASS reboot-030
+DIRECTCORE_BOUNDARY_PASS index=30 size=63 generation=42 changed=0 epoch=25
+PASS write-031
+PASS reboot-031
+DIRECTCORE_BOUNDARY_PASS index=31 size=255 generation=450 changed=1 epoch=26
+PASS write-032
+PASS reboot-032
+DIRECTCORE_BOUNDARY_PASS index=32 size=255 generation=683 changed=1 epoch=27
+PASS write-033
+PASS reboot-033
+DIRECTCORE_BOUNDARY_PASS index=33 size=128 generation=76 changed=1 epoch=28
+PASS write-034
+PASS reboot-034
+DIRECTCORE_BOUNDARY_PASS index=34 size=511 generation=536 changed=1 epoch=29
+PASS write-035
+PASS reboot-035
+DIRECTCORE_BOUNDARY_PASS index=35 size=511 generation=536 changed=0 epoch=29
+PASS write-036
+PASS reboot-036
+DIRECTCORE_BOUNDARY_PASS index=36 size=257 generation=553 changed=1 epoch=30
+PASS write-037
+PASS reboot-037
+DIRECTCORE_BOUNDARY_PASS index=37 size=1 generation=694 changed=1 epoch=31
+PASS write-038
+PASS reboot-038
+DIRECTCORE_BOUNDARY_PASS index=38 size=65 generation=844 changed=1 epoch=32
+PASS write-039
+PASS reboot-039
+DIRECTCORE_BOUNDARY_PASS index=39 size=63 generation=303 changed=1 epoch=33
+PASS write-040
+PASS reboot-040
+DIRECTCORE_BOUNDARY_PASS index=40 size=63 generation=303 changed=0 epoch=33
+PASS write-041
+PASS reboot-041
+DIRECTCORE_BOUNDARY_PASS index=41 size=63 generation=169 changed=1 epoch=34
+PASS write-042
+PASS reboot-042
+DIRECTCORE_BOUNDARY_PASS index=42 size=0 generation=582 changed=1 epoch=35
+PASS write-043
+PASS reboot-043
+DIRECTCORE_BOUNDARY_PASS index=43 size=63 generation=717 changed=1 epoch=36
+PASS write-044
+PASS reboot-044
+DIRECTCORE_BOUNDARY_PASS index=44 size=511 generation=903 changed=1 epoch=37
+PASS write-045
+PASS reboot-045
+DIRECTCORE_BOUNDARY_PASS index=45 size=511 generation=903 changed=0 epoch=37
+PASS write-046
+PASS reboot-046
+DIRECTCORE_BOUNDARY_PASS index=46 size=255 generation=852 changed=1 epoch=38
+PASS write-047
+PASS reboot-047
+DIRECTCORE_BOUNDARY_PASS index=47 size=127 generation=187 changed=1 epoch=39
+PASS write-048
+PASS reboot-048
+DIRECTCORE_BOUNDARY_PASS index=48 size=0 generation=991 changed=1 epoch=40
+PASS write-049
+PASS reboot-049
+DIRECTCORE_BOUNDARY_PASS index=49 size=127 generation=804 changed=1 epoch=41
+PASS write-050
+PASS reboot-050
+DIRECTCORE_BOUNDARY_PASS index=50 size=127 generation=804 changed=0 epoch=41
+PASS write-051
+PASS reboot-051
+DIRECTCORE_BOUNDARY_PASS index=51 size=512 generation=1013 changed=1 epoch=42
+PASS write-052
+PASS reboot-052
+DIRECTCORE_BOUNDARY_PASS index=52 size=63 generation=492 changed=1 epoch=43
+PASS write-053
+PASS reboot-053
+DIRECTCORE_BOUNDARY_PASS index=53 size=65 generation=770 changed=1 epoch=44
+DIRECTCORE_BOUNDARY_RECOVERY_PASS cases=53 boots=107 changed=43 identical=10 cpus=3 zicbom=1
